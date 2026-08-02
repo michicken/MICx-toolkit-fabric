@@ -1,0 +1,24 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.micx.micxfabric.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "MixinItemStack",
+    "MixinItemInHandRenderer",
+    "MixinMinecraftEscape",
+    "MixinMinecraftRightClicker",
+    "RightClickDelayAccess",
+    "MixinEntityRenderDispatcher",
+    "MixinLivingEntityRenderer",
+    "MixinLevelRenderer",
+    "RenderTypeAccess",
+    "RenderPipelinesAccess",
+    "MixinChatComponent",
+    "MixinClientPacketListener",
+    "MixinClientEntityPackets"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
