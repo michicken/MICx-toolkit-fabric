@@ -4,15 +4,12 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.network.chat.Component;
-
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
 /** Client-only /micx command tree. It never forwards these controls to a server. */
 public final class MicxClientCommands {
-    private static final String PREFIX = "[MICx] ";
     private static boolean registered;
 
     private MicxClientCommands() {
@@ -55,7 +52,7 @@ public final class MicxClientCommands {
             case "kbc", "kbclicker" -> keyboardClicker(source, args);
             case "sc", "skillcast" -> skillCast(source, args);
             case "teamsync", "ts" -> teamSync(source, args);
-            case "hs" -> unavailable(source, "HS bot dispatch");
+            case "hs" -> HsDispatchService.instance().dispatch(source, args);
             case "reset" -> reset(source);
             default -> printList(source);
         }
@@ -304,11 +301,7 @@ public final class MicxClientCommands {
         printList(source);
     }
 
-    private static void unavailable(FabricClientCommandSource source, String name) {
-        reply(source, name + " is not migrated on Fabric 26.2; no action was performed.");
-    }
-
     private static void reply(FabricClientCommandSource source, String message) {
-        source.sendFeedback(Component.literal(PREFIX + message));
+        source.sendFeedback(ChatMessageStyles.feedback(message));
     }
 }

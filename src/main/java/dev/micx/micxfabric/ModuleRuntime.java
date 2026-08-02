@@ -29,6 +29,7 @@ public final class ModuleRuntime {
         register(TeammateHpModule.instance());
         register(ZombiesAssistModule.instance());
         register(EspModule.instance());
+        register(ChamsModule.instance());
         register(PlayerOutlineEspModule.instance());
         register(AimLeadModule.instance());
         register(TeamSyncModule.instance());

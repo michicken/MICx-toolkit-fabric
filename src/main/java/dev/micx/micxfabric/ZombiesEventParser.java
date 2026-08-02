@@ -24,8 +24,6 @@ public final class ZombiesEventParser {
         KILLED,
         POWERUP_ACTIVATED,
         GAME_OVER,
-        RELOADING,
-        OUT_OF_AMMO,
         FAST_REVIVE,
         UNKNOWN
     }
@@ -101,12 +99,6 @@ public final class ZombiesEventParser {
                     ? 1_500L : FastReviveDecisionEngine.FAST_REVIVE_MS);
             return new Event(Kind.FAST_REVIVE, rescue.target, null, null, 0, -1,
                     clean, rescue.remainingMs, mode);
-        }
-        if (clean.matches("(?i).*\\bRELOADING\\b.*")) {
-            return new Event(Kind.RELOADING, null, null, null, 0, -1, clean);
-        }
-        if (clean.matches("(?i).*\\bOUT\\s+OF\\s+AMMO\\b.*")) {
-            return new Event(Kind.OUT_OF_AMMO, null, null, null, 0, -1, clean);
         }
         return Event.unknown(clean);
     }

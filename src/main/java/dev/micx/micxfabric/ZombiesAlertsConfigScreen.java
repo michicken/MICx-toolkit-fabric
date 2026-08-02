@@ -19,7 +19,6 @@ public final class ZombiesAlertsConfigScreen extends ZombiesSubConfigScreen {
                 toggle("Threat Counts", "在准心附近显示 TOO / Giant / Clown 数量。", () -> c.specialThreatHud, v -> c.specialThreatHud = v),
                 toggle("TOO Strict Green", "TOO 判定要求绿色皮革胸甲，避免误报。", () -> c.tooStrictGreen, v -> c.tooStrictGreen = v),
                 toggle("Block Alert", "史莱姆 + 巨人回合显示 BLOCK NOW。", () -> c.blockAlert, v -> c.blockAlert = v),
-                toggle("Ammo State", "显示 OUT OF AMMO、换弹和卡弹等事实状态。", () -> c.ammoAdvice, v -> c.ammoAdvice = v),
                 toggle("Eco Hints", "显示逐回合 ECO 战术建议。", () -> c.ecoHints, v -> c.ecoHints = v),
                 toggle("LS Assist", "显示 LS 回合的倒地和队伍状态。", () -> c.lsAssist, v -> c.lsAssist = v),
                 toggle("FR Coach", "显示逐玩家 Fast Revive 冷却和救援提示。", () -> c.frCoach, v -> c.frCoach = v)

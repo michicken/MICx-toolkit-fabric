@@ -40,7 +40,6 @@ public final class ZombiesTracker {
     private long goldSampleMs;
     private int goldAtSample;
     private float goldPerMin;
-    private String heldWeaponName;
     private ScoreboardFrame frame = ScoreboardFrame.empty();
     private final ZombiesEventState eventState = new ZombiesEventState();
     private final ZombiesSoundMetrics soundMetrics = new ZombiesSoundMetrics();
@@ -62,7 +61,8 @@ public final class ZombiesTracker {
             activeLevel = client.level;
             eventLevel = client.level;
         }
-        eventState.observeActionbarGap(System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        eventState.expirePowerUps(now);
         if ((tickCounter++ & 3) != 0) return;
         updateFromSidebar(client.level.getScoreboard(), client);
     }
@@ -82,7 +82,6 @@ public final class ZombiesTracker {
         goldSampleMs = 0L;
         goldAtSample = 0;
         goldPerMin = 0.0f;
-        heldWeaponName = null;
         activeLevel = null;
         eventLevel = null;
         eventGeneration++;
@@ -136,10 +135,6 @@ public final class ZombiesTracker {
         return goldPerMin;
     }
 
-    public String heldWeaponName() {
-        return heldWeaponName;
-    }
-
     public ZombiesEventState eventState() {
         return eventState;
     }
@@ -181,15 +176,7 @@ public final class ZombiesTracker {
     }
 
     public void onActionBarText(String text, long now) {
-        ZombiesEventParser.Event event = ZombiesEventParser.parseActionBar(text);
-        acceptEvent(event, now);
-        if (eventContextValid()) {
-            if (event == null || event.kind() == ZombiesEventParser.Kind.UNKNOWN) {
-                eventState.observeOrdinaryActionbar(now);
-            } else {
-                eventState.observeActionbarGap(now);
-            }
-        }
+        acceptEvent(ZombiesEventParser.parseActionBar(text), now);
     }
 
     private void acceptEvent(ZombiesEventParser.Event event, long now) {
@@ -326,7 +313,6 @@ public final class ZombiesTracker {
             String playerName = client.player.getName().getString();
             int observedGold = next.playerGold(playerName);
             if (observedGold >= 0) updateGold(observedGold, now);
-            heldWeaponName = client.player.getMainHandItem().getHoverName().getString();
         }
     }
 
@@ -339,7 +325,6 @@ public final class ZombiesTracker {
         goldSampleMs = 0L;
         goldAtSample = 0;
         goldPerMin = 0.0f;
-        heldWeaponName = null;
         frame = ScoreboardFrame.empty();
     }
 
@@ -376,7 +361,6 @@ public final class ZombiesTracker {
         goldSampleMs = 0L;
         goldAtSample = 0;
         goldPerMin = 0.0f;
-        heldWeaponName = null;
     }
 
     private void finishOldSession() {

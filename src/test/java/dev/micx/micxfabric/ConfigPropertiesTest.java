@@ -30,6 +30,18 @@ class ConfigPropertiesTest {
     }
 
     @Test
+    void loadsChamsLegacyRangeAndAppliesConfiguredBounds() throws Exception {
+        Path legacy = temp.resolve("MICxToolkit_ModelChams.cfg");
+        Files.writeString(legacy, "chams {\n"
+                + "    I:range=999\n"
+                + "}\n");
+
+        Properties properties = ConfigProperties.load(temp.resolve("missing.properties"), legacy);
+
+        assertEquals(128, ConfigProperties.integer(properties, "range", 48, 8, 128));
+    }
+
+    @Test
     void currentPropertiesTakePrecedenceAndInvalidValuesUseFallback() throws Exception {
         Path current = temp.resolve("zombies.properties");
         Path legacy = temp.resolve("legacy.cfg");

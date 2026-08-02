@@ -77,7 +77,7 @@ public final class PlayerVisibilityModule implements Module {
     public void onPrimaryPressed(Minecraft client, boolean newlyEnabled) {
         if (!newlyEnabled) active = !active;
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(Component.literal("PlayerVisibility: " + (active ? "ON" : "OFF")));
+            client.player.sendSystemMessage(ChatMessageStyles.notice("PlayerVisibility: " + (active ? "ON" : "OFF")));
         }
         saveConfig();
     }

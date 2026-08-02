@@ -71,7 +71,7 @@ public final class ToggleSprintModule implements Module {
         else active = false;
         if (!active) releaseSprint(client);
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(Component.literal("ToggleSprint: " + (active ? "ON" : "OFF")));
+            client.player.sendSystemMessage(ChatMessageStyles.notice("ToggleSprint: " + (active ? "ON" : "OFF")));
         }
     }
 

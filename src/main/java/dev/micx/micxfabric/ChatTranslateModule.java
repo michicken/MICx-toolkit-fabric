@@ -134,7 +134,7 @@ public final class ChatTranslateModule implements Module {
         } catch (ChatTranslationClient.TranslationException ignored) {
             client.execute(() -> {
                 if (enabled && taskGeneration == generation && client.player != null) {
-                    client.player.sendSystemMessage(Component.literal("[MICx Translate] 翻译失败，原文未发送。"));
+                    client.player.sendSystemMessage(ChatMessageStyles.error("Translate: 翻译失败，原文未发送。"));
                 }
             });
             return;

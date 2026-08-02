@@ -3,6 +3,7 @@ package dev.micx.micxfabric;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -59,7 +60,8 @@ public final class ChatCleanerModule implements Module {
         if (text.isEmpty() || ChatCleanerRules.isSeparator(text)) return message;
         int count = counts.merge(text, 1, Integer::sum);
         if (count < 2) return message;
-        return message.copy().append(Component.literal("  (x" + count + ")"));
+        return message.copy().append(Component.literal("  (x" + count + ")")
+                .withStyle(Style.EMPTY.withColor(ChatMessageStyles.MUTED)));
     }
 
     @Override

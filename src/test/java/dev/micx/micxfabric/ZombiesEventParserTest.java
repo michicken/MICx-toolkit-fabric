@@ -51,7 +51,7 @@ class ZombiesEventParserTest {
     }
 
     @Test
-    void chatEventsAcceptForgeStylePrefixesButMalformedReviveDoesNotConsumeAmmo() {
+    void chatEventsAcceptForgeStylePrefixesAndMalformedReviveStaysUnknown() {
         assertEquals(ZombiesEventParser.Kind.KNOCK,
                 ZombiesEventParser.parseChat("[Zombies] §cAlice was knocked down").kind());
         assertEquals(ZombiesEventParser.Kind.REVIVE,
@@ -60,8 +60,8 @@ class ZombiesEventParserTest {
                 ZombiesEventParser.parseChat("[Zombies] Alice was slain").kind());
         assertEquals(ZombiesEventParser.Kind.UNKNOWN,
                 ZombiesEventParser.parseActionBar("REVIVING").kind());
-        assertEquals(ZombiesEventParser.Kind.RELOADING,
-                ZombiesEventParser.parseActionBar("REVIVING... RELOADING").kind());
+        assertEquals(ZombiesEventParser.Kind.UNKNOWN,
+                ZombiesEventParser.parseActionBar("REVIVING").kind());
     }
 
     @Test
@@ -70,10 +70,6 @@ class ZombiesEventParserTest {
         assertEquals(ZombiesEventParser.Kind.POWERUP_ACTIVATED, powerup.kind());
         assertEquals(20, powerup.durationSeconds());
 
-        assertEquals(ZombiesEventParser.Kind.RELOADING,
-                ZombiesEventParser.parseActionBar("RELOADING").kind());
-        assertEquals(ZombiesEventParser.Kind.OUT_OF_AMMO,
-                ZombiesEventParser.parseActionBar("OUT OF AMMO").kind());
         assertEquals(ZombiesEventParser.Kind.GAME_OVER,
                 ZombiesEventParser.parseChat("Game Over").kind());
     }

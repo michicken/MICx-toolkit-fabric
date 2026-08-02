@@ -64,7 +64,7 @@ public final class RightClickerModule implements Module {
         if (newlyEnabled) active = true;
         else active = !active;
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(Component.literal("RightClicker: " + (active ? "ON" : "OFF")));
+            client.player.sendSystemMessage(ChatMessageStyles.notice("RightClicker: " + (active ? "ON" : "OFF")));
         }
     }
 

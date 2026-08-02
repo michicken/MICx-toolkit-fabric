@@ -18,7 +18,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.DyedItemColor;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,11 +33,9 @@ public final class ZombiesAssistModule implements Module {
     private final WaveTempoEstimator waveTempo = new WaveTempoEstimator();
     private final SlimeGrowthTracker slimeGrowth = new SlimeGrowthTracker();
     private final SlimeEcoTracker slimeEco = new SlimeEcoTracker();
-    private final AmmoTracker ammo = new AmmoTracker();
     private long lastExpertUpdateMs;
     private long lastSlimeEcoUpdateMs;
     private long expertSnapshotAt;
-    private long ammoGeneration = -1L;
     private boolean enabled;
     private Object behaviorLevel;
     private int lastAnnouncedRound;
@@ -92,11 +89,9 @@ public final class ZombiesAssistModule implements Module {
         waveTempo.reset();
         slimeGrowth.reset();
         slimeEco.reset();
-        ammo.reset();
         lastExpertUpdateMs = 0L;
         lastSlimeEcoUpdateMs = 0L;
         expertSnapshotAt = 0L;
-        ammoGeneration = -1L;
         lsState.reset();
         resetBehavior();
     }
@@ -107,13 +102,7 @@ public final class ZombiesAssistModule implements Module {
         loadConfig();
         ZombiesTracker tracker = ZombiesTracker.instance();
         tracker.tick(client);
-        if (tracker.eventGeneration() != ammoGeneration) {
-            ammo.reset();
-            ammoGeneration = tracker.eventGeneration();
-        }
         updateLsState(tracker);
-        if (tracker.isInZombies()) ammo.tick(client, tracker);
-        else ammo.reset();
         powerUpTracker.tick(client);
         long now = System.currentTimeMillis();
         if (tracker.isInAlienArcadium() && tracker.round() > 0 && tracker.round() <= 60) {
@@ -136,10 +125,6 @@ public final class ZombiesAssistModule implements Module {
 
     public ZombiesPowerUpTracker powerUpTracker() {
         return powerUpTracker;
-    }
-
-    public AmmoTracker ammo() {
-        return ammo;
     }
 
     public void saveConfig() {
@@ -264,11 +249,10 @@ public final class ZombiesAssistModule implements Module {
         ZombiesEventState state = tracker.eventState();
         if (state.consumeGameOver()) {
             if (config.postGameStats && state.latches().claimGameOver(round)) {
-                client.player.sendSystemMessage(Component.literal("[MICx] Game Over | down "
-                        + state.totalDowns() + " | revive " + state.totalRevives()
-                        + " | death " + state.totalDeaths()
+                sendLocalMessage(client, "Game Over | down " + state.totalDowns()
+                        + " | revive " + state.totalRevives() + " | death " + state.totalDeaths()
                         + " | hits " + tracker.hits() + " | crit " + tracker.crits()
-                        + " | LR " + tracker.lrUses()));
+                        + " | LR " + tracker.lrUses());
             }
         }
         tracker.finishGameOverSession();
@@ -309,9 +293,9 @@ public final class ZombiesAssistModule implements Module {
             String token = "notice:" + name + ':' + status;
             if (!state.latches().claim(token)) continue;
             if ("down".equals(status)) {
-                client.player.sendSystemMessage(Component.literal("[MICx] " + name + " is down"));
+                sendLocalMessage(client, name + " is down");
             } else if ("dead".equals(status) || "quit".equals(status)) {
-                client.player.sendSystemMessage(Component.literal("[MICx] " + name + " is " + status));
+                sendLocalMessage(client, name + " is " + status);
             }
         }
     }
@@ -342,8 +326,7 @@ public final class ZombiesAssistModule implements Module {
 
         if (config.tooAlert && now - lastTooNoticeAt >= 15_000L) {
             lastTooNoticeAt = now;
-            client.player.sendSystemMessage(Component.literal("[MICx] The Old One spotted! "
-                    + (int) nearestDistance + "m"));
+            sendLocalMessage(client, "The Old One spotted! " + (int) nearestDistance + "m");
         }
         if (config.pcRoundInfo && nearestDistance >= 3.0 && now - lastTooCommandAt >= 2_000L) {
             String command = "pc TOO " + (int) nearestDistance + "m";
@@ -365,8 +348,8 @@ public final class ZombiesAssistModule implements Module {
                             lastTooRushNoticeAt = now;
                             tooRushUntil = now + 1_500L;
                             tooRushDistance = entry.getValue();
-                            client.player.sendSystemMessage(Component.literal("[MICx] TOO rush "
-                                    + String.format(Locale.ROOT, "%.1f", entry.getValue()) + "m"));
+                            sendLocalMessage(client, "TOO rush "
+                                    + String.format(Locale.ROOT, "%.1f", entry.getValue()) + "m");
                         }
                         break;
                     }
@@ -466,16 +449,24 @@ public final class ZombiesAssistModule implements Module {
         drawCentered(graphics, client, text, cfg.topHudXOffset, cfg.topHudY,
                 cfg.topHudScale, 0xFFE8A73E, true);
 
-        if (cfg.showStats) {
-            ZombiesEventState state = tracker.eventState();
-            String stats = "Down " + state.totalDowns() + " | Revive " + state.totalRevives()
-                    + " | Death " + state.totalDeaths()
-                    + " | Hits " + tracker.hits() + " | Crit " + tracker.crits()
-                    + " | LR " + tracker.lrUses();
-            drawCentered(graphics, client, stats, cfg.topHudXOffset,
-                    cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale,
-                    0xFF98A0AB, false);
+        drawActivePowerUpsTop(graphics, client, tracker, cfg);
+    }
+
+    private static void drawActivePowerUpsTop(GuiGraphicsExtractor graphics, Minecraft client,
+                                               ZombiesTracker tracker, ZombiesConfig cfg) {
+        long now = System.currentTimeMillis();
+        List<String> active = new ArrayList<>();
+        int color = ChatMessageStyles.INFO;
+        for (Map.Entry<String, PowerUpTimer.Active> entry
+                : tracker.eventState().powerUps().activeSnapshot().entrySet()) {
+            long remaining = entry.getValue().expiresAt() - now;
+            if (remaining <= 0L) continue;
+            active.add(powerUpLabel(entry.getKey()) + " " + formatSeconds(remaining));
+            if (active.size() == 1) color = powerUpColor(entry.getKey());
         }
+        String text = active.isEmpty() ? "——" : String.join(" | ", active);
+        drawCentered(graphics, client, text, cfg.topHudXOffset,
+                cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale, color, false);
     }
 
     private static void drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
@@ -501,12 +492,6 @@ public final class ZombiesAssistModule implements Module {
         }
         if (down > 0) lines.add("Down players " + down);
         if (dead > 0) lines.add("Dead / quit " + dead);
-        if (cfg.ammoAdvice && state.outOfAmmo()) lines.add("OUT OF AMMO");
-        else if (cfg.ammoAdvice && state.reloading()) lines.add("RELOADING");
-        AmmoTracker ammo = ZombiesAssistModule.instance().ammo();
-        if (cfg.ammoAdvice && ammo.isJammed()) {
-            lines.add("JAM " + (ammo.jamTag() == null ? "?" : ammo.jamTag()));
-        }
 
         if (lines.isEmpty()) return;
         float scale = safeScale(cfg.tacticalHudScale);
@@ -556,22 +541,13 @@ public final class ZombiesAssistModule implements Module {
                 resourceLines.add(String.format(Locale.ROOT, "Gold rate %.0f/min", tracker.goldPerMin()));
             }
         }
-        if (tracker.heldWeaponName() != null && !tracker.heldWeaponName().isBlank()) {
-            resourceLines.add("Weapon " + tracker.heldWeaponName());
-        }
-        if (cfg.ammoAdvice && state.outOfAmmo()) resourceLines.add("OUT OF AMMO");
-        else if (cfg.ammoAdvice && state.reloading()) resourceLines.add("RELOADING");
-        AmmoTracker ammo = ZombiesAssistModule.instance().ammo();
-        if (cfg.ammoAdvice && ammo.isJammed()) {
-            resourceLines.add("JAM " + (ammo.jamTag() == null ? "?" : ammo.jamTag()));
-        }
         if (cfg.ecoHints) {
             String advice = ZombiesRoundData.ecoAdvice(round);
             if (advice != null) resourceLines.add(advice);
         }
         drawLeftLines(graphics, client, resourceLines, cfg);
 
-        if (!cfg.originalScoreboard || !tracker.isInAlienArcadium()) {
+        if (cfg.showEconomy && !cfg.originalScoreboard && tracker.isInZombies() && cfg.overlayEnabled) {
             drawEconomyPanel(graphics, client, tracker, cfg);
         }
 
@@ -997,35 +973,10 @@ public final class ZombiesAssistModule implements Module {
         if (!inZombies) {
             lines.add(new HudLine("Forecast: No ZB", 0xFF98A0AB));
         } else {
-            long now = System.currentTimeMillis();
-            for (Map.Entry<String, PowerUpTimer.Active> entry
-                    : tracker.eventState().powerUps().activeSnapshot().entrySet()) {
-                long remaining = Math.max(0L, entry.getValue().expiresAt() - now);
-                if (remaining > 0L) {
-                    lines.add(new HudLine("Active " + powerUpLabel(entry.getKey()) + " "
-                            + formatSeconds(remaining), powerUpColor(entry.getKey())));
-                }
-            }
-            List<ZombiesPowerUpTracker.DropVisual> drops = new ArrayList<>(
-                    ZombiesAssistModule.instance().powerUpTracker().dropsSnapshot().values());
-            drops.sort(Comparator.comparingInt((ZombiesPowerUpTracker.DropVisual drop)
-                    -> powerUpPriority(drop.kind())).reversed());
-            for (ZombiesPowerUpTracker.DropVisual drop : drops) {
-                long remaining = Math.max(0L, drop.expiresAt() - now);
-                if (remaining > 0L) {
-                    lines.add(new HudLine("Drop " + powerUpLabel(drop.kind()) + " "
-                            + formatSeconds(remaining), powerUpColor(drop.kind())));
-                }
-                if (lines.size() >= 4) break;
-            }
-            if (lines.size() < 5) {
-                ZombiesPowerUpTracker powerUps = ZombiesAssistModule.instance().powerUpTracker();
-                addForecast(lines, "Max Ammo", powerUps.maxForecast(tracker.round()), "max");
-                addForecast(lines, "Insta Kill", powerUps.instaForecast(tracker.round()), "insta");
-                addForecast(lines, "Shopping Spree", powerUps.shoppingForecast(tracker.round()), "shopping");
-                addForecast(lines, "DG", ZombiesRoundData.dgForecast(tracker.round()), "dg");
-                addForecast(lines, "CARP", ZombiesRoundData.carpForecast(tracker.round()), "carp");
-                addForecast(lines, "BG", ZombiesRoundData.bgForecast(tracker.round()), "bg");
+            ZombiesPowerUpTracker powerUps = ZombiesAssistModule.instance().powerUpTracker();
+            for (PowerUpForecast.Line forecast : PowerUpForecast.lines(
+                    tracker.round(), powerUps.maxGroup(), powerUps.instaForecast(tracker.round()))) {
+                lines.add(new HudLine(forecast.text(), forecast.color()));
             }
             if (lines.isEmpty()) lines.add(new HudLine("Power-ups: waiting", 0xFF98A0AB));
         }
@@ -1069,11 +1020,6 @@ public final class ZombiesAssistModule implements Module {
         }
     }
 
-    private static void addForecast(List<HudLine> lines, String label, String forecast, String kind) {
-        if (forecast == null || lines.size() >= 6) return;
-        lines.add(new HudLine(label + " -> " + forecast, powerUpColor(kind)));
-    }
-
     private static void drawCentered(GuiGraphicsExtractor graphics, Minecraft client, String text,
                                      int xOffset, int y, float scale, int color, boolean shadow) {
         float safe = safeScale(scale);
@@ -1089,18 +1035,19 @@ public final class ZombiesAssistModule implements Module {
     }
 
     private static String powerUpLabel(String kind) {
-        return switch (kind == null ? "" : kind.toLowerCase(Locale.ROOT)) {
+        return switch (canonicalPowerUpKind(kind)) {
             case "max" -> "Max Ammo";
             case "insta" -> "Insta Kill";
             case "shopping" -> "Shopping Spree";
             case "dg" -> "Double Gold";
             case "bg" -> "Bonus Gold";
+            case "carp" -> "Carpenter";
             default -> kind == null || kind.isBlank() ? "Power-up" : kind;
         };
     }
 
     private static int powerUpColor(String kind) {
-        return switch (kind == null ? "" : kind.toLowerCase(Locale.ROOT)) {
+        return switch (canonicalPowerUpKind(kind)) {
             case "max" -> 0xFF4D8CFF;
             case "insta" -> 0xFFFF5964;
             case "shopping" -> 0xFFC05CFF;
@@ -1110,15 +1057,21 @@ public final class ZombiesAssistModule implements Module {
         };
     }
 
-    private static int powerUpPriority(String kind) {
-        return switch (kind == null ? "" : kind.toLowerCase(Locale.ROOT)) {
-            case "dg" -> 100;
-            case "shopping" -> 90;
-            case "max" -> 80;
-            case "insta" -> 70;
-            case "bg", "carp" -> 60;
-            default -> 0;
-        };
+    static String canonicalPowerUpKind(String kind) {
+        String value = kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT);
+        if (value.contains("max ammo") || value.equals("max")) return "max";
+        if (value.contains("insta") || value.contains("instant kill") || value.equals("ins")) return "insta";
+        if (value.contains("shopping") || value.equals("ss")) return "shopping";
+        if (value.contains("double gold") || value.equals("dg")) return "dg";
+        if (value.contains("bonus gold") || value.equals("bg")) return "bg";
+        if (value.contains("carp")) return "carp";
+        return value;
+    }
+
+    private static void sendLocalMessage(Minecraft client, String text) {
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(ChatMessageStyles.notice(text));
+        }
     }
 
     private static String formatSeconds(long millis) {

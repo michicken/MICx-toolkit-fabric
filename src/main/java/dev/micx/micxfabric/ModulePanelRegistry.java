@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Metadata and migration map copied from the Forge panel's ModuleMeta. */
+/** Panel metadata; runtime registration is maintained separately in ModuleRuntime. */
 public final class ModulePanelRegistry {
     public static final String GROUP_CORE = "core";
     public static final String GROUP_COMBAT = "combat";
@@ -43,8 +43,9 @@ public final class ModulePanelRegistry {
         real("esp", "ESP", "线框透视", GROUP_COMBAT,
                 "透过墙壁提交非玩家实体方框轮廓，带范围、透明度和自动门控。",
                 EspModule.instance(), EspConfigScreen::new);
-        unmigrated("chams", "Chams", "模型透视", GROUP_COMBAT,
-                "以原贴图半透明模型穿过墙壁显示怪物");
+        real("chams", "Chams", "模型透视", GROUP_COMBAT,
+                "以原贴图模型穿过墙壁显示被方块遮挡的目标；独立于 ESP 线框。",
+                ChamsModule.instance(), ChamsConfigScreen::new);
         real("player_outline_esp", "PlayerOutlineESP", "玩家轮廓", GROUP_COMBAT,
                 "使用 26.2 原生 outline phase 的玩家绿色轮廓；厚度由客户端原生管线控制。",
                 PlayerOutlineEspModule.instance(), PlayerOutlineEspConfigScreen::new);

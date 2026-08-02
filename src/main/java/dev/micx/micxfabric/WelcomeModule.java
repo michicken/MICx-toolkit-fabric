@@ -1,7 +1,6 @@
 package dev.micx.micxfabric;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 /** Prints the original local-only welcome banner after a client world becomes available. */
 public final class WelcomeModule implements Module {
@@ -69,6 +68,6 @@ public final class WelcomeModule implements Module {
                 " 帮开机器人: /micx hs <1-3> · summon bots",
                 "================================="
         };
-        for (String line : lines) client.player.sendSystemMessage(Component.literal(line));
+        for (String line : lines) client.player.sendSystemMessage(ChatMessageStyles.feedback(line));
     }
 }

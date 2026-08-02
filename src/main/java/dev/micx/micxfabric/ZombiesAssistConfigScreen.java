@@ -75,7 +75,7 @@ public final class ZombiesAssistConfigScreen extends ModuleConfigScreen {
                         : "当前没有识别到 Zombies scoreboard；HUD 会显示 No ZB。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 6;
-        y = wrapped(graphics, "已接入 scoreboard 波次/剩余数、AA、AmmoTracker 和 Fast Revive latency 代码路径；Ammo/FR、Power-up、TOO、LS、声音/title 完整相关性、自动聊天和世界 beam 尚未完成 Prism 实机验收，继续标记 PORTING。",
+        y = wrapped(graphics, "已接入 scoreboard 波次/剩余数、AA 和 Fast Revive latency 代码路径；FR、Power-up、TOO、LS、声音/title 完整相关性、自动聊天和世界 beam 尚未完成 Prism 实机验收，继续标记 PORTING。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
         setContentHeight(y - contentTop());

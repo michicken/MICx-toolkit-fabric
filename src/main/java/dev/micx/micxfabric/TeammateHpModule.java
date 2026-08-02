@@ -78,7 +78,7 @@ public final class TeammateHpModule implements Module {
         if (!newlyEnabled || !active) active = !active;
         saveConfig();
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(Component.literal("TeammateHP: " + (active ? "ON" : "OFF")));
+            client.player.sendSystemMessage(ChatMessageStyles.notice("TeammateHP: " + (active ? "ON" : "OFF")));
         }
     }
 

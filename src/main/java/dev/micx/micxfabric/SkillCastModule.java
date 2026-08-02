@@ -109,7 +109,7 @@ public final class SkillCastModule implements Module {
         if (stage == 3) {
             if (restoreSlot >= 0 && restoreSlot < 9) client.player.getInventory().setSelectedSlot(restoreSlot);
             stage = 0;
-            client.player.sendSystemMessage(Component.literal("[MICx] 已触发技能释放"));
+            client.player.sendSystemMessage(ChatMessageStyles.notice("已触发技能释放"));
         }
     }
 

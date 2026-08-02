@@ -101,7 +101,7 @@ public final class TeamSyncModule implements Module {
         config.renderOverlay = !config.renderOverlay;
         configDirty = true;
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(Component.literal("TeamSync HUD: "
+            client.player.sendSystemMessage(ChatMessageStyles.notice("TeamSync HUD: "
                     + (config.renderOverlay ? "ON" : "OFF")));
         }
     }

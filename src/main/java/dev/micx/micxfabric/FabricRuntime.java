@@ -27,12 +27,16 @@ public final class FabricRuntime {
         MicxClientCommands.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ModuleRuntime.tick(client);
+            HsDispatchService.instance().tick(client);
             if (mainPanelRequested) {
                 mainPanelRequested = false;
                 mainPanelOpener.accept(client);
             }
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((connection, client) -> resetTransientState());
+        ClientPlayConnectionEvents.DISCONNECT.register((connection, client) -> {
+            HsDispatchService.instance().resetTransientState();
+            resetTransientState();
+        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> stopClient(client));
         ModuleRuntime.initialize();
         ZombiesEventBridge.initialize();
@@ -59,6 +63,7 @@ public final class FabricRuntime {
     }
 
     private static void stopClient(Minecraft client) {
+        HsDispatchService.instance().close();
         resetTransientState();
         ChatTranslateModule.instance().shutdown();
         TeamSyncModule.instance().shutdown();

@@ -12,6 +12,11 @@ public interface RenderPipelinesAccess {
         throw new AssertionError();
     }
 
+    @Accessor("ENTITY_SNIPPET")
+    static RenderPipeline.Snippet micx$entitySnippet() {
+        throw new AssertionError();
+    }
+
     @Accessor("DEBUG_FILLED_SNIPPET")
     static RenderPipeline.Snippet micx$debugFilledSnippet() {
         throw new AssertionError();

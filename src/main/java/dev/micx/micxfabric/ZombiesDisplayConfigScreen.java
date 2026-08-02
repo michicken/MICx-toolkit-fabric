@@ -18,7 +18,6 @@ public final class ZombiesDisplayConfigScreen extends ZombiesSubConfigScreen {
                 toggle("Mobs Left", "显示当前回合怪物剩余数。", () -> c.showMobs, v -> c.showMobs = v),
                 toggle("PU Forecast", "显示已锁定的 Max Ammo / Insta Kill / Shopping Spree 预测。", () -> c.showPowerups, v -> c.showPowerups = v),
                 toggle("PU Beam", "显示掉落 Power-up 的世界光柱；不影响 tracker 计时。", () -> c.puBeam, v -> c.puBeam = v),
-                toggle("Hits / Crit", "显示命中、暴击和 LR 统计区块。", () -> c.showStats, v -> c.showStats = v),
                 toggle("Economy", "显示当前金币与队友金币表。", () -> c.showEconomy, v -> c.showEconomy = v),
                 toggle("Wave Tempo", "显示当前清怪 ETA 与下一波叠波余量。", () -> c.waveTempo, v -> c.waveTempo = v),
                 toggle("Slime Growth", "显示史莱姆成长档和开打时机。", () -> c.slimeGrowth, v -> c.slimeGrowth = v),

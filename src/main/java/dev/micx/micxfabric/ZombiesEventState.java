@@ -20,11 +20,6 @@ public final class ZombiesEventState {
     private long localRescueRemainingMs;
     private long localRescueObservedAt;
     private long localRescueAttemptSeq;
-    private boolean reloading;
-    private long reloadLastSeenAt;
-    private int reloadCount;
-    private boolean outOfAmmo;
-    private int outOfAmmoCount;
     private int totalDowns;
     private int totalDeaths;
     private int totalRevives;
@@ -45,11 +40,6 @@ public final class ZombiesEventState {
         localRescueRemainingMs = 0L;
         localRescueObservedAt = 0L;
         localRescueAttemptSeq = 0L;
-        reloading = false;
-        reloadLastSeenAt = 0L;
-        reloadCount = 0;
-        outOfAmmo = false;
-        outOfAmmoCount = 0;
         totalDowns = 0;
         totalDeaths = 0;
         totalRevives = 0;
@@ -99,59 +89,22 @@ public final class ZombiesEventState {
                 }
             }
             case POWERUP_ACTIVATED -> powerUps.activate(event.powerup(), event.durationSeconds(), now);
-            case RELOADING -> {
-                reloading = true;
-                reloadLastSeenAt = now;
-                outOfAmmo = false;
-            }
-            case OUT_OF_AMMO -> {
-                reloading = false;
-                reloadLastSeenAt = now;
-                outOfAmmo = true;
-                outOfAmmoCount++;
-            }
             case FAST_REVIVE -> updateLocalRescue(event, now);
             case GAME_OVER -> gameOverPending = true;
             default -> {
             }
         }
         powerUps.expire(now);
-        finishReloadIfExpired(now);
     }
 
-    /** Advances only the reload grace timer; ordinary text also clears OUT OF AMMO. */
-    public void observeActionbarGap(long now) {
-        finishReloadIfExpired(now);
-    }
-
-    /** Ordinary actionbar text clears the Forge OUT OF AMMO latch. */
-    public void observeOrdinaryActionbar(long now) {
-        outOfAmmo = false;
-        finishReloadIfExpired(now);
-    }
-
-    private void finishReloadIfExpired(long now) {
-        if (reloading && reloadLastSeenAt > 0L
-                && now - reloadLastSeenAt > AmmoTracker.RELOAD_ACTIONBAR_GRACE_MS) {
-            finishReload(now);
-        }
-    }
-
-    private void finishReload(long now) {
-        if (!reloading) return;
-        reloading = false;
-        reloadCount++;
-        reloadLastSeenAt = now;
+    public void expirePowerUps(long now) {
+        powerUps.expire(now);
     }
 
     public Map<String, Long> downSince() { return Collections.unmodifiableMap(downSince); }
     public Map<String, String> statuses() { return Collections.unmodifiableMap(statuses); }
     public PowerUpTimer powerUps() { return powerUps; }
     public AutoBehaviorLatch latches() { return latches; }
-    public boolean reloading() { return reloading; }
-    public int reloadCount() { return reloadCount; }
-    public boolean outOfAmmo() { return outOfAmmo; }
-    public int outOfAmmoCount() { return outOfAmmoCount; }
     public int totalDowns() { return totalDowns; }
     public int totalDeaths() { return totalDeaths; }
     public int totalRevives() { return totalRevives; }

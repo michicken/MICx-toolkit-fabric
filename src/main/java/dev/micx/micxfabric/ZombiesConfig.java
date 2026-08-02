@@ -13,7 +13,6 @@ public final class ZombiesConfig {
     public boolean tooRushAlert = true;
     public boolean specialThreatHud = true;
     public boolean tooStrictGreen = true;
-    public boolean ammoAdvice = true;
     public boolean postGameStats = true;
     public boolean ecoHints = true;
     public boolean pcRoundInfo = true;
@@ -80,7 +79,6 @@ public final class ZombiesConfig {
         tooRushAlert = bool(properties, "tooRushAlert", true);
         specialThreatHud = bool(properties, "specialThreatHud", true);
         tooStrictGreen = bool(properties, "tooStrictGreen", true);
-        ammoAdvice = bool(properties, "ammoAdvice", true);
         postGameStats = bool(properties, "postGameStats", true);
         ecoHints = bool(properties, "ecoHints", true);
         pcRoundInfo = bool(properties, "pcRoundInfo", true);
@@ -141,7 +139,6 @@ public final class ZombiesConfig {
         putBoolean(properties, "tooRushAlert", tooRushAlert);
         putBoolean(properties, "specialThreatHud", specialThreatHud);
         putBoolean(properties, "tooStrictGreen", tooStrictGreen);
-        putBoolean(properties, "ammoAdvice", ammoAdvice);
         putBoolean(properties, "postGameStats", postGameStats);
         putBoolean(properties, "ecoHints", ecoHints);
         putBoolean(properties, "pcRoundInfo", pcRoundInfo);
