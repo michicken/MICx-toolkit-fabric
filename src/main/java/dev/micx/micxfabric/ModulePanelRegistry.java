@@ -61,6 +61,12 @@ public final class ModulePanelRegistry {
         real("golem_marker", "GolemMarker", "铁傀儡标记", GROUP_INFO,
                 "铁傀儡 5 个固定出生点贴地灰 X，穿墙可见。",
                 GolemMarkerModule.instance(), null);
+        real("view_hold", "ViewHold", "快捷视角", GROUP_MISC,
+                "按住绑定键切到背后/正面视角，松开恢复第一人称（需先绑定按键）。",
+                ViewHoldModule.instance(), null);
+        real("magnet", "Magnet 吸附", "吸附", GROUP_COMBAT,
+                "按住右键时准心轻微吸向目标爆头点，手瞄快甩自动退场；仅 Zombies 生效。",
+                MagnetModule.instance(), null);
         real("fullbright", "Fullbright", "全亮", GROUP_CORE,
                 "强制 gamma 全亮，Forge Fullbright 的 Fabric 等价实现；关闭时还原。",
                 FullbrightModule.instance(), null);
@@ -170,6 +176,8 @@ public final class ModulePanelRegistry {
                     module::primaryBinding, code -> ToggleSprintModule.instance().setKeyCode(code));
             case "right_clicker" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
                     module::primaryBinding, code -> RightClickerModule.instance().setKeyCode(code));
+            case "view_hold" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
+                    module::primaryBinding, code -> ViewHoldModule.instance().setKeyCode(code));
             case "skill_cast" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
                     module::primaryBinding, code -> SkillCastModule.instance().setKeyCode(code));
             case "keyboard_clicker" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",

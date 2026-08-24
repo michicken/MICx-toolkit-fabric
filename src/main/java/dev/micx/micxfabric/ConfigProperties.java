@@ -86,6 +86,14 @@ public final class ConfigProperties {
         }
     }
 
+    public static double real(Properties properties, String key, double fallback, double min, double max) {
+        try {
+            return Math.max(min, Math.min(max, Double.parseDouble(value(properties, key).trim())));
+        } catch (Exception ignored) {
+            return Math.max(min, Math.min(max, fallback));
+        }
+    }
+
     private static String value(Properties properties, String key) {
         String value = properties.getProperty(key);
         if (value == null) {

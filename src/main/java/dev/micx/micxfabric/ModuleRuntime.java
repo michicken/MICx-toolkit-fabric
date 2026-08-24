@@ -45,6 +45,8 @@ public final class ModuleRuntime {
         register(SpawnMarkerModule.instance());
         register(SlimeForecastModule.instance());
         register(GolemMarkerModule.instance());
+        register(ViewHoldModule.instance());
+        register(MagnetModule.instance());
         register(RoundTimerModule.instance());
         register(EcoRateModule.instance());
         register(RightClickerModule.instance());
