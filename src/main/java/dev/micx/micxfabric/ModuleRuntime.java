@@ -48,6 +48,7 @@ public final class ModuleRuntime {
         register(ViewHoldModule.instance());
         register(MagnetModule.instance());
         register(AntiReshiftModule.instance());
+        register(AntiAxeModule.instance());
         register(RoundTimerModule.instance());
         register(EcoRateModule.instance());
         register(RightClickerModule.instance());

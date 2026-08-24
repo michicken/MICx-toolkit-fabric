@@ -172,8 +172,19 @@ public final class ModulePanelRegistry {
         real("zombies_assist", "ZombiesAssist", "僵尸助手", GROUP_CORE,
                 "波次、僵尸剩余、Power-up、警报、自动行为和 Alien Arcadium 状态 HUD。",
                 ZombiesAssistModule.instance(), ZombiesAssistConfigScreen::new);
-        unmigrated("anti_axe", "AntiAXE", "防误领 Puncher", GROUP_CORE,
-                "抽到 The Puncher 时锁定 Lucky Chest 领取区右键");
+        real("anti_axe", "AntiAXE", "防误领 Puncher", GROUP_CORE,
+                "抽到 The Puncher 时锁定 Lucky Chest 领取区右键 10.5 秒，防误领；领到其他物品自动解除。",
+                AntiAxeModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        AntiAxeModule.instance(), "AntiAXE", "Puncher 领取保护",
+                        List.of(
+                                SimpleModuleScreen.Row.integer("HUD Offset X",
+                                        AntiAxeModule.instance()::getHudDx,
+                                        AntiAxeModule.instance()::setHudDx, -300, 300,
+                                        "中央提示水平偏移。"),
+                                SimpleModuleScreen.Row.integer("HUD Offset Y",
+                                        AntiAxeModule.instance()::getHudDy,
+                                        AntiAxeModule.instance()::setHudDy, -300, 300,
+                                        "中央提示垂直偏移。"))));
 
         real("aim_lead", "AimLead", "瞄准提前量", GROUP_COMBAT,
                 "按服务端 movement packet 轨迹预判目标位置，标出开火提前点。",
@@ -224,10 +235,10 @@ public final class ModulePanelRegistry {
                 "绑定快捷键立即发送预设消息到聊天", AutoTextModule.instance(), AutoTextConfigScreen::new);
         real("asr", "ASR", "语音输入", GROUP_MISC,
                 "按住 PTT 录音并将识别结果发送到聊天。", AsrModule.instance(), AsrConfigScreen::new);
-        unmigrated("swing_chat", "SwingChat", "SwingChat", GROUP_MISC,
-                "聊天输入与挥动动画辅助");
+        blocked("swing_chat", "SwingChat", "SwingChat", GROUP_MISC,
+                "26.2/GLFW 原生支持系统输入法，Forge 的 Swing 外部输入框（LWJGL2 IME 变通）不再需要。");
         blocked("auto_reshift", "AutoReShift", "自动 Re-Shift", GROUP_MISC,
-                "原 Forge 版本因反作弊封禁风险停用，Fabric 端不会启用。");
+                "原 Forge 版本因反作弊封禁风险停用，Fabric 端不会启用；防误松需求由 anti_reshift（AntiReshift）覆盖。");
         blocked("ac_test_logger", "ACTestLogger", "AC 测试日志", GROUP_MISC,
                 "原 Forge 版本是测试/诊断模块，Fabric 端不会启用。");
 

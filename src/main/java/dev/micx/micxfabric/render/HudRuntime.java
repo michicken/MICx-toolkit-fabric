@@ -1,5 +1,6 @@
 package dev.micx.micxfabric.render;
 
+import dev.micx.micxfabric.AntiAxeModule;
 import dev.micx.micxfabric.AimLeadModule;
 import dev.micx.micxfabric.AsrModule;
 import dev.micx.micxfabric.DpsCounterModule;
@@ -32,5 +33,6 @@ public final class HudRuntime {
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "last-mobs"), LastMobsModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "zombies-assist"), ZombiesAssistModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "toggle-sprint"), ToggleSprintModule.instance()::drawHud);
+        backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "anti-axe"), AntiAxeModule.instance()::drawHud);
     }
 }

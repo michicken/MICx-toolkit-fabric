@@ -6,6 +6,7 @@
   "client": [
     "MixinItemStack",
     "MixinItemInHandRenderer",
+    "MixinMinecraftAntiAxe",
     "MixinMinecraftEscape",
     "MixinMinecraftRightClicker",
     "RightClickDelayAccess",
