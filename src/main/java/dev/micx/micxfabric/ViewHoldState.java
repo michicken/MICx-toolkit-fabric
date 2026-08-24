@@ -17,6 +17,21 @@ public final class ViewHoldState {
         return view == VIEW_BEHIND || view == VIEW_FRONT;
     }
 
+    /** 俯仰镜像是否生效：仅正面视角模式（低头抬头都持续镜像；向下看为正）。 */
+    public static boolean pitchMirrorActive(int targetView) {
+        return targetView == VIEW_FRONT;
+    }
+
+    /**
+     * 渲染帧结束的恢复公式：鼠标视角输入在渲染帧内叠加在镜像值上
+     * （当前 = -saved + d），恢复目标为真实域（saved + d），
+     * 故 恢复值 = 当前值 + 2×保存值（线性补偿，d 任意大均精确）。
+     * 调用方需将结果 clamp 到 ±90。
+     */
+    public static float unmirrorPitch(float currentPitch, float savedPitch) {
+        return currentPitch + 2f * savedPitch;
+    }
+
     private int target;
     private boolean managing;
 

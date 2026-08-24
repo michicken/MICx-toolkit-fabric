@@ -107,8 +107,18 @@ public abstract class MixinClientPacketListener {
         if (!ZombiesAssistModule.instance().enabled()
                 || !ZombiesAssistModule.instance().config().noRotate
                 || client.player == null) return;
-        micx$localYaw = client.player.getYRot();
-        micx$localPitch = client.player.getXRot();
+        // Forge v3.1 同款防噪声：幅度 ≤15° 的小校正不值得恢复，也避免传送微调反复拉视角
+        float curYaw = client.player.getYRot();
+        float curPitch = client.player.getXRot();
+        boolean yawRel = packet.relatives().contains(net.minecraft.world.entity.Relative.Y_ROT);
+        boolean pitchRel = packet.relatives().contains(net.minecraft.world.entity.Relative.X_ROT);
+        float tgtYaw = yawRel ? curYaw + packet.change().yRot() : packet.change().yRot();
+        float tgtPitch = pitchRel ? curPitch + packet.change().xRot() : packet.change().xRot();
+        float dy = Math.abs(net.minecraft.util.Mth.wrapDegrees(tgtYaw - curYaw));
+        float dp = Math.abs(tgtPitch - curPitch);
+        if (dy <= 15.0f && dp <= 15.0f) return;
+        micx$localYaw = curYaw;
+        micx$localPitch = curPitch;
         micx$restoreRotation = true;
     }
 

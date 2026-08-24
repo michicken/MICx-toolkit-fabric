@@ -11,8 +11,9 @@ import java.util.Properties;
  * ViewHold（Forge 移植）：按住绑定键立即切到目标视角（背后/正面），松开恢复第一人称。
  * 玩家自己按 F5 切的第三人称不干预（ViewHoldState managing 门控）。
  *
- * <p>与 Forge 版差异：Pitch Mirror（正面视角俯仰镜像）依赖渲染帧内取反/恢复，
- * 26.2 Fabric 无对应渲染帧事件，暂不移植——仅按住切视角。
+ * <p>Pitch Mirror（俯仰镜像，仅正面视角）：26.2 无 RenderTickEvent，
+ * 渲染帧包裹改用 GameRenderer.renderLevel HEAD/RETURN Mixin——HEAD 取反 pitch
+ * （相机与实体模型同帧生效），RETURN 线性补偿恢复 + clamp ±90（Grim 安全）。
  */
 public final class ViewHoldModule implements Module {
     private static final ViewHoldModule INSTANCE = new ViewHoldModule();
@@ -21,6 +22,12 @@ public final class ViewHoldModule implements Module {
     private InputBinding binding;
     private boolean enabled;
     private boolean configLoaded;
+    /** Pitch Mirror 开关（正面视角时把渲染帧内 pitch 取反）。 */
+    private boolean pitchMirror = true;
+    /* ---- 渲染帧镜像状态 ---- */
+    private boolean mirrorActive;
+    private float mirrorSavedPitch;
+    private float mirrorSavedPrevPitch;
 
     private ViewHoldModule() {
     }
@@ -74,6 +81,46 @@ public final class ViewHoldModule implements Module {
         saveConfig();
     }
 
+    /** Pitch Mirror 开关（配置面板调用）。 */
+    public boolean isPitchMirror() {
+        loadConfig();
+        return pitchMirror;
+    }
+
+    public void setPitchMirror(boolean v) {
+        pitchMirror = v;
+        if (!v) renderLevelEnd();
+        saveConfig();
+    }
+
+    /* ---- Pitch Mirror 渲染帧包裹（MixinGameRendererViewHold 调用） ---- */
+
+    /** renderLevel HEAD：正面视角管理中 → 取反 pitch（含插值旧值防头部抖动）。 */
+    public void renderLevelStart() {
+        if (!enabled || !pitchMirror) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null) return;
+        if (!state.isManaging() || !ViewHoldState.pitchMirrorActive(state.target())) return;
+        mirrorSavedPitch = mc.player.getXRot();
+        mirrorSavedPrevPitch = mc.player.xRotO;
+        mc.player.setXRot(-mirrorSavedPitch);
+        mc.player.xRotO = -mirrorSavedPrevPitch;
+        mirrorActive = true;
+    }
+
+    /** renderLevel RETURN：线性补偿恢复（保留帧内鼠标增量），clamp ±90。 */
+    public void renderLevelEnd() {
+        if (!mirrorActive) return;
+        mirrorActive = false;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null) return;
+        float restored = net.minecraft.util.Mth.clamp(
+                ViewHoldState.unmirrorPitch(mc.player.getXRot(), mirrorSavedPitch), -90.0f, 90.0f);
+        mc.player.setXRot(restored);
+        mc.player.xRotO = net.minecraft.util.Mth.clamp(
+                ViewHoldState.unmirrorPitch(mc.player.xRotO, mirrorSavedPrevPitch), -90.0f, 90.0f);
+    }
+
     @Override public void tick(Minecraft client) {
         if (!enabled || client == null || client.getWindow() == null) return;
         loadConfig();
@@ -120,6 +167,7 @@ public final class ViewHoldModule implements Module {
         Properties p = ConfigProperties.load(cur, leg);
         int target = ConfigProperties.integer(p, "targetView", ViewHoldState.VIEW_BEHIND, 1, 2);
         state.setTarget(target);
+        pitchMirror = ConfigProperties.bool(p, "pitchMirror", true);
         int code = ConfigProperties.integer(p, "toggleKeyCode", 0, -108, org.lwjgl.glfw.GLFW.GLFW_KEY_LAST);
         binding = new InputBinding(code);
     }
@@ -127,6 +175,7 @@ public final class ViewHoldModule implements Module {
     private void saveConfig() {
         Properties p = new Properties();
         p.setProperty("targetView", Integer.toString(state.target()));
+        p.setProperty("pitchMirror", Boolean.toString(pitchMirror));
         p.setProperty("toggleKeyCode", Integer.toString(binding == null ? 0 : binding.code()));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("view-hold.properties"), p, "MICx ViewHold");

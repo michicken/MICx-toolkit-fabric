@@ -18,9 +18,8 @@ import java.util.Properties;
  *
  * <p>与 Forge 版差异：26.2 Fabric 无 RenderTickEvent（渲染帧开始事件），
  * 牵引修正改在 END_CLIENT_TICK 应用（约 20Hz；鼠标位移仍由原版每帧照常叠加，
- * 玩家控制权 100% 保留，只是修正粒度从每帧降为每 tick）。减速带 slowMode 保留
- * 角度判定路径（灵敏度在 tick 末设置、跨帧持续生效）；hitbox 弦深渐变路径暂缓。
- * AimLead 幽灵框 Fabric 端暂无公开预测点接口，瞄准点用真身眼睛位置降级。
+ * 玩家控制权 100% 保留，只是修正粒度从每帧降为每 tick）。减速带 slowMode 完整移植：
+ * hitbox 弦深渐变（真身 AABB + AimLead 幽灵框重测）+ 快甩脱困。
  */
 public final class MagnetModule implements Module {
     private static final MagnetModule INSTANCE = new MagnetModule();
@@ -43,6 +42,10 @@ public final class MagnetModule implements Module {
     private double pullStrength = 0.15;
     private double headshotStopDeg = 1.5;
     private double slowFactor = 0.5;
+    /** 减速带模式：开=靠近目标时降低灵敏度不主动拉；关=叠加牵引（与 Forge pull/slow 互斥同构）。 */
+    private boolean slowMode = false;
+    /** 减速带触发：仅准心射线命中怪物 hitbox 才减速（弦深渐变）；关=按半径角距满减速。 */
+    private boolean hitboxOnly = true;
     private boolean includeSlime = false;
     private boolean includeGolem = false;
     private boolean includeGiant = true;
@@ -80,6 +83,10 @@ public final class MagnetModule implements Module {
     public void setPullStrength(double v) { pullStrength = Math.max(0.02, Math.min(0.6, v)); saveConfig(); }
     public double getSlowFactor() { loadConfig(); return slowFactor; }
     public void setSlowFactor(double v) { slowFactor = Math.max(0.1, Math.min(0.95, v)); saveConfig(); }
+    public boolean isSlowMode() { loadConfig(); return slowMode; }
+    public void setSlowMode(boolean v) { slowMode = v; saveConfig(); }
+    public boolean isHitboxOnly() { loadConfig(); return hitboxOnly; }
+    public void setHitboxOnly(boolean v) { hitboxOnly = v; saveConfig(); }
 
     @Override public void tick(Minecraft mc) {
         if (!enabled || mc == null || mc.player == null || mc.level == null) {
@@ -103,6 +110,26 @@ public final class MagnetModule implements Module {
         if (!firstFrame) {
             mouseSpeed = (Math.abs(mc.player.getYRot() - lastYawApplied)
                     + Math.abs(mc.player.getXRot() - lastPitchApplied)) / Math.max(dtSec, 0.001);
+        }
+
+        // ---- 减速带：不拉准心，只降灵敏度；快甩脱困（≥120°/s 减速全解） ----
+        if (slowMode) {
+            double slowApplied = MagnetRules.slowEscapeFactor(slowFactor, mouseSpeed,
+                    MOUSE_SLOW_DEG_S, MOUSE_FAST_DEG_S);
+            if (hitboxOnly) {
+                HitboxHit hit = pickHitboxTarget(mc);
+                if (hit != null) applySlow(mc, hit.depth(), slowApplied);
+                else restoreSensitivity();
+            } else {
+                LivingEntity t = pickTarget(mc);
+                if (t != null && slowAngleWithin(mc, t)) {
+                    applySlow(mc, STICKY_FULL_DEPTH, slowApplied);   // 旧行为：半径角距内满减速
+                } else {
+                    restoreSensitivity();
+                }
+            }
+            syncAppliedView(mc);
+            return;
         }
 
         LivingEntity target = pickTarget(mc);
@@ -218,6 +245,93 @@ public final class MagnetModule implements Module {
         lastPitchApplied = mc.player.getXRot();
     }
 
+    /* ---- 减速带灵敏度 ---- */
+
+    /** hitbox 命中结果：目标 + 弦深（射线穿过体积的深度，格）。 */
+    private record HitboxHit(LivingEntity target, double depth) {
+    }
+
+    /**
+     * 准心射线命中怪物 hitbox：真身 AABB 粗筛后用 AimLead 预测框（幽灵框）重测，
+     * 命中且更近则覆盖（与 Forge 同构）；无预测时降级为仅真身 AABB。
+     */
+    private HitboxHit pickHitboxTarget(Minecraft mc) {
+        Vec3 eye = mc.player.getEyePosition();
+        Vec3 look = mc.player.getViewVector(1.0f);
+        double maxDistSq = MAX_DIST * MAX_DIST;
+        LivingEntity best = null;
+        double bestT = Double.MAX_VALUE;
+        double bestDepth = 0.0;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof LivingEntity living)) continue;
+            if (living == mc.player || !living.isAlive() || living.getId() < 0) continue;
+            if (living instanceof Player) continue;
+            String typePath = BuiltInRegistries.ENTITY_TYPE.getKey(living.getType()).getPath();
+            boolean isSlime = "slime".equals(typePath) || "magma_cube".equals(typePath);
+            boolean isGolem = "iron_golem".equals(typePath);
+            boolean isGiant = "giant".equals(typePath);
+            if (!(living instanceof Monster) && !isSlime && !isGolem) continue;
+            if (!MagnetRules.acceptsEntityType(isSlime, isGolem, isGiant,
+                    includeSlime, includeGolem, includeGiant)) continue;
+            if (living.distanceToSqr(mc.player) > maxDistSq) continue;
+            net.minecraft.world.phys.AABB box = living.getBoundingBox();
+            double t = MagnetRules.rayIntersectsAabb(eye.x, eye.y, eye.z,
+                    look.x, look.y, look.z,
+                    box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+            if (t >= 0.0 && t < bestT) {
+                bestT = t;
+                best = living;
+                bestDepth = MagnetRules.rayChordDepth(eye.x, eye.y, eye.z,
+                        look.x, look.y, look.z,
+                        box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+            }
+
+            // 幽灵框 AABB 优先：有预测 → 用预测框重测，命中且更近则覆盖
+            net.minecraft.world.phys.AABB ghostBox = AimLeadModule.instance().leadBoxFor(living);
+            if (ghostBox != null) {
+                double gt = MagnetRules.rayIntersectsAabb(eye.x, eye.y, eye.z,
+                        look.x, look.y, look.z,
+                        ghostBox.minX, ghostBox.minY, ghostBox.minZ,
+                        ghostBox.maxX, ghostBox.maxY, ghostBox.maxZ);
+                if (gt >= 0.0 && gt < bestT) {
+                    bestT = gt;
+                    best = living;
+                    bestDepth = MagnetRules.rayChordDepth(eye.x, eye.y, eye.z,
+                            look.x, look.y, look.z,
+                            ghostBox.minX, ghostBox.minY, ghostBox.minZ,
+                            ghostBox.maxX, ghostBox.maxY, ghostBox.maxZ);
+                }
+            }
+        }
+        return best == null ? null : new HitboxHit(best, bestDepth);
+    }
+
+    /** 半径角距减速触发：瞄准点与准心的总角距在吸附半径内。 */
+    private boolean slowAngleWithin(Minecraft mc, LivingEntity target) {
+        Vec3 eye = mc.player.getEyePosition();
+        Vec3 aim = target.getEyePosition();
+        double dx = aim.x - eye.x;
+        double dy = aim.y - eye.y;
+        double dz = aim.z - eye.z;
+        double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1.0E-4) return false;
+        double total = MagnetRules.totalAngle(
+                MagnetRules.yawToTarget(dx / len, dz / len, mc.player.getYRot()),
+                MagnetRules.pitchToTarget(dy / len, mc.player.getXRot()));
+        return MagnetRules.shouldSlow(total, radiusDeg);
+    }
+
+    private void applySlow(Minecraft mc, double chordDepth, double slowApplied) {
+        if (!sensModified) {
+            sensOrig = mc.options.sensitivity().get().floatValue();
+            sensModified = true;
+        }
+        // 粘性渐变：弦深越深（对准中心）减速越强，擦边几乎不减速（跟枪不卡）；
+        // slowApplied 已含鼠标速度逃逸（快甩 → 接近 1.0，不减速）
+        double sticky = MagnetRules.stickyFactor(chordDepth, STICKY_FULL_DEPTH);
+        mc.options.sensitivity().set((double) MagnetRules.slowedSensitivity(sensOrig, slowApplied, sticky));
+    }
+
     private void restoreSensitivity() {
         if (!sensModified) return;
         Minecraft mc = Minecraft.getInstance();
@@ -245,6 +359,8 @@ public final class MagnetModule implements Module {
         pullStrength = clamp(ConfigProperties.real(p, "pullStrength", 0.15, 0.02, 0.6), 0.02, 0.6);
         headshotStopDeg = clamp(ConfigProperties.real(p, "headshotStopDeg", 1.5, 0.5, 10.0), 0.5, 10.0);
         slowFactor = clamp(ConfigProperties.real(p, "slowFactor", 0.5, 0.1, 0.95), 0.1, 0.95);
+        slowMode = ConfigProperties.bool(p, "slowMode", false);
+        hitboxOnly = ConfigProperties.bool(p, "hitboxOnly", true);
         includeSlime = ConfigProperties.bool(p, "includeSlime", false);
         includeGolem = ConfigProperties.bool(p, "includeGolem", false);
         includeGiant = ConfigProperties.bool(p, "includeGiant", true);
@@ -257,6 +373,8 @@ public final class MagnetModule implements Module {
         p.setProperty("pullStrength", Double.toString(pullStrength));
         p.setProperty("headshotStopDeg", Double.toString(headshotStopDeg));
         p.setProperty("slowFactor", Double.toString(slowFactor));
+        p.setProperty("slowMode", Boolean.toString(slowMode));
+        p.setProperty("hitboxOnly", Boolean.toString(hitboxOnly));
         p.setProperty("includeSlime", Boolean.toString(includeSlime));
         p.setProperty("includeGolem", Boolean.toString(includeGolem));
         p.setProperty("includeGiant", Boolean.toString(includeGiant));

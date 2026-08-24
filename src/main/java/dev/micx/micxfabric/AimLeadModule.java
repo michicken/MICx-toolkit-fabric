@@ -283,6 +283,17 @@ public final class AimLeadModule implements Module {
         return result.subList(0, Math.min(config.maxGhosts, result.size()));
     }
 
+    /** Magnet 减速带幽灵框重建用：该实体的预测 AABB；未启用/无预测/不在候选时返回 null。 */
+    public AABB leadBoxFor(LivingEntity entity) {
+        if (!enabled || entity == null) return null;
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.level == null) return null;
+        for (GhostTarget target : targets(client)) {
+            if (target.entity() == entity) return target.box();
+        }
+        return null;
+    }
+
     private GhostTarget selectedTarget(Minecraft client) {
         List<GhostTarget> targets = targets(client);
         if (targets.isEmpty()) return null;

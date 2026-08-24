@@ -20,7 +20,8 @@
     "RenderPipelinesAccess",
     "MixinChatComponent",
     "MixinClientPacketListener",
-    "MixinClientEntityPackets"
+    "MixinClientEntityPackets",
+    "MixinGameRendererViewHold"
   ],
   "injectors": {
     "defaultRequire": 1
