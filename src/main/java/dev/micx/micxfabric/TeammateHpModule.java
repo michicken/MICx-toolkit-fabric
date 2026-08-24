@@ -250,6 +250,7 @@ public final class TeammateHpModule implements Module {
         knownMax.clear();
         lastTabNamesCache = null;
         localSkill.reset();
+        ReviveHoloTracker.get().clear();
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {
@@ -294,6 +295,9 @@ public final class TeammateHpModule implements Module {
         float scaleY = HudLayoutRegistry.scaleY("teammate_hp", uiScale);
         int x = Math.round(screenX / scaleX);
         int y = Math.round(screenY / scaleY);
+
+        // B 模式：每帧驱动 holo 扫描（内部 100ms 节流），DOWN 卡用服务端救援真值
+        ReviveHoloTracker.get().tick(client, tracker);
 
         // 绝对血量刻度基准 = 全队最大血池（1 HP = 相同像素）
         float scaleMax = 20f;
@@ -358,6 +362,32 @@ public final class TeammateHpModule implements Module {
         return names;
     }
 
+    /** 倒地状态文案：REVIVING 服务端真值 / REVIVE 本地出血估算 / DOWN 无数据。 */
+    private static String downStatusText(ReviveHoloTracker.Info holo, double downLeftSec) {
+        if (holo != null && holo.state() == ReviveHoloTracker.State.REVIVING) {
+            return String.format(java.util.Locale.ROOT, "REVIVING %.1fs", holo.seconds());
+        }
+        if (holo != null && holo.state() == ReviveHoloTracker.State.WAITING) {
+            return String.format(java.util.Locale.ROOT, "REVIVE %.1fs", downLeftSec);
+        }
+        return String.format(java.util.Locale.ROOT, "DOWN %.1fs", downLeftSec);
+    }
+
+    /** 倒地状态颜色：REVIVING 水青 / WAITING 绿 / 其余紫。 */
+    private static int downStatusColor(ReviveHoloTracker.Info holo) {
+        if (holo != null && holo.state() == ReviveHoloTracker.State.REVIVING) return 0xFF55DDFF;
+        if (holo != null && holo.state() == ReviveHoloTracker.State.WAITING) return 0xFF55DD55;
+        return 0xFFB05CFF;
+    }
+
+    /** 倒地底槽比例：REVIVING = 服务端救援进度；其余 = 本地出血估算。 */
+    private static float downBarRatio(ReviveHoloTracker.Info holo, long downLeftMs) {
+        if (holo != null && holo.state() == ReviveHoloTracker.State.REVIVING) {
+            return ReviveHoloRules.reviveProgress(holo.totalSec(), holo.seconds());
+        }
+        return Math.max(0, downLeftMs) / (float) DOWN_BLEEDOUT_MS;
+    }
+
     /** 投影阴影 + 左色条 + 名字的公共片段。返回 statusRightX（技能列预留后的右边界）。 */
     private int drawCardBase(GuiGraphicsExtractor graphics, Minecraft client,
                              String name, int x, int y, int accentColor, int nameColor) {
@@ -395,13 +425,18 @@ public final class TeammateHpModule implements Module {
                                String name, int x, int y, long now) {
         int right = drawCardBase(graphics, client, name, x, y, 0xFFB05CFF, 0xFFD9A8FF);
         long downLeftMs = downLeftMs(tracker, name, now);
-        String text = String.format(java.util.Locale.ROOT, "DOWN %.1fs", downLeftMs / 1000.0);
-        graphics.text(client.font, text, right - client.font.width(text), y + 5, 0xFFB05CFF, true);
+        ReviveHoloTracker.Info holo = ReviveHoloTracker.get().get(name);
+        String text = downStatusText(holo, downLeftMs / 1000.0);
+        graphics.text(client.font, text, right - client.font.width(text), y + 5,
+                downStatusColor(holo), true);
         int barY = y + CARD_HEIGHT - BAR_H - 5;
         int contentX = contentLeft(x);
         graphics.fill(contentX, barY, right, barY + BAR_H, 0x99000000);
-        int filled = (int) ((right - contentX) * (downLeftMs / (float) DOWN_BLEEDOUT_MS));
-        if (filled > 0) graphics.fill(contentX, barY, contentX + filled, barY + BAR_H, 0xFFB05CFF);
+        int filled = (int) ((right - contentX) * downBarRatio(holo, downLeftMs));
+        if (filled > 0) {
+            graphics.fill(contentX, barY, contentX + filled, barY + BAR_H,
+                    holo.state() == ReviveHoloTracker.State.REVIVING ? 0xFF55DDFF : 0xFFB05CFF);
+        }
     }
 
     private static final long DOWN_BLEEDOUT_MS = 25_000L;
@@ -511,9 +546,10 @@ public final class TeammateHpModule implements Module {
         long downLeftMs = isDown ? downLeftMs(tracker, name, now) : 0L;
         String hpText;
         int hpColor;
+        ReviveHoloTracker.Info holo = isDown ? ReviveHoloTracker.get().get(name) : null;
         if (isDown) {
-            hpText = String.format(java.util.Locale.ROOT, "DOWN %.1fs", downLeftMs / 1000.0);
-            hpColor = 0xFFB05CFF;
+            hpText = downStatusText(holo, downLeftMs / 1000.0);
+            hpColor = downStatusColor(holo);
         } else {
             hpText = (int) totalDisplay + "/" + (int) max;
             if (abs > 0) {
@@ -558,10 +594,12 @@ public final class TeammateHpModule implements Module {
         int troughW = isDown ? Math.max(10, statusRightX - contentX)
                 : Math.max(10, (int) (contentW * (max / scaleMax)));
         graphics.fill(contentX, barY, contentX + troughW, barY + BAR_H, 0x99000000);
-        int filled = (int) (troughW * barRatio);
+        float effectiveBarRatio = isDown ? downBarRatio(holo, downLeftMs) : barRatio;
+        int filled = (int) (troughW * effectiveBarRatio);
         if (filled > 0) {
             graphics.fill(contentX, barY, contentX + filled, barY + BAR_H,
-                    isDown ? 0xFFB05CFF : hpBarColor(hp));
+                    isDown ? (holo != null && holo.state() == ReviveHoloTracker.State.REVIVING
+                            ? 0xFF55DDFF : 0xFFB05CFF) : hpBarColor(hp));
             graphics.fill(contentX, barY, contentX + filled, barY + 1, 0x40FFFFFF);
             if (!isDown && hp < 6f) {
                 graphics.fill(Math.max(contentX, contentX + filled - 2), barY, contentX + filled, barY + BAR_H, 0xFFFF7777);
