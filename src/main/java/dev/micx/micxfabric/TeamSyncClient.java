@@ -215,13 +215,16 @@ public final class TeamSyncClient implements AutoCloseable {
                              float hp, float maxHp, float absorption, String status,
                              int targetId, String targetType, double tx, double ty, double tz,
                              float targetHp, String targetName, int ping, long sequence) {
-        return sendState(name, x, y, z, yaw, pitch, hp, maxHp, absorption, status, targetId, targetType, tx, ty, tz, targetHp, targetName, ping, sequence, null, null, null, null, null, null);
+        return sendState(name, x, y, z, yaw, pitch, hp, maxHp, absorption, status, targetId, targetType, tx, ty, tz, targetHp, targetName, ping, sequence,
+                null, false, 0L, 0L, null, null, null, null, null, null);
     }
 
     public boolean sendState(String name, double x, double y, double z, float yaw, float pitch,
                              float hp, float maxHp, float absorption, String status,
                              int targetId, String targetType, double tx, double ty, double tz,
                              float targetHp, String targetName, int ping, long sequence,
+                             TeamSkillTracker.Snapshot skill, boolean includeLr,
+                             long lrReleasedAtMs, long lrReadyAtMs,
                              String h7Item, String h7Name, String h8Item, String h8Name, String h9Item, String h9Name) {
         JsonObject json = new JsonObject();
         json.addProperty("type", "state");
@@ -248,6 +251,23 @@ public final class TeamSyncClient implements AutoCloseable {
             target.addProperty("hp", finite(targetHp));
             target.addProperty("name", safe(targetName));
             json.add("target", target);
+        }
+        // 技能通道：协议与 Forge 客户端一致（slot/state/name/remaining_s；UNKNOWN 表示无技能）
+        if (skill != null) {
+            String skillState = skill.known ? skill.state.name() : TeamSkillTracker.State.UNKNOWN.name();
+            JsonObject payload = new JsonObject();
+            payload.addProperty("slot", TeamSkillTracker.SLOT_INDEX);
+            payload.addProperty("state", skillState);
+            if (skill.skillName != null) payload.addProperty("name", skill.skillName);
+            payload.addProperty("remaining_s", skill.remainingSeconds);
+            json.add("skill", payload);
+        }
+        // LR 释放通道：ready_at>0=冷却中（精确截止）；==0=已就绪（显式清队友侧残留）
+        if (includeLr) {
+            JsonObject lr = new JsonObject();
+            lr.addProperty("released", lrReleasedAtMs);
+            lr.addProperty("ready_at", lrReadyAtMs);
+            json.add("lr", lr);
         }
         if (h7Item != null || h7Name != null || h8Item != null || h8Name != null || h9Item != null || h9Name != null) {
             JsonObject hotbar = new JsonObject();
@@ -284,6 +304,19 @@ public final class TeamSyncClient implements AutoCloseable {
         json.addProperty("z", finite(z));
         json.addProperty("label", safe(label));
         return send(gson.toJson(json));
+    }
+
+    /**
+     * 上报自己释放 LR 的即时事件（命中信息随附）。{@code struckCount>=0} = 命中 N 个敌人；
+     * {@code struckName != null} = 命中单个具名怪物。队友收到后聊天栏提示 + TeammateHP 徽章。
+     */
+    public void sendLrRelease(String name, int struckCount, String struckName) {
+        JsonObject json = new JsonObject();
+        json.addProperty("type", "lr_release");
+        json.addProperty("name", safe(name));
+        if (struckCount >= 0) json.addProperty("struck_count", struckCount);
+        if (struckName != null) json.addProperty("struck_name", struckName);
+        send(gson.toJson(json));
     }
 
     public boolean sendLeave() { return send("{\"type\":\"leave\"}"); }

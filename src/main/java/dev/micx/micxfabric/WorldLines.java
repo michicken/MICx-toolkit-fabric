@@ -50,7 +50,10 @@ public final class WorldLines {
 
     private static void vertex(VertexConsumer consumer, PoseStack.Pose pose,
                                double x, double y, double z, int argb) {
+        // LINES 顶点格式是 POSITION_COLOR_NORMAL + 线宽，缺 normal/width 会直接崩
+        // （"Missing elements in vertex"），对齐 AimLeadModule 的补全方式。
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
-                .setColor(argb >> 16 & 255, argb >> 8 & 255, argb & 255, argb >>> 24);
+                .setColor(argb >> 16 & 255, argb >> 8 & 255, argb & 255, argb >>> 24)
+                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
     }
 }
