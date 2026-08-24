@@ -23,6 +23,8 @@ public final class TeamSyncConfig {
     public boolean showPing = true;
     public int hudRightOffset = 150;
     public int hudY = 8;
+    public float hudScaleX = 1.0f;
+    public float hudScaleY = 1.0f;
     public int toggleKeyCode = GLFW.GLFW_KEY_J;
 
     private boolean loaded;
@@ -46,6 +48,8 @@ public final class TeamSyncConfig {
         showPing = ConfigProperties.bool(properties, "showPing", true);
         hudRightOffset = ConfigProperties.integer(properties, "hudRightOffset", 150, 20, 9_999);
         hudY = ConfigProperties.integer(properties, "hudY", 8, 0, 9_999);
+        hudScaleX = scale(ConfigProperties.string(properties, "hudScaleX", "1.0"));
+        hudScaleY = scale(ConfigProperties.string(properties, "hudScaleY", "1.0"));
         toggleKeyCode = ConfigProperties.integer(properties, "toggleKeyCode", GLFW.GLFW_KEY_J, -108, GLFW.GLFW_KEY_LAST);
     }
 
@@ -62,6 +66,8 @@ public final class TeamSyncConfig {
         properties.setProperty("showPing", Boolean.toString(showPing));
         properties.setProperty("hudRightOffset", Integer.toString(clamp(hudRightOffset, 20, 9_999)));
         properties.setProperty("hudY", Integer.toString(clamp(hudY, 0, 9_999)));
+        properties.setProperty("hudScaleX", Float.toString(HudLayoutMath.clampScale(hudScaleX)));
+        properties.setProperty("hudScaleY", Float.toString(HudLayoutMath.clampScale(hudScaleY)));
         properties.setProperty("toggleKeyCode", Integer.toString(clamp(toggleKeyCode, -108, GLFW.GLFW_KEY_LAST)));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("teamsync.properties"), properties,
@@ -88,5 +94,13 @@ public final class TeamSyncConfig {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static float scale(String value) {
+        try {
+            return HudLayoutMath.clampScale(Float.parseFloat(value));
+        } catch (RuntimeException ignored) {
+            return 1.0f;
+        }
     }
 }

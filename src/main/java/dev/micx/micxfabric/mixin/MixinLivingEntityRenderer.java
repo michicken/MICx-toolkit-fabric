@@ -1,6 +1,7 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.ChamsModule;
+import dev.micx.micxfabric.ZombieFadeModule;
 import dev.micx.micxfabric.ChamsRenderTypes;
 import dev.micx.micxfabric.PlayerOutlineEspModule;
 import dev.micx.micxfabric.PlayerVisibilityModule;
@@ -80,6 +81,14 @@ public abstract class MixinLivingEntityRenderer {
         if (player == null) return;
         int tint = PlayerVisibilityModule.modelTint(player, Minecraft.getInstance());
         if (tint != -1) cir.setReturnValue(tint);
+    }
+
+    @Inject(method = "getModelTint", at = @At("RETURN"), cancellable = true)
+    private void micx$applyZombieFade(LivingEntityRenderState state, CallbackInfoReturnable<Integer> cir) {
+        LivingEntity entity = state.getData(MICX_ENTITY);
+        if (entity == null || !ZombieFadeModule.instance().shouldFade(entity)) return;
+        int orig = cir.getReturnValue();
+        cir.setReturnValue(ZombieFadeModule.fadedTint(orig));
     }
 
     /** Replaces only the vanilla body submit; layers keep their own textures and render types. */

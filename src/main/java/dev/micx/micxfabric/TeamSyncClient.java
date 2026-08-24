@@ -215,6 +215,14 @@ public final class TeamSyncClient implements AutoCloseable {
                              float hp, float maxHp, float absorption, String status,
                              int targetId, String targetType, double tx, double ty, double tz,
                              float targetHp, String targetName, int ping, long sequence) {
+        return sendState(name, x, y, z, yaw, pitch, hp, maxHp, absorption, status, targetId, targetType, tx, ty, tz, targetHp, targetName, ping, sequence, null, null, null, null, null, null);
+    }
+
+    public boolean sendState(String name, double x, double y, double z, float yaw, float pitch,
+                             float hp, float maxHp, float absorption, String status,
+                             int targetId, String targetType, double tx, double ty, double tz,
+                             float targetHp, String targetName, int ping, long sequence,
+                             String h7Item, String h7Name, String h8Item, String h8Name, String h9Item, String h9Name) {
         JsonObject json = new JsonObject();
         json.addProperty("type", "state");
         json.addProperty("name", safe(name));
@@ -240,6 +248,28 @@ public final class TeamSyncClient implements AutoCloseable {
             target.addProperty("hp", finite(targetHp));
             target.addProperty("name", safe(targetName));
             json.add("target", target);
+        }
+        if (h7Item != null || h7Name != null || h8Item != null || h8Name != null || h9Item != null || h9Name != null) {
+            JsonObject hotbar = new JsonObject();
+            if (h7Item != null || h7Name != null) {
+                JsonObject slot = new JsonObject();
+                slot.addProperty("item", safe(h7Item));
+                slot.addProperty("name", safe(h7Name));
+                hotbar.add("7", slot);
+            }
+            if (h8Item != null || h8Name != null) {
+                JsonObject slot = new JsonObject();
+                slot.addProperty("item", safe(h8Item));
+                slot.addProperty("name", safe(h8Name));
+                hotbar.add("8", slot);
+            }
+            if (h9Item != null || h9Name != null) {
+                JsonObject slot = new JsonObject();
+                slot.addProperty("item", safe(h9Item));
+                slot.addProperty("name", safe(h9Name));
+                hotbar.add("9", slot);
+            }
+            json.add("hotbar", hotbar);
         }
         json.addProperty("ping", Math.max(0, ping));
         return send(gson.toJson(json));

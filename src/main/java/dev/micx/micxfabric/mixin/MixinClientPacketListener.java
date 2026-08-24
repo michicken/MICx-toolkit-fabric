@@ -1,6 +1,8 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.AimLeadModule;
+import dev.micx.micxfabric.LrIndicatorModule;
+import dev.micx.micxfabric.SlimeForecastModule;
 import dev.micx.micxfabric.ZombiesAssistModule;
 import dev.micx.micxfabric.ZombiesTracker;
 import net.minecraft.client.Minecraft;
@@ -11,6 +13,8 @@ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
@@ -43,14 +47,13 @@ public abstract class MixinClientPacketListener {
         AimLeadModule.recordAbsolute(packet.id(), packet.values().position());
     }
 
-    @Inject(method = "handleTeleportEntity", at = @At("HEAD"))
+    @Inject(method = "handleTeleportEntity", at = @At("RETURN"))
     private void micx$recordTeleport(ClientboundTeleportEntityPacket packet, CallbackInfo callbackInfo) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) return;
         Entity entity = client.level.getEntity(packet.id());
         if (entity != null) {
-            AimLeadModule.recordTeleport(packet.id(), entity.getPositionCodec().getBase(), entity,
-                    packet.change(), packet.relatives());
+            AimLeadModule.recordAbsolute(packet.id(), entity.getPositionCodec().getBase());
         }
     }
 
@@ -79,10 +82,23 @@ public abstract class MixinClientPacketListener {
 
     @Inject(method = "handleSoundEvent", at = @At("RETURN"))
     private void micx$sound(ClientboundSoundPacket packet, CallbackInfo callbackInfo) {
-        if (!ZombiesAssistModule.instance().enabled() || packet.getSound() == null) return;
+        if (packet.getSound() == null) return;
         String soundId = packet.getSound().value().location().toString();
-        ZombiesTracker.instance().onSound(soundId, packet.getPitch(), packet.getX(), packet.getY(), packet.getZ(),
-                System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        if (ZombiesAssistModule.instance().enabled()) ZombiesTracker.instance().onSound(soundId, packet.getPitch(), packet.getX(), packet.getY(), packet.getZ(), now);
+        try { LrIndicatorModule.instance().onSound(soundId, packet.getPitch(), packet.getX(), packet.getY(), packet.getZ(), now); } catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "handleAddEntity", at = @At("RETURN"))
+    private void micx$golemJoin(ClientboundAddEntityPacket packet, CallbackInfo ci) {
+        String id = packet.getType().toString();
+        if (id.contains("iron_golem") || id.contains("giant")) {
+            try { LrIndicatorModule.instance().onGolemJoin(System.currentTimeMillis(), packet.getX(), packet.getY(), packet.getZ()); } catch (Throwable ignored) {}
+        }
+        // 史莱姆/岩浆怪出生：SlimeForecast 的"刷出后转墨绿/隐藏"标记（同波幂等）
+        if (id.contains("slime") || id.contains("magma_cube")) {
+            try { SlimeForecastModule.instance().onSlimeJoined(System.currentTimeMillis()); } catch (Throwable ignored) {}
+        }
     }
 
     @Inject(method = "handleMovePlayer", at = @At("HEAD"))

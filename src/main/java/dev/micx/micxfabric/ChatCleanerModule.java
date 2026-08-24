@@ -56,7 +56,7 @@ public final class ChatCleanerModule implements Module {
 
     private Component modifyGameMessage(Component message, boolean overlay) {
         if (!enabled || overlay || message == null) return message;
-        String text = normalize(message.getString());
+        String text = ChatCleanerRules.canonicalKey(message.getString());
         if (text.isEmpty() || ChatCleanerRules.isSeparator(text)) return message;
         int count = counts.merge(text, 1, Integer::sum);
         if (count < 2) return message;
@@ -75,10 +75,6 @@ public final class ChatCleanerModule implements Module {
     }
 
     public int countFor(String text) {
-        return counts.getOrDefault(normalize(text), 0);
-    }
-
-    private static String normalize(String text) {
-        return text == null ? "" : text.trim();
+        return counts.getOrDefault(ChatCleanerRules.canonicalKey(text), 0);
     }
 }

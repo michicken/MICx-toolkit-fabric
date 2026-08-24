@@ -12,6 +12,8 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     private EditBox intervalBox;
     private boolean listeningToggle;
     private boolean listeningMode;
+    private final int[] modeToggleY = new int[4];
+    private final int[] modeToggleX = new int[4];
 
     public KeyboardClickerConfigScreen(Screen parent) {
         super(parent, "KeyboardClicker", "键盘连点 · 原生按键队列");
@@ -51,7 +53,18 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         intervalBox.setX(contentRight() - 64);
         intervalBox.setY(y);
         y += 30;
-        y = wrapped(graphics, "默认勾选 23 与 234；V 在已勾选模式间循环，` 切换连点开关。范围 40–100 ms。",
+        String[] modeNames = {"23", "234", "24", "34"};
+        boolean[] enabled = {module.isMode23(), module.isMode234(), module.isMode24(), module.isMode34()};
+        for (int i = 0; i < modeNames.length; i++) {
+            modeToggleX[i] = contentRight() - 44;
+            modeToggleY[i] = y;
+            graphics.text(font, "Mode " + modeNames[i], contentLeft(), y + 4, TEXT);
+            drawToggle(graphics, modeToggleX[i], y, 44, 16, enabled[i],
+                    isInside(mouseX, mouseY, modeToggleX[i], y, 44, 16));
+            y += 24;
+        }
+        y += 2;
+        y = wrapped(graphics, "可同时勾选多个组合；V 只在已勾选模式间循环，` 切换连点开关。至少保留 1 项，范围 40–100 ms。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
@@ -85,25 +98,37 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
             return true;
         }
         if (event.button() == 0) {
-            int y = contentTop() + 21;
-            if (isInside(event.x(), event.y(), contentRight() - 44, y, 44, 16)) {
+            int toggleY = contentTop() - scrollOffset() + 21;
+            if (isInside(event.x(), event.y(), contentRight() - 44, toggleY, 44, 16)) {
                 KeyboardClickerModule.instance().setEnabled(!KeyboardClickerModule.instance().enabled());
                 return true;
             }
-            y += 38;
-            if (isInside(event.x(), event.y(), contentRight() - 44, y, 44, 16)) {
+            toggleY += 38;
+            if (isInside(event.x(), event.y(), contentRight() - 44, toggleY, 44, 16)) {
                 KeyboardClickerModule module = KeyboardClickerModule.instance();
                 module.setRightClickTrigger(!module.rightClickTrigger());
                 return true;
             }
-            y += 38 + 14 + 20 + 30 + 14 + 14 + 20;
-            if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
+            for (int i = 0; i < modeToggleY.length; i++) {
+                if (!isInside(event.x(), event.y(), modeToggleX[i], modeToggleY[i] - scrollOffset(), 44, 16)) continue;
+                KeyboardClickerModule module = KeyboardClickerModule.instance();
+                switch (i) {
+                    case 0 -> module.setMode23(!module.isMode23());
+                    case 1 -> module.setMode234(!module.isMode234());
+                    case 2 -> module.setMode24(!module.isMode24());
+                    case 3 -> module.setMode34(!module.isMode34());
+                }
+                return true;
+            }
+            int keyY = contentTop() - scrollOffset() + 21;
+            keyY += 38 + 38 + 14 + 20 + 30 + 4 * 24 + 2 + 14 + 14 + 20;
+            if (isInside(event.x(), event.y(), contentRight() - 156, keyY, 156, 18)) {
                 listeningToggle = true;
                 listeningMode = false;
                 return true;
             }
-            y += 28;
-            if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
+            keyY += 28;
+            if (isInside(event.x(), event.y(), contentRight() - 156, keyY, 156, 18)) {
                 listeningMode = true;
                 listeningToggle = false;
                 return true;

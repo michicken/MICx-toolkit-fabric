@@ -21,6 +21,7 @@ dependencies {
 
     // Fabric API
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "com.google.code.gson:gson:2.14.0"
     implementation "com.neovisionaries:nv-websocket-client:2.14"
     include "com.neovisionaries:nv-websocket-client:2.14"
     testImplementation platform("org.junit:junit-bom:5.13.4")

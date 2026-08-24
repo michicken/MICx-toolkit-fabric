@@ -52,6 +52,8 @@ public final class MicxClientCommands {
             case "kbc", "kbclicker" -> keyboardClicker(source, args);
             case "sc", "skillcast" -> skillCast(source, args);
             case "teamsync", "ts" -> teamSync(source, args);
+            case "sr", "speedrun" -> speedrun(source, args);
+            case "lr" -> lr(source, args);
             case "hs" -> HsDispatchService.instance().dispatch(source, args);
             case "reset" -> reset(source);
             default -> printList(source);
@@ -223,17 +225,31 @@ public final class MicxClientCommands {
             return;
         }
         String sub = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "show";
-        if (sub.equals("show")) reply(source, "RightClicker: " + (module.active() ? "ON" : "OFF") + " CPS=15-19");
+        if (sub.equals("show")) reply(source, "RightClicker: " + (module.active() ? "ON" : "OFF")
+                + " CPS " + module.getMinCps() + "-" + module.getMaxCps());
         else if (sub.equals("toggle")) {
             module.setActive(!module.active());
             reply(source, "RightClicker: " + (module.active() ? "ON" : "OFF"));
-        } else reply(source, "rc [show|toggle]");
+        } else if (sub.equals("cps")) {
+            if (args.length < 4) {
+                reply(source, "usage: /micx rc cps <min> <max> (1-50)");
+                return;
+            }
+            try {
+                int min = Integer.parseInt(args[2]);
+                int max = Integer.parseInt(args[3]);
+                module.setCpsRange(min, max);
+                reply(source, "RightClicker CPS " + module.getMinCps() + "-" + module.getMaxCps());
+            } catch (NumberFormatException exception) {
+                reply(source, "usage: /micx rc cps <min> <max> (1-50)");
+            }
+        } else reply(source, "rc [show|toggle|cps <min> <max>]");
     }
 
     private static void keyboardClicker(FabricClientCommandSource source, String[] args) {
         KeyboardClickerModule module = KeyboardClickerModule.instance();
         String sub = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "show";
-        if (sub.equals("show")) reply(source, "KeyboardClicker: " + (module.modeIndex() == 0 ? "OFF" : "ON")
+        if (sub.equals("show")) reply(source, "自动切枪 AutoSwitch: " + (module.modeIndex() == 0 ? "OFF" : "ON")
                 + " mode=" + module.modeName());
         else if (sub.equals("toggle")) {
             if (!module.enabled()) {
@@ -289,6 +305,26 @@ public final class MicxClientCommands {
             }
             default -> reply(source, "teamsync [show|toggle|hud|world|target] [on|off]");
         }
+    }
+
+    private static void lr(FabricClientCommandSource source, String[] args) {
+        LrIndicatorModule m = LrIndicatorModule.instance();
+        if (args.length >= 2) {
+            try { int pos = Integer.parseInt(args[1]); m.setRotationPosition(pos); reply(source, "LR rotation: " + m.lrRotationPosition() + (pos==1?" (off)":"")); return; } catch (NumberFormatException ignored) {}
+        }
+        reply(source, "LR rotation: " + m.lrRotationPosition() + " beep=" + m.lrBeepEnabled() + " usage: /micx lr <1-4> (1=off)");
+    }
+
+    private static void speedrun(FabricClientCommandSource source, String[] args) {
+        ZombiesConfig cfg = ZombiesAssistModule.instance().config();
+        if (args.length >= 2 && "off".equalsIgnoreCase(args[1])) cfg.speedrunEnabled = false;
+        else if (args.length >= 2 && "on".equalsIgnoreCase(args[1])) cfg.speedrunEnabled = true;
+        else cfg.speedrunEnabled = !cfg.speedrunEnabled;
+        ZombiesAssistModule.instance().saveConfig();
+        SpeedrunBaseline bl = SpeedrunBaseline.get();
+        String state = cfg.speedrunEnabled ? "ON" : "OFF";
+        String base = bl.hasBaseline() ? (" baseline R"+bl.rounds()+" "+(bl.source()==null?"":bl.source())) : " no baseline";
+        reply(source, "Speedrun: "+state+base);
     }
 
     private static void reset(FabricClientCommandSource source) {

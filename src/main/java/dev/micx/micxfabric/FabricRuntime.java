@@ -26,6 +26,7 @@ public final class FabricRuntime {
         ModuleStateStore.initialize(configPath());
         MicxClientCommands.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            FullbrightRuntime.tick(client);
             ModuleRuntime.tick(client);
             HsDispatchService.instance().tick(client);
             if (mainPanelRequested) {

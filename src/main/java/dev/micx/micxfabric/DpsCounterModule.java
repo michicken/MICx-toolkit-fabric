@@ -7,12 +7,14 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.Properties;
 
 /** One-second client-side damage window based on health and absorption deltas. */
 public final class DpsCounterModule implements Module {
@@ -22,6 +24,11 @@ public final class DpsCounterModule implements Module {
     private final ArrayDeque<DamageSample> damage = new ArrayDeque<>();
     private boolean enabled;
     private boolean overlayEnabled = true;
+    private int hudRight = 4;
+    private int hudY = 2;
+    private float hudScaleX = 1.0f;
+    private float hudScaleY = 1.0f;
+    private boolean configLoaded;
     private Object activeLevel;
     private float cachedDamage;
 
@@ -87,20 +94,106 @@ public final class DpsCounterModule implements Module {
     }
 
     public boolean overlayEnabled() {
+        loadConfig();
         return overlayEnabled;
     }
 
     public void setOverlayEnabled(boolean overlayEnabled) {
+        loadConfig();
         this.overlayEnabled = overlayEnabled;
+        saveConfig();
+    }
+
+    public int hudRight() {
+        loadConfig();
+        return hudRight;
+    }
+
+    public int hudY() {
+        loadConfig();
+        return hudY;
+    }
+
+    public float hudScaleX() {
+        loadConfig();
+        return hudScaleX;
+    }
+
+    public float hudScaleY() {
+        loadConfig();
+        return hudScaleY;
+    }
+
+    public void setHudPosition(int right, int y) {
+        loadConfig();
+        hudRight = Math.max(0, Math.min(9_999, right));
+        hudY = Math.max(0, Math.min(9_999, y));
+    }
+
+    public void setHudScale(float x, float y) {
+        loadConfig();
+        hudScaleX = HudLayoutMath.clampScale(x);
+        hudScaleY = HudLayoutMath.clampScale(y);
+    }
+
+    public void saveLayoutConfiguration() {
+        loadConfig();
+        saveConfig();
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {
-        if (!enabled || !overlayEnabled) return;
+        if (!enabled || !overlayEnabled()) return;
         int value = dps();
         int color = value > 10 ? 0xFF55D68B : value > 0 ? 0xFFE8A73E : 0xFFE06A6A;
         String text = "OBS DPS " + value;
-        int x = Math.max(4, graphics.guiWidth() - Minecraft.getInstance().font.width(text) - 4);
-        graphics.text(Minecraft.getInstance().font, Component.literal(text), x, 2, color, true);
+        Minecraft client = Minecraft.getInstance();
+        float sx = HudLayoutRegistry.scaleX("dps_counter", hudScaleX());
+        float sy = HudLayoutRegistry.scaleY("dps_counter", hudScaleY());
+        graphics.pose().pushMatrix();
+        graphics.pose().scale(sx, sy);
+        try {
+            int x = Math.max(4, Math.round((graphics.guiWidth() - hudRight()) / sx) - client.font.width(text));
+            int y = Math.round(hudY() / sy);
+            graphics.text(client.font, Component.literal(text), x, y, color, true);
+        } finally {
+            graphics.pose().popMatrix();
+        }
+    }
+
+    private void loadConfig() {
+        if (configLoaded) return;
+        configLoaded = true;
+        Path file = FabricRuntime.configPath().resolve("dps-counter.properties");
+        Path legacy = FabricRuntime.configPath().getParent().resolve("MICxToolkit_DPSCounter.cfg");
+        Properties properties = ConfigProperties.load(file, legacy);
+        overlayEnabled = ConfigProperties.bool(properties, "overlayEnabled", true);
+        hudRight = ConfigProperties.integer(properties, "hudRight", 4, 0, 9_999);
+        hudY = ConfigProperties.integer(properties, "hudY", 2, 0, 9_999);
+        hudScaleX = parseScale(properties.getProperty("hudScaleX"));
+        hudScaleY = parseScale(properties.getProperty("hudScaleY"));
+    }
+
+    private void saveConfig() {
+        Properties properties = new Properties();
+        properties.setProperty("overlayEnabled", Boolean.toString(overlayEnabled));
+        properties.setProperty("hudRight", Integer.toString(hudRight));
+        properties.setProperty("hudY", Integer.toString(hudY));
+        properties.setProperty("hudScaleX", Float.toString(hudScaleX));
+        properties.setProperty("hudScaleY", Float.toString(hudScaleY));
+        try {
+            AtomicProperties.store(FabricRuntime.configPath().resolve("dps-counter.properties"), properties,
+                    "MICx DPS counter configuration");
+        } catch (IOException exception) {
+            MicxFabric.LOGGER.warn("Unable to save DPS counter configuration", exception);
+        }
+    }
+
+    private static float parseScale(String value) {
+        try {
+            return HudLayoutMath.clampScale(Float.parseFloat(value));
+        } catch (RuntimeException ignored) {
+            return 1.0f;
+        }
     }
 
     private void evictExpired(long now) {

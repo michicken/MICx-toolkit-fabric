@@ -315,15 +315,10 @@ public final class KeyboardClickerModule implements Module {
                 || tracker.roundStartMs() == lastNewGameRoundStartMs) return;
         lastNewGameRoundStartMs = tracker.roundStartMs();
         loadConfig();
-        config.setProperty("mode23", "true");
-        config.setProperty("mode234", "true");
-        config.setProperty("mode24", "false");
-        config.setProperty("mode34", "false");
-        pendingMode = 1;
+        pendingMode = enabledModes().stream().findFirst().orElse(1);
         modeIndex = 0;
         sequenceIndex = 0;
         lastClick = 0L;
-        saveConfig();
         resetProtectionState();
     }
 
@@ -423,6 +418,30 @@ public final class KeyboardClickerModule implements Module {
     public boolean rightClickTrigger() {
         loadConfig();
         return rightClickTrigger;
+    }
+
+    public boolean isMode23() { return enabledModes().contains(1); }
+    public boolean isMode234() { return enabledModes().contains(2); }
+    public boolean isMode24() { return enabledModes().contains(3); }
+    public boolean isMode34() { return enabledModes().contains(4); }
+
+    public void setMode23(boolean value) { setModeEnabled(1, value); }
+    public void setMode234(boolean value) { setModeEnabled(2, value); }
+    public void setMode24(boolean value) { setModeEnabled(3, value); }
+    public void setMode34(boolean value) { setModeEnabled(4, value); }
+
+    private void setModeEnabled(int mode, boolean value) {
+        loadConfig();
+        List<Integer> modes = enabledModes();
+        if (!value && modes.size() <= 1 && modes.contains(mode)) return;
+        config.setProperty("mode" + MODE_NAMES[mode], Boolean.toString(value));
+        if (!value && modeIndex == mode) {
+            pendingMode = enabledModes().stream().findFirst().orElse(1);
+            modeIndex = pendingMode;
+            sequenceIndex = 0;
+        }
+        if (value && modeIndex == 0) pendingMode = mode;
+        saveConfig();
     }
 
     public void setToggleKey(int value) {

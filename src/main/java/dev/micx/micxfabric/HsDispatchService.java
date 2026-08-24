@@ -17,8 +17,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.URLEncoder;
+import javax.net.ssl.SSLException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -167,34 +169,64 @@ public final class HsDispatchService implements AutoCloseable {
     static DispatchResult parseDispatch(String body) {
         try {
             JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+            boolean ok = json.has("ok") && json.get("ok").isJsonPrimitive()
+                    && json.get("ok").getAsBoolean();
             return new DispatchResult(
-                    json.has("ok") && json.get("ok").getAsBoolean(),
-                    parseStrings(json, "available"), parseStrings(json, "queued"),
+                    ok,
+                    parsePlayerNames(json, "available"), parsePlayerNames(json, "queued"),
                     json.has("wait_est_seconds") && !json.get("wait_est_seconds").isJsonNull()
                             ? json.get("wait_est_seconds").getAsInt() : -1,
-                    json.has("error") && !json.get("error").isJsonNull()
-                            ? json.get("error").getAsString() : null);
+                    ok ? DispatchFailure.NONE : DispatchFailure.BACKEND_REJECTED,
+                    -1);
         } catch (RuntimeException exception) {
-            return new DispatchResult(false, List.of(), List.of(), -1, "invalid response");
+            return new DispatchResult(false, List.of(), List.of(), -1, DispatchFailure.JSON_ERROR, -1);
         }
     }
 
     static QueueResult parseQueue(String body) {
         try {
             JsonObject json = JsonParser.parseString(body).getAsJsonObject();
-            return new QueueResult(parseStrings(json, "ready_bots"),
+            return new QueueResult(parsePlayerNames(json, "ready_bots"),
                     json.has("pending") && json.get("pending").isJsonArray()
-                            ? json.getAsJsonArray("pending").size() : -1);
+                            ? json.getAsJsonArray("pending").size() : -1,
+                    DispatchFailure.NONE, -1);
         } catch (RuntimeException exception) {
-            return new QueueResult(List.of(), -1);
+            return new QueueResult(List.of(), -1, DispatchFailure.JSON_ERROR, -1);
         }
+    }
+
+    static String dispatchFailureMessage(DispatchFailure failure, int status) {
+        return switch (failure) {
+            case NONE -> "";
+            case TOKEN_UNAVAILABLE -> "token unavailable";
+            case HTTP_STATUS -> httpFailureMessage(status);
+            case CONNECTION_FAILED -> "network unavailable";
+            case TIMEOUT -> "request timeout";
+            case TLS_FAILED -> "TLS failed";
+            case INVALID_ENDPOINT -> "invalid backend endpoint";
+            case RESPONSE_TOO_LARGE -> "backend response too large";
+            case JSON_ERROR -> "invalid backend response";
+            case BACKEND_REJECTED -> "backend rejected request";
+        };
+    }
+
+    private static String httpFailureMessage(int status) {
+        return switch (status) {
+            case 401 -> "backend authentication rejected";
+            case 403 -> "backend rejected request (HTTP 403)";
+            case 404 -> "backend endpoint unavailable";
+            case 429 -> "backend rate limited";
+            default -> status >= 500 && status <= 599
+                    ? "backend server error (HTTP " + status + ")"
+                    : "backend HTTP error (HTTP " + status + ")";
+        };
     }
 
     private void handleDispatchResult(Minecraft client, String playerName, int requested,
                                        DispatchResult result, long requestGeneration) {
         if (!result.ok()) {
             client.player.sendSystemMessage(ChatMessageStyles.error("HS 调度失败："
-                    + (result.error() == null ? "backend unavailable" : result.error())));
+                    + dispatchFailureMessage(result.failure(), result.status())));
             return;
         }
         if (!result.available().isEmpty()) {
@@ -249,38 +281,50 @@ public final class HsDispatchService implements AutoCloseable {
 
     private DispatchResult requestDispatch(HsConfig current, String playerName, int count) {
         String bearer = awaitBearer();
-        if (bearer == null) return new DispatchResult(false, List.of(), List.of(), -1, "token unavailable");
+        if (bearer == null) return failedDispatch(DispatchFailure.TOKEN_UNAVAILABLE, -1);
         String endpoint = HsConfig.deriveEndpoint(current.jobUrl, "dispatch");
         String body = "{\"player_name\":\"" + escapeJson(playerName) + "\",\"count\":" + count + "}";
-        String response = postJson(endpoint, body, bearer);
-        return response == null ? new DispatchResult(false, List.of(), List.of(), -1, "connection failed")
-                : parseDispatch(response);
+        HttpResult response = postJson(endpoint, body, bearer);
+        if (!response.ok()) return failedDispatch(response.failure(), response.status());
+        return parseDispatch(response.body());
     }
 
     private QueueResult requestQueue(HsConfig current, String playerName) {
         String bearer = awaitBearer();
-        if (bearer == null) return new QueueResult(List.of(), -1);
+        if (bearer == null) return failedQueue(DispatchFailure.TOKEN_UNAVAILABLE, -1);
         String endpoint = HsConfig.deriveEndpoint(current.jobUrl, "queue");
         try {
             URI uri = URI.create(endpoint + "?player=" + URLEncoder.encode(playerName, StandardCharsets.UTF_8));
-            String body = request("GET", uri.toString(), null, bearer);
-            return body == null ? new QueueResult(List.of(), -1) : parseQueue(body);
+            HttpResult response = request("GET", uri.toString(), null, bearer);
+            return response.ok() ? parseQueue(response.body())
+                    : failedQueue(response.failure(), response.status());
         } catch (RuntimeException exception) {
-            return new QueueResult(List.of(), -1);
+            return failedQueue(DispatchFailure.INVALID_ENDPOINT, -1);
         }
     }
 
-    private String postJson(String endpoint, String body, String bearer) {
+    private HttpResult postJson(String endpoint, String body, String bearer) {
         return request("POST", endpoint, body, bearer);
     }
 
-    private String request(String method, String endpoint, String body, String bearer) {
+    static HttpResult classifyHttpResult(int status, String body) {
+        if (status >= 200 && status < 300) return new HttpResult(true, status, body, DispatchFailure.NONE);
+        return new HttpResult(false, status, null, DispatchFailure.HTTP_STATUS);
+    }
+
+    static String bearerFor(JsonObject token) {
+        return TeamSyncTokenProvider.encodeBearer(token);
+    }
+
+    private HttpResult request(String method, String endpoint, String body, String bearer) {
         HttpURLConnection connection = null;
         try {
             URI uri = URI.create(endpoint);
             if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
                     || uri.getUserInfo() != null || uri.getRawQuery() != null && body != null
-                    || uri.getRawFragment() != null) return null;
+                    || uri.getRawFragment() != null) {
+                return new HttpResult(false, -1, null, DispatchFailure.INVALID_ENDPOINT);
+            }
             connection = (HttpURLConnection) uri.toURL().openConnection();
             connection.setRequestMethod(method);
             connection.setConnectTimeout(TIMEOUT_MS);
@@ -297,10 +341,22 @@ public final class HsDispatchService implements AutoCloseable {
                 }
             }
             int code = connection.getResponseCode();
-            if (code < 200 || code >= 300) return null;
-            return readBounded(connection.getInputStream());
-        } catch (Exception ignored) {
-            return null;
+            if (code < 200 || code >= 300) {
+                return new HttpResult(false, code, null, DispatchFailure.HTTP_STATUS);
+            }
+            try {
+                return new HttpResult(true, code, readBounded(connection.getInputStream()), DispatchFailure.NONE);
+            } catch (ResponseTooLargeException exception) {
+                return new HttpResult(false, code, null, DispatchFailure.RESPONSE_TOO_LARGE);
+            }
+        } catch (SocketTimeoutException exception) {
+            return new HttpResult(false, -1, null, DispatchFailure.TIMEOUT);
+        } catch (SSLException exception) {
+            return new HttpResult(false, -1, null, DispatchFailure.TLS_FAILED);
+        } catch (IllegalArgumentException exception) {
+            return new HttpResult(false, -1, null, DispatchFailure.INVALID_ENDPOINT);
+        } catch (IOException exception) {
+            return new HttpResult(false, -1, null, DispatchFailure.CONNECTION_FAILED);
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -311,11 +367,8 @@ public final class HsDispatchService implements AutoCloseable {
         if (provider == null) return null;
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
         while (!closed && System.currentTimeMillis() < deadline) {
-            JsonObject token = provider.getTokenNonBlocking();
-            if (token != null && token.has("token") && !token.get("token").isJsonNull()) {
-                String value = token.get("token").getAsString();
-                if (!value.isBlank()) return value;
-            }
+            String bearer = provider.getBearerNonBlocking();
+            if (bearer != null && !bearer.isBlank()) return bearer;
             try {
                 Thread.sleep(100L);
             } catch (InterruptedException exception) {
@@ -335,19 +388,33 @@ public final class HsDispatchService implements AutoCloseable {
             int count;
             while ((count = reader.read(buffer)) >= 0) {
                 total += count;
-                if (total > MAX_BODY_BYTES) throw new IOException("response too large");
+                if (total > MAX_BODY_BYTES) throw new ResponseTooLargeException();
                 builder.append(buffer, 0, count);
             }
             return builder.toString();
         }
     }
 
-    private static List<String> parseStrings(JsonObject json, String key) {
+    private static final class ResponseTooLargeException extends IOException {
+    }
+
+    private static DispatchResult failedDispatch(DispatchFailure failure, int status) {
+        return new DispatchResult(false, List.of(), List.of(), -1, failure, status);
+    }
+
+    private static QueueResult failedQueue(DispatchFailure failure, int status) {
+        return new QueueResult(List.of(), -1, failure, status);
+    }
+
+    private static List<String> parsePlayerNames(JsonObject json, String key) {
         if (!json.has(key) || !json.get(key).isJsonArray()) return List.of();
         List<String> values = new ArrayList<>();
         JsonArray array = json.getAsJsonArray(key);
         for (JsonElement element : array) {
-            if (element.isJsonPrimitive()) values.add(element.getAsString());
+            if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()
+                    && isPlayerName(element.getAsString())) {
+                values.add(element.getAsString());
+            }
         }
         return List.copyOf(values);
     }
@@ -363,10 +430,27 @@ public final class HsDispatchService implements AutoCloseable {
         client.player.sendSystemMessage(ChatMessageStyles.feedback(botName + " 已就绪！").copy().append(invite));
     }
 
-    public record DispatchResult(boolean ok, List<String> available, List<String> queued,
-                                 int waitEstSeconds, String error) {
+    enum DispatchFailure {
+        NONE,
+        TOKEN_UNAVAILABLE,
+        HTTP_STATUS,
+        CONNECTION_FAILED,
+        TIMEOUT,
+        TLS_FAILED,
+        INVALID_ENDPOINT,
+        RESPONSE_TOO_LARGE,
+        JSON_ERROR,
+        BACKEND_REJECTED
     }
 
-    public record QueueResult(List<String> readyBots, int pendingCount) {
+    record HttpResult(boolean ok, int status, String body, DispatchFailure failure) {
+    }
+
+    public record DispatchResult(boolean ok, List<String> available, List<String> queued,
+                                 int waitEstSeconds, DispatchFailure failure, int status) {
+    }
+
+    public record QueueResult(List<String> readyBots, int pendingCount,
+                              DispatchFailure failure, int status) {
     }
 }

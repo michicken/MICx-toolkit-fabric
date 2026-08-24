@@ -17,6 +17,13 @@ public final class TeamSyncSnapshot {
     public volatile double pingX, pingY, pingZ;
     public volatile String pingLabel;
     public volatile long pingUntilMs;
+    public volatile String hotbar7Item;
+    public volatile String hotbar7Name;
+    public volatile String hotbar8Item;
+    public volatile String hotbar8Name;
+    public volatile String hotbar9Item;
+    public volatile String hotbar9Name;
+    public volatile long hotbarUpdatedMs;
 
     public TeamSyncSnapshot(String name) {
         this.name = name;

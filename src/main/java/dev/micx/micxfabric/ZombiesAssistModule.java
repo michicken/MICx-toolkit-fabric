@@ -33,6 +33,8 @@ public final class ZombiesAssistModule implements Module {
     private final WaveTempoEstimator waveTempo = new WaveTempoEstimator();
     private final SlimeGrowthTracker slimeGrowth = new SlimeGrowthTracker();
     private final SlimeEcoTracker slimeEco = new SlimeEcoTracker();
+    private boolean prevEspLate;
+    private boolean prevEcoHidden;
     private long lastExpertUpdateMs;
     private long lastSlimeEcoUpdateMs;
     private long expertSnapshotAt;
@@ -265,13 +267,25 @@ public final class ZombiesAssistModule implements Module {
             }
         }
 
-        if (config.autoNotices) emitStatusNotices(client, state);
+        if (config.autoNotices) { emitStatusNotices(client, state); autoNotices(client); }
         if (config.blockAlert) updateBlockAlert(client, tracker);
         else {
             blockUntil = 0L;
             blockDistanceMs = 0L;
         }
         if (config.tooAlert || config.pcRoundInfo) scanToo(client, tracker);
+    }
+
+    private void autoNotices(Minecraft client) {
+        if (!config.autoNotices) return;
+        int round = ZombiesTracker.instance().round();
+        boolean espLate = false;
+        try { var m = ModuleRuntime.get("esp"); if (m != null && m.enabled() && m instanceof EspModule em) espLate = em.active() && round >= 60; } catch (Throwable ignored) {}
+        if (espLate && !prevEspLate) sendLocalMessage(client, "ESP \u5df2\u5207\u540e\u671f\u6a21\u5f0f \u2014\u2014 r60 \u8d77\u4ec5\u663e\u793a TOO + \u5de8\u4eba\uff0c\u5269\u4f59\u602a<20 \u65f6\u81ea\u52a8\u6062\u590d\u5168\u90e8\u7ea2\u6846");
+        prevEspLate = espLate;
+        boolean ecoHidden = slimeEco.hasData() && round > 60;
+        if (ecoHidden && !prevEcoHidden) sendLocalMessage(client, "\u517b\u602a\u7ecf\u6d4e HUD \u5df2\u81ea\u52a8\u9690\u85cf \u2014\u2014 r60 \u540e\u8fdb\u5165\u51b2\u523a\u56de\u5408\uff0c\u4e0d\u518d\u517b\u602a");
+        prevEcoHidden = ecoHidden;
     }
 
     private void sendRoundAnnouncement(Minecraft client, int round) {
@@ -294,8 +308,8 @@ public final class ZombiesAssistModule implements Module {
             if (!state.latches().claim(token)) continue;
             if ("down".equals(status)) {
                 sendLocalMessage(client, name + " is down");
-            } else if ("dead".equals(status) || "quit".equals(status)) {
-                sendLocalMessage(client, name + " is " + status);
+            } else if ("dead".equals(status)) {
+                sendLocalMessage(client, name + " is dead");
             }
         }
     }
@@ -423,7 +437,7 @@ public final class ZombiesAssistModule implements Module {
         ZombiesConfig cfg = config();
         ZombiesTracker tracker = ZombiesTracker.instance();
         if (!tracker.isInZombies()) {
-            drawCentered(graphics, client, "ZB: No ZB", cfg.topHudXOffset, cfg.topHudY,
+            drawCentered(graphics, client, "zombies.top", "ZB: No ZB", cfg.topHudXOffset, cfg.topHudY,
                     cfg.topHudScale, 0xFF98A0AB, true);
             if (cfg.showPowerups) drawPowerUpPanel(graphics, client, tracker, cfg, false);
             return;
@@ -432,9 +446,9 @@ public final class ZombiesAssistModule implements Module {
         drawTopHud(graphics, client, tracker, cfg);
         drawTacticalHud(graphics, client, tracker, cfg);
         drawAuxiliaryHud(graphics, client, tracker, cfg);
-        int powerUpLines = cfg.showPowerups
-                ? drawPowerUpPanel(graphics, client, tracker, cfg, true) : 0;
-        drawSlimeEcoHud(graphics, client, tracker, cfg, powerUpLines);
+        if (cfg.showPowerups) drawPowerUpPanel(graphics, client, tracker, cfg, true);
+        drawSlimeEcoHud(graphics, client, tracker, cfg);
+        drawWaveTableHud(graphics, client, tracker, cfg);
     }
 
     private static void drawTopHud(GuiGraphicsExtractor graphics, Minecraft client,
@@ -443,10 +457,11 @@ public final class ZombiesAssistModule implements Module {
         String left = tracker.zombiesLeft() >= 0 ? Integer.toString(tracker.zombiesLeft()) : "?";
         long elapsed = tracker.roundStartMs() <= 0L
                 ? 0L : Math.max(0L, System.currentTimeMillis() - tracker.roundStartMs());
-        String text = "Round " + round + " | Left " + left
-                + " | " + formatSeconds(elapsed);
+        String gameTime = tracker.gameTimeSeconds() >= 0
+                ? formatClockSeconds(tracker.gameTimeSeconds()) : "?";
+        String text = "Round " + round + " | Time: " + gameTime + " | Left " + left;
         if (tracker.isInAlienArcadium()) text += " | AA";
-        drawCentered(graphics, client, text, cfg.topHudXOffset, cfg.topHudY,
+        drawCentered(graphics, client, "zombies.top", text, cfg.topHudXOffset, cfg.topHudY,
                 cfg.topHudScale, 0xFFE8A73E, true);
 
         drawActivePowerUpsTop(graphics, client, tracker, cfg);
@@ -465,7 +480,7 @@ public final class ZombiesAssistModule implements Module {
             if (active.size() == 1) color = powerUpColor(entry.getKey());
         }
         String text = active.isEmpty() ? "——" : String.join(" | ", active);
-        drawCentered(graphics, client, text, cfg.topHudXOffset,
+        drawCentered(graphics, client, "zombies.top", text, cfg.topHudXOffset,
                 cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale, color, false);
     }
 
@@ -494,14 +509,15 @@ public final class ZombiesAssistModule implements Module {
         if (dead > 0) lines.add("Dead / quit " + dead);
 
         if (lines.isEmpty()) return;
-        float scale = safeScale(cfg.tacticalHudScale);
+        float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.tactical", cfg.tacticalHudScale);
         int right = Math.max(4, graphics.guiWidth() - Math.max(0, cfg.tacticalHudRight));
         int y = Math.max(0, cfg.tacticalHudY);
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int logicalRight = Math.round(right / scale);
-            int logicalY = Math.round(y / scale);
+            int logicalRight = Math.round(right / scaleX);
+            int logicalY = Math.round(y / scaleY);
             for (String line : lines) {
                 graphics.text(client.font, Component.literal(line),
                         logicalRight - client.font.width(line), logicalY,
@@ -533,20 +549,7 @@ public final class ZombiesAssistModule implements Module {
         long elapsed = tracker.roundStartMs() <= 0L
                 ? 0L : Math.max(0L, now - tracker.roundStartMs());
 
-        List<String> resourceLines = new ArrayList<>();
         ZombiesEventState state = tracker.eventState();
-        if (cfg.showEconomy && tracker.selfGold() >= 0) {
-            resourceLines.add("Gold " + tracker.selfGold());
-            if (tracker.goldPerMin() > 0.0f) {
-                resourceLines.add(String.format(Locale.ROOT, "Gold rate %.0f/min", tracker.goldPerMin()));
-            }
-        }
-        if (cfg.ecoHints) {
-            String advice = ZombiesRoundData.ecoAdvice(round);
-            if (advice != null) resourceLines.add(advice);
-        }
-        drawLeftLines(graphics, client, resourceLines, cfg);
-
         if (cfg.showEconomy && !cfg.originalScoreboard && tracker.isInZombies() && cfg.overlayEnabled) {
             drawEconomyPanel(graphics, client, tracker, cfg);
         }
@@ -589,13 +592,13 @@ public final class ZombiesAssistModule implements Module {
             drawThreatHud(graphics, client, threats, cfg);
         }
         if (cfg.tooRushAlert && now < tooRushUntil) {
-            drawCentered(graphics, client,
+            drawCentered(graphics, client, "zombies.too_rush",
                     String.format(Locale.ROOT, "TOO rush %.1fm", tooRushDistance),
                     cfg.tooRushXOffset, cfg.tooRushYOffset + graphics.guiHeight() / 2,
                     cfg.tooRushScale, 0xFFFF5964, true);
         }
         if (cfg.blockAlert && now < blockUntil) {
-            drawCentered(graphics, client,
+            drawCentered(graphics, client, "zombies.block_alert",
                     "BLOCK NOW " + formatSeconds(blockDistanceMs),
                     cfg.blockAlertXOffset,
                     graphics.guiHeight() / 3 + cfg.blockAlertYOffset,
@@ -603,38 +606,21 @@ public final class ZombiesAssistModule implements Module {
         }
         long protection = state.reviveProtectionRemainingMs(now);
         if (protection > 0L) {
-            drawCentered(graphics, client, "Revive protection " + formatSeconds(protection),
+            drawCentered(graphics, client, "zombies.top", "Revive protection " + formatSeconds(protection),
                     cfg.topHudXOffset, cfg.topHudY + 24, cfg.topHudScale, 0xFF57B98C, true);
-        }
-    }
-
-    private static void drawLeftLines(GuiGraphicsExtractor graphics, Minecraft client,
-                                      List<String> lines, ZombiesConfig cfg) {
-        if (lines.isEmpty()) return;
-        float scale = safeScale(cfg.resourceHudScale);
-        graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
-        try {
-            int x = Math.round(cfg.resourceLeftX / scale);
-            int y = Math.round(cfg.resourceLeftY / scale);
-            for (String line : lines) {
-                graphics.text(client.font, Component.literal(line), x, y, 0xFFD8DDE3, true);
-                y += client.font.lineHeight + 2;
-            }
-        } finally {
-            graphics.pose().popMatrix();
         }
     }
 
     private static void drawRightLines(GuiGraphicsExtractor graphics, Minecraft client,
                                        List<String> lines, ZombiesConfig cfg, int yOffset) {
         if (lines.isEmpty()) return;
-        float scale = safeScale(cfg.tacticalHudScale);
+        float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.tactical", cfg.tacticalHudScale);
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int right = Math.round((graphics.guiWidth() - cfg.tacticalHudRight) / scale);
-            int y = Math.round((cfg.tacticalHudY + yOffset) / scale);
+            int right = Math.round((graphics.guiWidth() - cfg.tacticalHudRight) / scaleX);
+            int y = Math.round((cfg.tacticalHudY + yOffset) / scaleY);
             for (String line : lines) {
                 graphics.text(client.font, Component.literal(line),
                         right - client.font.width(line), y, 0xFFD8DDE3, true);
@@ -658,16 +644,33 @@ public final class ZombiesAssistModule implements Module {
             return byGold != 0 ? byGold : left.compareToIgnoreCase(right);
         });
         if (names.size() > 4) names = new ArrayList<>(names.subList(0, 4));
-        float scale = safeScale(cfg.ecoHudScale);
+        EcoRateTracker eco = tracker.ecoRate();
+        boolean flash = false;
+        Module em = ModuleRuntime.get("eco_rate");
+        if (em instanceof EcoRateModule && em.enabled()) {
+            EcoRateConfig rc = EcoRateModule.cfg();
+            flash = EcoRateModule.flashActive(System.currentTimeMillis(), rc.flashIntervalSec, rc.flashDurationSec);
+        }
+        float scaleX = HudLayoutRegistry.scaleX("zombies.economy", cfg.ecoHudScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.economy", cfg.ecoHudScale);
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int right = Math.round((graphics.guiWidth() - cfg.ecoHudRight) / scale);
-            int y = Math.round((graphics.guiHeight() / 2.0f + cfg.ecoHudCenterYOffset) / scale);
+            int right = Math.round((graphics.guiWidth() - cfg.ecoHudRight) / scaleX);
+            int y = Math.round((graphics.guiHeight() / 2.0f + cfg.ecoHudCenterYOffset) / scaleY);
             for (String name : names) {
-                String line = name + " " + String.format(Locale.ROOT, "%,d", gold.getOrDefault(name, 0));
+                int gv = gold.getOrDefault(name, 0);
+                String gs;
+                if (flash) {
+                    long rate = name.equals(self) ? eco.selfRate() : eco.rate(name);
+                    gs = rate < 0 ? "--" : ZombiesTracker.fmtEco2min(rate) + "/2min";
+                } else {
+                    gs = String.format(Locale.ROOT, "%,d", gv);
+                }
+                String line = name + " " + gs;
+                int color = flash ? 0xFF55FF55 : 0xFFE8A73E;
                 graphics.text(client.font, Component.literal(line),
-                        right - client.font.width(line), y, 0xFFE8A73E, true);
+                        right - client.font.width(line), y, color, true);
                 y += client.font.lineHeight + 2;
             }
         } finally {
@@ -736,12 +739,13 @@ public final class ZombiesAssistModule implements Module {
         String required = "down".equals(tracker.eventState().statuses().get(self)) ? self : null;
         List<FastReviveDecisionEngine.Row> visible =
                 FastReviveDecisionEngine.limitRowsIncluding(rows, 4, required);
-        float scale = safeScale(cfg.frHudScale);
+        float scaleX = HudLayoutRegistry.scaleX("zombies.fast_revive", cfg.frHudScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.fast_revive", cfg.frHudScale);
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int center = Math.round((graphics.guiWidth() / 2.0f + cfg.frHudXOffset) / scale);
-            int y = Math.round((graphics.guiHeight() / 2.0f + cfg.frHudYOffset) / scale);
+            int center = Math.round((graphics.guiWidth() / 2.0f + cfg.frHudXOffset) / scaleX);
+            int y = Math.round((graphics.guiHeight() / 2.0f + cfg.frHudYOffset) / scaleY);
             String latencyLine = frLatencyLine(latency);
             int latencyColor = latency.highConfidence ? 0xFF8BD3FF : 0xFFFFC857;
             graphics.text(client.font, Component.literal(latencyLine),
@@ -847,7 +851,7 @@ public final class ZombiesAssistModule implements Module {
             };
             lines.add(name + " " + suffix);
         }
-        drawCenteredBlock(graphics, client, lines, cfg.lsHudXOffset,
+        drawCenteredBlock(graphics, client, "zombies.ls", lines, cfg.lsHudXOffset,
                 graphics.guiHeight() / 2 + cfg.lsHudYOffset, cfg.lsHudScale, 0xFFD8DDE3);
     }
 
@@ -855,17 +859,18 @@ public final class ZombiesAssistModule implements Module {
                                       ThreatCounts threats, ZombiesConfig cfg) {
         List<String> lines = List.of("TOO: " + threats.too,
                 "Giant: " + threats.giant, "Clown: " + threats.clown);
-        drawCenteredBlock(graphics, client, lines, cfg.threatHudXOffset,
+        drawCenteredBlock(graphics, client, "zombies.threat", lines, cfg.threatHudXOffset,
                 graphics.guiHeight() / 2 + cfg.threatHudYOffset, cfg.threatHudScale, 0xFFD8DDE3);
     }
 
-    private static void drawCenteredBlock(GuiGraphicsExtractor graphics, Minecraft client,
+    private static void drawCenteredBlock(GuiGraphicsExtractor graphics, Minecraft client, String layoutId,
                                           List<String> lines, int xOffset, int y,
                                           float scale, int color) {
-        float safe = safeScale(scale);
+        float scaleX = HudLayoutRegistry.scaleX(layoutId, scale);
+        float scaleY = HudLayoutRegistry.scaleY(layoutId, scale);
         graphics.pose().pushMatrix();
         graphics.pose().translate(graphics.guiWidth() / 2.0f + xOffset, y);
-        graphics.pose().scale(safe, safe);
+        graphics.pose().scale(scaleX, scaleY);
         try {
             int logicalY = 0;
             for (String line : lines) {
@@ -966,7 +971,8 @@ public final class ZombiesAssistModule implements Module {
     private static int drawPowerUpPanel(GuiGraphicsExtractor graphics, Minecraft client,
                                         ZombiesTracker tracker, ZombiesConfig cfg,
                                         boolean inZombies) {
-        float scale = safeScale(cfg.puHudScale);
+        float scaleX = HudLayoutRegistry.scaleX("zombies.powerup", cfg.puHudScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.powerup", cfg.puHudScale);
         int right = Math.max(4, graphics.guiWidth() - Math.max(0, cfg.puHudRight));
         int bottom = Math.max(4, graphics.guiHeight() - Math.max(0, cfg.puHudBottom));
         List<HudLine> lines = new ArrayList<>();
@@ -982,10 +988,10 @@ public final class ZombiesAssistModule implements Module {
         }
 
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int logicalRight = Math.round(right / scale);
-            int logicalBottom = Math.round(bottom / scale);
+            int logicalRight = Math.round(right / scaleX);
+            int logicalBottom = Math.round(bottom / scaleY);
             int y = logicalBottom - lines.size() * (client.font.lineHeight + 2);
             for (HudLine line : lines) {
                 graphics.text(client.font, Component.literal(line.text()),
@@ -998,21 +1004,75 @@ public final class ZombiesAssistModule implements Module {
         return lines.size();
     }
 
+    private void drawWaveTableHud(GuiGraphicsExtractor graphics, Minecraft client, ZombiesTracker tracker, ZombiesConfig cfg) {
+        if (!cfg.waveTableHud) return;
+        int round = tracker.round();
+        boolean aa = tracker.isInAlienArcadium();
+        int[] times;
+        if (aa) {
+            times = ZombiesWaveSchedule.waveTimes(round);
+        } else {
+            WaveTable.ZbMap zbMap = null;
+            try { String t = tracker.frame().map(); if (t != null) zbMap = WaveTable.detect(t); } catch (Throwable ignored) {}
+            if (zbMap == null) {
+                try { String st = tracker.sidebarTitle(); if (st != null) zbMap = WaveTable.detect(st); } catch (Throwable ignored) {}
+            }
+            times = zbMap == null ? new int[0] : WaveTable.waveTimes(zbMap, round);
+        }
+        if (times.length == 0) return;
+        long elapsed = tracker.roundStartMs() <= 0L ? 0L : Math.max(0L, System.currentTimeMillis() - tracker.roundStartMs());
+        int wave = aa ? ZombiesWaveSchedule.waveAt(round, elapsed) : WaveTable.waveAt(times, elapsed);
+        int nextWave = wave < times.length ? wave + 1 : 0;
+        int baseX = 4 + cfg.waveTableHudDx;
+        int baseY = 4 + cfg.waveTableHudDy;
+        // First line: RoundTimer
+        Module rt = ModuleRuntime.get("round_timer");
+        int lineH = client.font.lineHeight + 1;
+        int y = baseY;
+        if (rt instanceof RoundTimerModule && rt.enabled()) {
+            String t = RoundTimerModule.renderText(round, tracker.roundStartMs(), System.currentTimeMillis());
+            if (t != null) {
+                graphics.text(client.font, net.minecraft.network.chat.Component.literal(t), baseX + 13, y, 0xFFE0E0E0, true);
+                if (cfg.speedrunEnabled && cfg.showSplitOnWaveTable) {
+                    SpeedrunBaseline bl = SpeedrunBaseline.get();
+                    if (bl.hasBaseline() && tracker.lastSplitRound() > 0) {
+                        long dR = tracker.lastSplitDeltaMs(); long dT = tracker.lastSplitTotalDeltaMs();
+                        String sR = SpeedrunBaseline.formatDelta(dR); String sT = SpeedrunBaseline.formatDelta(dT);
+                        int cR = SpeedrunBaseline.deltaColor(dR); int cT = SpeedrunBaseline.deltaColor(dT);
+                        int wR = client.font.width(t);
+                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(" " + sR), baseX + 13 + wR + 4, y, cR, true);
+                        String totalStr = " \u03A3" + sT;
+                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(totalStr), baseX + 13 + wR + 4 + client.font.width(" " + sR) + 6, y, cT, true);
+                    }
+                }
+                y += lineH;
+            }
+        }
+        for (int i = 0; i < times.length; i++) {
+            int w = i + 1; int lineY = y + i * lineH;
+            if (w == nextWave) graphics.text(client.font, net.minecraft.network.chat.Component.literal("\u27A4 "), baseX, lineY, 0xFFCC00CC, true);
+            int col = WaveTable.waveColor(aa, round, w, nextWave);
+            int argb = 0xFF000000 | (col & 0xFFFFFF);
+            graphics.text(client.font, net.minecraft.network.chat.Component.literal("W" + w + " " + WaveTable.formatWaveTime(times[i])), baseX + 13, lineY, argb, true);
+        }
+    }
+
     private void drawSlimeEcoHud(GuiGraphicsExtractor graphics, Minecraft client,
-                                 ZombiesTracker tracker, ZombiesConfig cfg, int powerUpLines) {
+                                 ZombiesTracker tracker, ZombiesConfig cfg) {
         if (!tracker.isInAlienArcadium() || tracker.round() <= 0 || tracker.round() > 60
                 || !slimeEco.hasData()) return;
         String text = "ECO 卡死:" + slimeEco.stuckDeaths()
                 + " 亏≈" + fmtK(slimeEco.lostGold());
-        float scale = safeScale(cfg.ecoClockScale);
+        float scaleX = HudLayoutRegistry.scaleX("zombies.eco_clock", cfg.ecoClockScale);
+        float scaleY = HudLayoutRegistry.scaleY("zombies.eco_clock", cfg.ecoClockScale);
         int right = Math.max(4, graphics.guiWidth() - Math.max(0, cfg.ecoClockRight));
         int bottom = Math.max(4, graphics.guiHeight() - Math.max(0, cfg.ecoClockBottom));
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
-            int logicalRight = Math.round(right / scale);
-            int logicalBottom = Math.round(bottom / scale);
-            int y = logicalBottom - (powerUpLines + 1) * (client.font.lineHeight + 2);
+            int logicalRight = Math.round(right / scaleX);
+            int logicalBottom = Math.round(bottom / scaleY);
+            int y = logicalBottom - (client.font.lineHeight + 2);
             graphics.text(client.font, Component.literal(text),
                     logicalRight - client.font.width(text), y, 0xFF55AA55, true);
         } finally {
@@ -1020,12 +1080,13 @@ public final class ZombiesAssistModule implements Module {
         }
     }
 
-    private static void drawCentered(GuiGraphicsExtractor graphics, Minecraft client, String text,
-                                     int xOffset, int y, float scale, int color, boolean shadow) {
-        float safe = safeScale(scale);
+    private static void drawCentered(GuiGraphicsExtractor graphics, Minecraft client, String layoutId,
+                                     String text, int xOffset, int y, float scale, int color, boolean shadow) {
+        float scaleX = HudLayoutRegistry.scaleX(layoutId, scale);
+        float scaleY = HudLayoutRegistry.scaleY(layoutId, scale);
         graphics.pose().pushMatrix();
         graphics.pose().translate(graphics.guiWidth() / 2.0f + xOffset, y);
-        graphics.pose().scale(safe, safe);
+        graphics.pose().scale(scaleX, scaleY);
         try {
             graphics.text(client.font, Component.literal(text),
                     -client.font.width(text) / 2, 0, color, shadow);
@@ -1076,6 +1137,16 @@ public final class ZombiesAssistModule implements Module {
 
     private static String formatSeconds(long millis) {
         return String.format(Locale.ROOT, "%.1fs", Math.max(0L, millis) / 1000.0);
+    }
+
+    private static String formatClockSeconds(int seconds) {
+        int safe = Math.max(0, seconds);
+        int hours = safe / 3600;
+        int minutes = safe / 60 % 60;
+        int remainder = safe % 60;
+        return hours > 0
+                ? String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, remainder)
+                : String.format(Locale.ROOT, "%d:%02d", safe / 60, remainder);
     }
 
     private static float safeScale(float value) {

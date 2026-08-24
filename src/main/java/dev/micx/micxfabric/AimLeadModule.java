@@ -11,13 +11,13 @@ import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.animal.wolf.Wolf;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.PositionMoveRotation;
-import net.minecraft.world.entity.Relative;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -187,9 +187,18 @@ public final class AimLeadModule implements Module {
         if (client == null || client.player == null || client.level == null) return;
         GhostTarget target = selectedTarget(client);
         if (target == null || !isCrosshairHit(client, target.box())) return;
-        int x = graphics.guiWidth() / 2;
-        int y = graphics.guiHeight() / 2 + 6;
-        graphics.fill(x - 2, y, x + 3, y + 2, 0xFF50E68A);
+        int x = graphics.guiWidth() / 2 + config.markerOffsetX;
+        int y = graphics.guiHeight() / 2 + config.markerOffsetY;
+        float sx = HudLayoutRegistry.scaleX("aim_lead_marker", config.markerScaleX);
+        float sy = HudLayoutRegistry.scaleY("aim_lead_marker", config.markerScaleY);
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale(sx, sy);
+        try {
+            graphics.fill(-2, 0, 3, 2, 0xFF50E68A);
+        } finally {
+            graphics.pose().popMatrix();
+        }
     }
 
     private void collectSubmits(LevelRenderContext context) {
@@ -236,8 +245,10 @@ public final class AimLeadModule implements Module {
         int green = color >> 8 & 255;
         int blue = color & 255;
         int alpha = color >>> 24;
-        consumer.addVertex(pose, a.x, a.y, a.z).setColor(red, green, blue, alpha).setNormal(pose, 0, 1, 0);
-        consumer.addVertex(pose, b.x, b.y, b.z).setColor(red, green, blue, alpha).setNormal(pose, 0, 1, 0);
+        consumer.addVertex(pose, a.x, a.y, a.z).setColor(red, green, blue, alpha)
+                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
+        consumer.addVertex(pose, b.x, b.y, b.z).setColor(red, green, blue, alpha)
+                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
     }
 
     private List<GhostTarget> targets(Minecraft client) {
@@ -327,6 +338,28 @@ public final class AimLeadModule implements Module {
     public AimLeadConfig config() {
         loadConfig();
         return config;
+    }
+
+    public int markerOffsetX() { loadConfig(); return config.markerOffsetX; }
+    public int markerOffsetY() { loadConfig(); return config.markerOffsetY; }
+    public float markerScaleX() { loadConfig(); return config.markerScaleX; }
+    public float markerScaleY() { loadConfig(); return config.markerScaleY; }
+
+    public void setMarkerOffset(int x, int y) {
+        loadConfig();
+        config.markerOffsetX = Math.max(-2_000, Math.min(2_000, x));
+        config.markerOffsetY = Math.max(-2_000, Math.min(2_000, y));
+    }
+
+    public void setMarkerScale(float x, float y) {
+        loadConfig();
+        config.markerScaleX = HudLayoutMath.clampScale(x);
+        config.markerScaleY = HudLayoutMath.clampScale(y);
+    }
+
+    public void saveConfiguration() {
+        loadConfig();
+        config.save();
     }
 
     public int effectivePing() {

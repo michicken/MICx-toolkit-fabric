@@ -58,6 +58,9 @@ public final class MicxPanelScreen extends Screen {
     private int railW;
     private int paneX;
     private int paneW;
+    private int hudLayoutX;
+    private int hudLayoutY;
+    private int hudLayoutW;
 
     public MicxPanelScreen(Screen parent) {
         super(Component.literal("MICx Toolkit"));
@@ -120,6 +123,8 @@ public final class MicxPanelScreen extends Screen {
     }
 
     private void drawPanel(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
         graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, BG_PANEL);
         graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, LINE_HI);
         outline(graphics, cardX, cardY, cardW, cardH, LINE);
@@ -148,15 +153,31 @@ public final class MicxPanelScreen extends Screen {
         String stats = total + " modules · " + enabled + " on";
         graphics.text(font, stats, cardX + cardW - PAD - font.width(stats), cardY + 29, AMBER);
 
-        drawDisabledEntry(graphics, "Tutorial", cardX + cardW - PAD - 58, cardY + 7, 58);
-        drawDisabledEntry(graphics, "HUD Layout", cardX + cardW - PAD - 58 - 6 - 78, cardY + 7, 78);
+        int tutorialX = cardX + cardW - PAD - 58;
+        hudLayoutW = 78;
+        hudLayoutX = tutorialX - 6 - hudLayoutW;
+        hudLayoutY = cardY + 7;
+        drawDisabledEntry(graphics, "Tutorial", tutorialX, hudLayoutY, 58);
+        boolean hovered = hudLayoutX <= lastMouseX && lastMouseX < hudLayoutX + hudLayoutW
+                && hudLayoutY <= lastMouseY && lastMouseY < hudLayoutY + 16;
+        drawHeaderEntry(graphics, "HUD Layout", hudLayoutX, hudLayoutY, hudLayoutW, hovered);
     }
+
+    private int lastMouseX;
+    private int lastMouseY;
 
     private void drawDisabledEntry(GuiGraphicsExtractor graphics, String label, int x, int y, int w) {
         graphics.fill(x, y, x + w, y + 16, BG_RAISED);
         outline(graphics, x, y, w, 16, LINE);
         int textWidth = font.width(label);
         graphics.text(font, label, x + Math.max(2, (w - textWidth) / 2), y + 4, TEXT_FAINT);
+    }
+
+    private void drawHeaderEntry(GuiGraphicsExtractor graphics, String label, int x, int y, int w, boolean hovered) {
+        graphics.fill(x, y, x + w, y + 16, hovered ? BG_HOVER : BG_RAISED);
+        outline(graphics, x, y, w, 16, hovered ? LINE_HI : LINE);
+        int textWidth = font.width(label);
+        graphics.text(font, label, x + Math.max(2, (w - textWidth) / 2), y + 4, hovered ? TEXT : TEXT_DIM);
     }
 
     private void drawRail(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -324,7 +345,7 @@ public final class MicxPanelScreen extends Screen {
     private void drawFooter(GuiGraphicsExtractor graphics) {
         String footer = "ESC 关闭 · 左键选择频道 · 左栏滚轮滚动";
         graphics.text(font, footer, railX + PAD, footerTop + 6, TEXT_FAINT);
-        String unavailable = "HUD / Tutorial 未迁移";
+        String unavailable = "Tutorial 未迁移 · HUD Layout 可编辑";
         graphics.text(font, unavailable, cardX + cardW - PAD - font.width(unavailable), footerTop + 6, TEXT_FAINT);
     }
 
@@ -395,6 +416,15 @@ public final class MicxPanelScreen extends Screen {
         if (event.button() != 0) return false;
         double mouseX = event.x();
         double mouseY = event.y();
+        int tutorialX = cardX + cardW - PAD - 58;
+        int layoutW = 78;
+        int layoutX = tutorialX - 6 - layoutW;
+        int layoutY = cardY + 7;
+        if (mouseX >= layoutX && mouseX < layoutX + layoutW
+                && mouseY >= layoutY && mouseY < layoutY + 16) {
+            minecraft.setScreenAndShow(new HudLayoutEditorScreen(this));
+            return true;
+        }
 
         if (mouseX >= railX && mouseX < paneX - 1 && mouseY >= headerBottom && mouseY < footerTop) {
             for (RailEntry entry : entries) {

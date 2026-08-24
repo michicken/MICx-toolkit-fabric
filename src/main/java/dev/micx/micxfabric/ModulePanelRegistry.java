@@ -31,6 +31,39 @@ public final class ModulePanelRegistry {
 
         real("sword_block", "SwordBlock", "剑格挡", GROUP_CORE, "客户端视觉格挡动画，不提供服务端伤害减免。",
                 SwordBlockModule.instance(), SwordBlockConfigScreen::new);
+        real("round_timer", "RoundTimer", "回合计时", GROUP_CORE,
+                "当前回合用时 R{n} mm:ss，与 Wave Table 同区块同偏移。",
+                RoundTimerModule.instance(), null);
+        real("eco_rate", "EcoRate", "经济速率", GROUP_CORE,
+                "右侧经济表周期性把金币切为每2分钟纯增长速率（绿字闪烁），2分钟窗口每10秒刷新。",
+                EcoRateModule.instance(), EcoRatePanelScreen::new);
+        real("lr_indicator", "LR Indicator", "LR 指示", GROUP_CORE,
+                "AA 物品栏上方的 LR 释放清单：绿=已放 18s 内，红=未放，轮换位置 /micx lr 2/3/4。",
+                LrIndicatorModule.instance(), null);
+        real("auto_hide_visuals", "AutoHide Visuals", "自动隐藏", GROUP_MISC,
+                "对局结算 1 分钟藏 ESP/Chams/Outline/AimLead，R1/离图恢复。",
+                AutoHideVisualsModule.instance(), null);
+        real("zombie_fade", "ZombieFade", "僵尸淡化", GROUP_MISC,
+                "近距离敌对生物半透明淡化。",
+                ZombieFadeModule.instance(), null);
+        real("revive_aura", "ReviveAura", "自动救人", GROUP_CORE,
+                "队友倒地睡在附近时自动发送救援交互包（纯发包，范围/间隔可配）。",
+                ReviveAuraModule.instance(), null);
+        real("last_mobs", "LastMobs", "残怪连线", GROUP_INFO,
+                "回合剩余怪 ≤N 时，准心向每只残怪拉黄色指示线（计分板权威计数）。",
+                LastMobsModule.instance(), null);
+        real("spawn_marker", "SpawnMarker", "刷怪点标记", GROUP_INFO,
+                "AA 已知刷怪点固定灰色光柱：11 地面点 + 4 UFO 放怪口（纯预设）。",
+                SpawnMarkerModule.instance(), null);
+        real("slime_forecast", "SlimeForecast", "史莱姆预告", GROUP_INFO,
+                "刷史莱姆/岩浆波次前在 12 个固定点显示绿 X（墨绿→亮绿→隐藏），Force 模式常显。",
+                SlimeForecastModule.instance(), null);
+        real("golem_marker", "GolemMarker", "铁傀儡标记", GROUP_INFO,
+                "铁傀儡 5 个固定出生点贴地灰 X，穿墙可见。",
+                GolemMarkerModule.instance(), null);
+        real("fullbright", "Fullbright", "全亮", GROUP_CORE,
+                "强制 gamma 全亮，Forge Fullbright 的 Fabric 等价实现；关闭时还原。",
+                FullbrightModule.instance(), null);
         real("zombies_assist", "ZombiesAssist", "僵尸助手", GROUP_CORE,
                 "波次、僵尸剩余、Power-up、警报、自动行为和 Alien Arcadium 状态 HUD。",
                 ZombiesAssistModule.instance(), ZombiesAssistConfigScreen::new);
@@ -50,11 +83,11 @@ public final class ModulePanelRegistry {
                 "使用 26.2 原生 outline phase 的玩家绿色轮廓；厚度由客户端原生管线控制。",
                 PlayerOutlineEspModule.instance(), PlayerOutlineEspConfigScreen::new);
         real("right_clicker", "RightClicker", "自动右键", GROUP_COMBAT,
-                "按住时自动连续右键（放置 / 交互）", RightClickerModule.instance(), RightClickerConfigScreen::new);
+                "按住时真实模拟快速右键（默认 20 CPS，每 tick 一发；面板/指令可调，与 AimLead 单引擎互让）", RightClickerModule.instance(), RightClickerConfigScreen::new);
         real("skill_cast", "SkillCast", "技能释放", GROUP_COMBAT,
                 "切槽5 + 原生右键 + 切回，单次激活", SkillCastModule.instance(), SkillCastConfigScreen::new);
-        real("keyboard_clicker", "KeyboardClicker", "键盘连点", GROUP_COMBAT,
-                "键盘触发的鼠标连点，多种组合", KeyboardClickerModule.instance(), KeyboardClickerConfigScreen::new);
+        real("keyboard_clicker", "KeyboardClicker", "自动切枪 AutoSwitch", GROUP_COMBAT,
+                "键盘触发的自动切枪，多种组合", KeyboardClickerModule.instance(), KeyboardClickerConfigScreen::new);
 
         real("dps_counter", "DPSCounter", "DPS 计数", GROUP_INFO,
                 "实时统计你的每秒伤害（DPS）", DpsCounterModule.instance(), DpsCounterConfigScreen::new);

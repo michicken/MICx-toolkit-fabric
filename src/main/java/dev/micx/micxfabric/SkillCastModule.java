@@ -132,6 +132,10 @@ public final class SkillCastModule implements Module {
         resetInput();
     }
 
+    public boolean isCasting() {
+        return stage != 0;
+    }
+
     public int keyCode() {
         loadConfig();
         return keyCode;

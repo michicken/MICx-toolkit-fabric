@@ -28,6 +28,8 @@ public final class ModuleRuntime {
         register(ToroHealthModule.instance());
         register(TeammateHpModule.instance());
         register(ZombiesAssistModule.instance());
+        register(LrIndicatorModule.instance());
+        register(FullbrightModule.instance());
         register(EspModule.instance());
         register(ChamsModule.instance());
         register(PlayerOutlineEspModule.instance());
@@ -36,6 +38,15 @@ public final class ModuleRuntime {
         register(ToggleSprintModule.instance());
         register(WelcomeModule.instance());
         register(AutoTextModule.instance());
+        register(AutoHideVisualsModule.instance());
+        register(ZombieFadeModule.instance());
+        register(ReviveAuraModule.instance());
+        register(LastMobsModule.instance());
+        register(SpawnMarkerModule.instance());
+        register(SlimeForecastModule.instance());
+        register(GolemMarkerModule.instance());
+        register(RoundTimerModule.instance());
+        register(EcoRateModule.instance());
         register(RightClickerModule.instance());
         for (Module module : MODULES.values()) {
             module.setEnabled(ModuleStateStore.get(module.id(), module.defaultEnabled()));

@@ -13,6 +13,7 @@
     "MixinLivingEntityRenderer",
     "MixinLevelRenderer",
     "MixinHud",
+    "MixinLightmapRenderStateExtractor",
     "RenderTypeAccess",
     "RenderPipelinesAccess",
     "MixinChatComponent",

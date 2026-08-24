@@ -26,14 +26,18 @@ public final class ZombiesConfig {
     public boolean waveTempo = true;
     public boolean slimeGrowth = true;
     public boolean noRotate = true;
+    public String roundsRecord = "ALL";
+    public boolean waveTableHud = true;
+    public int waveTableHudDx = 0;
+    public int waveTableHudDy = 0;
+    public boolean speedrunEnabled = false;
+    public boolean showSplitOnWaveTable = true;
     public boolean originalScoreboard = false;
 
     public int tacticalHudRight = 4;
     public int tacticalHudY = 32;
     public int ecoHudRight = 4;
     public int ecoHudCenterYOffset = 0;
-    public int resourceLeftX = 8;
-    public int resourceLeftY = 200;
     public int frHudXOffset = 0;
     public int frHudYOffset = 48;
     public int topHudXOffset = 0;
@@ -53,7 +57,6 @@ public final class ZombiesConfig {
 
     public float tacticalHudScale = 1.0f;
     public float ecoHudScale = 1.0f;
-    public float resourceHudScale = 1.0f;
     public float topHudScale = 1.0f;
     public float lsHudScale = 1.0f;
     public float threatHudScale = 1.0f;
@@ -92,14 +95,18 @@ public final class ZombiesConfig {
         waveTempo = bool(properties, "waveTempo", true);
         slimeGrowth = bool(properties, "slimeGrowth", true);
         noRotate = bool(properties, "noRotate", true);
+        roundsRecord = string(properties, "roundsRecord", "ALL");
+        waveTableHud = bool(properties, "waveTableHud", true);
+        waveTableHudDx = integer(properties, "waveTableHudDx", 0, -5000, 5000);
+        waveTableHudDy = integer(properties, "waveTableHudDy", 0, -5000, 5000);
+        speedrunEnabled = bool(properties, "speedrunEnabled", false);
+        showSplitOnWaveTable = bool(properties, "showSplitOnWaveTable", true);
         originalScoreboard = bool(properties, "originalScoreboard", false);
 
         tacticalHudRight = integer(properties, "tacticalHudRight", 4, 0, 9_999);
         tacticalHudY = integer(properties, "tacticalHudY", 32, 0, 9_999);
         ecoHudRight = integer(properties, "ecoHudRight", 4, 0, 9_999);
         ecoHudCenterYOffset = integer(properties, "ecoHudCenterYOffset", 0, -5_000, 5_000);
-        resourceLeftX = integer(properties, "resourceLeftX", 8, 0, 9_999);
-        resourceLeftY = integer(properties, "resourceLeftY", 200, 0, 9_999);
         frHudXOffset = integer(properties, "frHudXOffset", 0, -5_000, 5_000);
         frHudYOffset = integer(properties, "frHudYOffset", 48, -5_000, 5_000);
         topHudXOffset = integer(properties, "topHudXOffset", 0, -5_000, 5_000);
@@ -119,7 +126,6 @@ public final class ZombiesConfig {
 
         tacticalHudScale = decimal(properties, "tacticalHudScale", 1.0f);
         ecoHudScale = decimal(properties, "ecoHudScale", 1.0f);
-        resourceHudScale = decimal(properties, "resourceHudScale", 1.0f);
         topHudScale = decimal(properties, "topHudScale", 1.0f);
         lsHudScale = decimal(properties, "lsHudScale", 1.0f);
         threatHudScale = decimal(properties, "threatHudScale", 1.0f);
@@ -152,14 +158,18 @@ public final class ZombiesConfig {
         putBoolean(properties, "waveTempo", waveTempo);
         putBoolean(properties, "slimeGrowth", slimeGrowth);
         putBoolean(properties, "noRotate", noRotate);
+        properties.setProperty("roundsRecord", roundsRecord == null ? "ALL" : roundsRecord);
+        putBoolean(properties, "waveTableHud", waveTableHud);
+        putInteger(properties, "waveTableHudDx", waveTableHudDx, -5000, 5000);
+        putInteger(properties, "waveTableHudDy", waveTableHudDy, -5000, 5000);
+        putBoolean(properties, "speedrunEnabled", speedrunEnabled);
+        putBoolean(properties, "showSplitOnWaveTable", showSplitOnWaveTable);
         putBoolean(properties, "originalScoreboard", originalScoreboard);
 
         putInteger(properties, "tacticalHudRight", tacticalHudRight, 0, 9_999);
         putInteger(properties, "tacticalHudY", tacticalHudY, 0, 9_999);
         putInteger(properties, "ecoHudRight", ecoHudRight, 0, 9_999);
         putInteger(properties, "ecoHudCenterYOffset", ecoHudCenterYOffset, -5_000, 5_000);
-        putInteger(properties, "resourceLeftX", resourceLeftX, 0, 9_999);
-        putInteger(properties, "resourceLeftY", resourceLeftY, 0, 9_999);
         putInteger(properties, "frHudXOffset", frHudXOffset, -5_000, 5_000);
         putInteger(properties, "frHudYOffset", frHudYOffset, -5_000, 5_000);
         putInteger(properties, "topHudXOffset", topHudXOffset, -5_000, 5_000);
@@ -179,7 +189,6 @@ public final class ZombiesConfig {
 
         putDecimal(properties, "tacticalHudScale", tacticalHudScale);
         putDecimal(properties, "ecoHudScale", ecoHudScale);
-        putDecimal(properties, "resourceHudScale", resourceHudScale);
         putDecimal(properties, "topHudScale", topHudScale);
         putDecimal(properties, "lsHudScale", lsHudScale);
         putDecimal(properties, "threatHudScale", threatHudScale);
@@ -195,6 +204,11 @@ public final class ZombiesConfig {
         } catch (IOException exception) {
             MicxFabric.LOGGER.warn("Unable to save ZombiesAssist configuration", exception);
         }
+    }
+
+    private static String string(Properties properties, String key, String fallback) {
+        String v = ConfigProperties.string(properties, key, null);
+        return v == null ? fallback : v.trim();
     }
 
     private static boolean bool(Properties properties, String key, boolean fallback) {

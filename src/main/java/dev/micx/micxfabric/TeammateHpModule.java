@@ -177,6 +177,17 @@ public final class TeammateHpModule implements Module {
         saveConfig();
     }
 
+    public void setLayoutPosition(int x, int y) {
+        loadConfig();
+        screenX = clamp(x, 0, 9_999);
+        screenY = clamp(y, 0, 9_999);
+    }
+
+    public void saveLayoutConfiguration() {
+        loadConfig();
+        saveConfig();
+    }
+
     public void setUiScale(float value) {
         uiScale = clamp(value, 0.5f, 1.75f);
         saveConfig();
@@ -204,16 +215,17 @@ public final class TeammateHpModule implements Module {
         if (players.size() > 4) players = new ArrayList<>(players.subList(0, 4));
         if (players.isEmpty()) return;
 
-        float scale = uiScale;
-        int x = Math.round(screenX / scale);
-        int y = Math.round(screenY / scale);
+        float scaleX = HudLayoutRegistry.scaleX("teammate_hp", uiScale);
+        float scaleY = HudLayoutRegistry.scaleY("teammate_hp", uiScale);
+        int x = Math.round(screenX / scaleX);
+        int y = Math.round(screenY / scaleY);
         int scaleMax = 20;
         for (AbstractClientPlayer player : players) {
             scaleMax = Math.max(scaleMax, Math.round(Math.max(1.0f, player.getMaxHealth())));
         }
 
         graphics.pose().pushMatrix();
-        graphics.pose().scale(scale, scale);
+        graphics.pose().scale(scaleX, scaleY);
         try {
             for (AbstractClientPlayer player : players) {
                 drawCard(graphics, client, player, x, y, scaleMax);

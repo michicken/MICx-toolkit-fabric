@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.util.Base64;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
@@ -64,6 +65,18 @@ public final class TeamSyncTokenProvider implements AutoCloseable {
         } catch (RuntimeException exception) {
             return null;
         }
+    }
+
+    /** Returns the legacy HS HTTP bearer: Base64 of the complete signed token JSON. */
+    public String getBearerNonBlocking() {
+        JsonObject token = getTokenNonBlocking();
+        return token == null ? null : encodeBearer(token);
+    }
+
+    static String encodeBearer(JsonObject token) {
+        if (token == null) return null;
+        return Base64.getEncoder().encodeToString(
+                token.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     public void refreshAsync() {

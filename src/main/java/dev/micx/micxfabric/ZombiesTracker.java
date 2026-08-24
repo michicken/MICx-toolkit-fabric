@@ -9,6 +9,9 @@ import net.minecraft.world.scores.PlayerScoreEntry;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,6 +25,8 @@ public final class ZombiesTracker {
 
     private int round;
     private int zombiesLeft = -1;
+    private int gameTimeSeconds = -1;
+    private long gameTimeSampleMs;
     private long roundStartMs;
     private boolean inZombies;
     private boolean inAlienArcadium;
@@ -38,8 +43,15 @@ public final class ZombiesTracker {
     private String sidebarTitle = "";
     private int selfGold = -1;
     private long goldSampleMs;
+    private volatile long cumulativeActualMs = 0L;
+    private volatile long lastSplitRoundMs = 0L;
+    private volatile long lastSplitDeltaMs = 0L;
+    private volatile long lastSplitTotalDeltaMs = 0L;
+    private volatile int lastSplitRound = 0;
     private int goldAtSample;
     private float goldPerMin;
+    private static final Pattern GOLD_GAIN = Pattern.compile("\\+(\\d{1,6}) Gold(?: \\(Critical Hit\\))?", Pattern.CASE_INSENSITIVE);
+    private final EcoRateTracker ecoRate = new EcoRateTracker();
     private ScoreboardFrame frame = ScoreboardFrame.empty();
     private final ZombiesEventState eventState = new ZombiesEventState();
     private final ZombiesSoundMetrics soundMetrics = new ZombiesSoundMetrics();
@@ -63,6 +75,7 @@ public final class ZombiesTracker {
         }
         long now = System.currentTimeMillis();
         eventState.expirePowerUps(now);
+        ecoRate.tick(now);
         if ((tickCounter++ & 3) != 0) return;
         updateFromSidebar(client.level.getScoreboard(), client);
     }
@@ -70,6 +83,8 @@ public final class ZombiesTracker {
     public void reset() {
         round = 0;
         zombiesLeft = -1;
+        gameTimeSeconds = -1;
+        gameTimeSampleMs = 0L;
         roundStartMs = 0L;
         inZombies = false;
         inAlienArcadium = false;
@@ -88,7 +103,9 @@ public final class ZombiesTracker {
         tickCounter = 0;
         frame = ScoreboardFrame.empty();
         eventState.reset();
+        ecoRate.reset();
         soundMetrics.reset();
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
     }
 
     public int round() {
@@ -101,6 +118,10 @@ public final class ZombiesTracker {
 
     public long roundStartMs() {
         return roundStartMs;
+    }
+
+    public int gameTimeSeconds() {
+        return gameTimeSeconds;
     }
 
     public boolean isInZombies() {
@@ -131,8 +152,22 @@ public final class ZombiesTracker {
         return selfGold;
     }
 
+    public long lastSplitRoundMs(){ return lastSplitRoundMs; }
+    public long lastSplitDeltaMs(){ return lastSplitDeltaMs; }
+    public long lastSplitTotalDeltaMs(){ return lastSplitTotalDeltaMs; }
+    public int lastSplitRound(){ return lastSplitRound; }
+    public long cumulativeActualMs(){ return cumulativeActualMs; }
+
     public float goldPerMin() {
         return goldPerMin;
+    }
+
+    public EcoRateTracker ecoRate() {
+        return ecoRate;
+    }
+
+    static String fmtEco2min(long v) {
+        return Math.abs(v) >= 1000 ? String.format(java.util.Locale.ROOT, "%.1fk", v / 1000f) : String.valueOf(v);
     }
 
     public ZombiesEventState eventState() {
@@ -160,10 +195,14 @@ public final class ZombiesTracker {
     }
 
     public void onChatText(String text, long now) {
+        Matcher m = GOLD_GAIN.matcher(text == null ? "" : text);
+        if (m.find()) { try { ecoRate.onSelfGoldGain(now, Integer.parseInt(m.group(1))); } catch (NumberFormatException ignored) {} }
         acceptEvent(ZombiesEventParser.parseChat(text), now);
     }
 
     public void onGameText(String text, long now) {
+        Matcher m = GOLD_GAIN.matcher(text == null ? "" : text);
+        if (m.find()) { try { ecoRate.onSelfGoldGain(now, Integer.parseInt(m.group(1))); } catch (NumberFormatException ignored) {} }
         acceptEvent(ZombiesEventParser.parseChat(text), now);
     }
 
@@ -243,9 +282,44 @@ public final class ZombiesTracker {
     }
 
     private void updateRound(int value, long now) {
-        if (value <= 0 || value > 105 || value <= round) return;
+        if (value <= 0 || value > 105) return;
+        if (round > 0 && value < round && value == 1) {
+            round = value; roundStartMs = now; cumulativeActualMs = 0L; lastSplitRound = 0; return;
+        }
+        if (value <= round) return;
+        int prevRound = round; long prevStart = roundStartMs; long durationMs = prevRound >=1 && prevStart>0 ? now - prevStart : -1;
+        if (durationMs>0) cumulativeActualMs += durationMs;
+        long cumMs = cumulativeActualMs;
+        // Announce round completion on main thread (needs Minecraft instance)
+        if (prevRound >=1 && prevStart>0) {
+            final int pr = prevRound; final long ps = prevStart; final long dur = durationMs; final long cm = cumMs;
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    ZombiesConfig cfg = ZombiesAssistModule.instance().config();
+                    String mode = cfg.roundsRecord;
+                    RoundTimeNotifier.Announcement a = RoundTimeNotifier.buildAnnouncement(mode, pr, ps, System.currentTimeMillis());
+                    if (a != null) {
+                        RoundTimeNotifier.sendAnnouncement(a);
+                        if (cfg.speedrunEnabled) {
+                            SpeedrunBaseline bl = SpeedrunBaseline.get();
+                            if (bl.hasBaseline()) {
+                                long baseMs = bl.baselineMs(pr);
+                                long cumBase = bl.cumulativeBaselineMs(pr);
+                                if (baseMs>0 && cumBase>0 && dur>0) {
+                                    long dR = dur - baseMs; long dT = cm - cumBase;
+                                    lastSplitRound = pr; lastSplitRoundMs = dur; lastSplitDeltaMs = dR; lastSplitTotalDeltaMs = dT;
+                                    RoundTimeNotifier.sendSplitAnnouncement(pr, dR, dT);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
         round = value;
         roundStartMs = now;
+        try { LrIndicatorModule.onRoundChanged(value); } catch (Throwable ignored) {}
     }
 
     private void updateFromSidebar(Scoreboard scoreboard, Minecraft client) {
@@ -272,7 +346,7 @@ public final class ZombiesTracker {
             String rendered = renderTeamLine(team, entryText, owner);
             if (rendered.isBlank()) continue;
             rawLines.add(rendered);
-            lines.add(stripPlaceholders(rendered));
+            lines.add(rendered);
         }
 
         ScoreboardFrame next = ScoreboardFrame.of(objective.getDisplayName().getString(), lines, rawLines);
@@ -301,14 +375,27 @@ public final class ZombiesTracker {
         frame = next;
         sidebarTitle = next.title();
         if (next.isAlienArcadium()) inAlienArcadium = true;
+        if (next.gameTimeSeconds() >= 0) {
+            gameTimeSeconds = next.gameTimeSeconds();
+            gameTimeSampleMs = now;
+        } else if (gameTimeSeconds >= 0 && now - gameTimeSampleMs > 60_000L) {
+            gameTimeSeconds = -1;
+            gameTimeSampleMs = 0L;
+        }
         for (java.util.Map.Entry<String, String> entry : next.playerStatuses().entrySet()) {
             eventState.mergeScoreboardStatus(entry.getKey(), entry.getValue(), now);
         }
         if (next.round() > 0 && next.round() > round) {
             round = next.round();
             roundStartMs = now;
+            try { LrIndicatorModule.onRoundChanged(next.round()); } catch (Throwable ignored) {}
         }
         if (next.zombiesLeft() >= 0) zombiesLeft = next.zombiesLeft();
+        // EcoRate: sample all visible players for mate rates
+        for (java.util.Map.Entry<String,Integer> e : next.playerGolds().entrySet()) {
+            int g = e.getValue() == null ? -1 : e.getValue();
+            if (g >= 0) ecoRate.samplePlayer(e.getKey(), g, now);
+        }
         if (client != null && client.player != null) {
             String playerName = client.player.getName().getString();
             int observedGold = next.playerGold(playerName);
@@ -319,6 +406,8 @@ public final class ZombiesTracker {
     /** Clears only the view; a missing objective is allowed to be transient. */
     private void clearScoreboardView() {
         zombiesLeft = -1;
+        gameTimeSeconds = -1;
+        gameTimeSampleMs = 0L;
         inZombies = false;
         sidebarTitle = "";
         selfGold = -1;
@@ -361,10 +450,14 @@ public final class ZombiesTracker {
         goldSampleMs = 0L;
         goldAtSample = 0;
         goldPerMin = 0.0f;
+        ecoRate.reset();
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
     }
 
     private void finishOldSession() {
         eventState.reset();
+        ecoRate.reset();
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
         eventGeneration++;
         sessionResetPending = false;
         round = 0;

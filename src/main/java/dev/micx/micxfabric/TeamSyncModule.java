@@ -12,6 +12,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -47,6 +49,7 @@ public final class TeamSyncModule implements Module {
     private long lastPing;
     private long sequence;
     private boolean pingWasDown;
+    private String lastSentH7Item, lastSentH7Name, lastSentH8Item, lastSentH8Name, lastSentH9Item, lastSentH9Name;
     private boolean configDirty;
     private boolean transportStoppedForWorld;
 
@@ -166,36 +169,46 @@ public final class TeamSyncModule implements Module {
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {
+        loadConfig();
         if (!enabled || !config.renderOverlay) return;
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.player == null || minecraft.level == null) return;
-        int x = Math.max(0, graphics.guiWidth() - config.hudRightOffset);
-        int y = Math.max(0, config.hudY);
-        int color = transport.isConnected() ? (joined ? 0xFF57B98C : 0xFFE8A73E) : 0xFFE06A6A;
-        graphics.text(minecraft.font, Component.literal("TeamSync " + (joined ? "● " + state.all().size() : "○")),
-                x, y, color, true);
-        y += minecraft.font.lineHeight + 2;
-        if (!joined) {
-            graphics.text(minecraft.font, Component.literal("等待 Zombies 队伍 / token"), x, y, 0xFF98A0AB);
-            return;
-        }
-        List<TeamSyncSnapshot> snapshots = new ArrayList<>(state.all());
-        snapshots.sort(Comparator.comparing(snapshot -> snapshot.name.toLowerCase(Locale.ROOT)));
-        boolean any = false;
-        long now = System.currentTimeMillis();
-        for (TeamSyncSnapshot snapshot : snapshots) {
-            if (snapshot.name.equals(selfName(minecraft)) || !snapshot.fresh(now, SNAPSHOT_TTL_MS)) continue;
-            any = true;
-            StringBuilder line = new StringBuilder(snapshot.name);
-            if (config.showPing && snapshot.ping >= 0) line.append(" | ").append(snapshot.ping).append("ms");
-            if (snapshot.hasTarget(now, TARGET_TTL_MS)) {
-                line.append(" | -> ").append(shortType(snapshot.targetType));
+        float scaleX = HudLayoutRegistry.scaleX("team_sync", config.hudScaleX);
+        float scaleY = HudLayoutRegistry.scaleY("team_sync", config.hudScaleY);
+        graphics.pose().pushMatrix();
+        graphics.pose().scale(scaleX, scaleY);
+        try {
+            int x = Math.max(0, Math.round((graphics.guiWidth() - config.hudRightOffset) / scaleX));
+            int y = Math.max(0, Math.round(config.hudY / scaleY));
+            int color = transport.isConnected() ? (joined ? 0xFF57B98C : 0xFFE8A73E) : 0xFFE06A6A;
+            graphics.text(minecraft.font, Component.literal("TeamSync " + (joined ? "● " + state.all().size() : "○")),
+                    x, y, color, true);
+            y += Math.round((minecraft.font.lineHeight + 2) / scaleY);
+            if (!joined) {
+                graphics.text(minecraft.font, Component.literal("等待 Zombies 队伍 / token"), x, y, 0xFF98A0AB);
+                return;
             }
-            graphics.text(minecraft.font, Component.literal(trim(minecraft, line.toString(), graphics.guiWidth() - x - 4)),
-                    x, y, 0xFFE7EAEE);
-            y += minecraft.font.lineHeight;
+            List<TeamSyncSnapshot> snapshots = new ArrayList<>(state.all());
+            snapshots.sort(Comparator.comparing(snapshot -> snapshot.name.toLowerCase(Locale.ROOT)));
+            boolean any = false;
+            long now = System.currentTimeMillis();
+            for (TeamSyncSnapshot snapshot : snapshots) {
+                if (snapshot.name.equals(selfName(minecraft)) || !snapshot.fresh(now, SNAPSHOT_TTL_MS)) continue;
+                any = true;
+                StringBuilder line = new StringBuilder(snapshot.name);
+                if (config.showPing && snapshot.ping >= 0) line.append(" | ").append(snapshot.ping).append("ms");
+                if (snapshot.hasTarget(now, TARGET_TTL_MS)) {
+                    line.append(" | -> ").append(shortType(snapshot.targetType));
+                }
+                graphics.text(minecraft.font, Component.literal(trim(minecraft, line.toString(),
+                                Math.max(20, Math.round((graphics.guiWidth() - x * scaleX - 4) / scaleX)))),
+                        x, y, 0xFFE7EAEE);
+                y += Math.max(1, Math.round(minecraft.font.lineHeight / scaleY));
+            }
+            if (!any) graphics.text(minecraft.font, Component.literal("no fresh peers"), x, y, 0xFF5C6572);
+        } finally {
+            graphics.pose().popMatrix();
         }
-        if (!any) graphics.text(minecraft.font, Component.literal("no fresh peers"), x, y, 0xFF5C6572);
     }
 
     private void collectSubmits(LevelRenderContext context) {
@@ -233,11 +246,44 @@ public final class TeamSyncModule implements Module {
             var info = minecraft.getConnection().getPlayerInfo(minecraft.player.getUUID());
             if (info != null) ping = Math.max(0, info.getLatency());
         }
-        transport.sendState(selfName(minecraft), minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ(),
+        String curH7Item = hotbarItemId(minecraft.player.getInventory().getItem(6));
+        String curH7Name = hotbarDisplayName(minecraft.player.getInventory().getItem(6));
+        String curH8Item = hotbarItemId(minecraft.player.getInventory().getItem(7));
+        String curH8Name = hotbarDisplayName(minecraft.player.getInventory().getItem(7));
+        String curH9Item = hotbarItemId(minecraft.player.getInventory().getItem(8));
+        String curH9Name = hotbarDisplayName(minecraft.player.getInventory().getItem(8));
+        String sendH7Item = null, sendH7Name = null, sendH8Item = null, sendH8Name = null, sendH9Item = null, sendH9Name = null;
+        boolean h7Changed = curH7Item != null && (!curH7Item.equals(lastSentH7Item) || !java.util.Objects.equals(curH7Name, lastSentH7Name));
+        boolean h8Changed = curH8Item != null && (!curH8Item.equals(lastSentH8Item) || !java.util.Objects.equals(curH8Name, lastSentH8Name));
+        boolean h9Changed = curH9Item != null && (!curH9Item.equals(lastSentH9Item) || !java.util.Objects.equals(curH9Name, lastSentH9Name));
+        if (h7Changed) { sendH7Item = curH7Item; sendH7Name = curH7Name; }
+        if (h8Changed) { sendH8Item = curH8Item; sendH8Name = curH8Name; }
+        if (h9Changed) { sendH9Item = curH9Item; sendH9Name = curH9Name; }
+        boolean accepted = transport.sendState(selfName(minecraft), minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ(),
                 minecraft.player.getYRot(), minecraft.player.getXRot(), minecraft.player.getHealth(),
                 minecraft.player.getMaxHealth(), minecraft.player.getAbsorptionAmount(), "unknown",
                 targetId, targetType, targetPosition.x, targetPosition.y, targetPosition.z,
-                targetHealth, target == null ? null : target.getName().getString(), ping, ++sequence);
+                targetHealth, target == null ? null : target.getName().getString(), ping, ++sequence,
+                sendH7Item, sendH7Name, sendH8Item, sendH8Name, sendH9Item, sendH9Name);
+        if (accepted) {
+            if (h7Changed) { lastSentH7Item = sendH7Item; lastSentH7Name = sendH7Name; }
+            if (h8Changed) { lastSentH8Item = sendH8Item; lastSentH8Name = sendH8Name; }
+            if (h9Changed) { lastSentH9Item = sendH9Item; lastSentH9Name = sendH9Name; }
+        }
+    }
+
+    private static String hotbarItemId(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        try {
+            var key = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            if (key != null) return key.toString();
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    private static String hotbarDisplayName(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        try { return stack.getHoverName().getString(); } catch (Throwable ignored) { return null; }
     }
 
     private Entity pickTarget(Minecraft minecraft) {
@@ -325,6 +371,20 @@ public final class TeamSyncModule implements Module {
                     snapshot.targetZ = number(target, "z");
                     snapshot.targetHp = (float) number(target, "hp");
                     snapshot.targetName = sanitize(text(target, "name"), "?");
+                }
+                if (object.has("hotbar") && object.get("hotbar").isJsonObject()) {
+                    JsonObject hotbar = object.getAsJsonObject("hotbar");
+                    for (String k : new String[]{"7","8","9"}) {
+                        if (!hotbar.has(k) || !hotbar.get(k).isJsonObject()) continue;
+                        JsonObject slot = hotbar.getAsJsonObject(k);
+                        String item = sanitize(text(slot, "item"), null);
+                        String hbName = sanitize(text(slot, "name"), null);
+                        if (item == null && hbName == null) continue;
+                        if ("7".equals(k)) { snapshot.hotbar7Item = item; snapshot.hotbar7Name = hbName; }
+                        else if ("8".equals(k)) { snapshot.hotbar8Item = item; snapshot.hotbar8Name = hbName; }
+                        else { snapshot.hotbar9Item = item; snapshot.hotbar9Name = hbName; }
+                        snapshot.hotbarUpdatedMs = now;
+                    }
                 }
             } catch (RuntimeException ignored) {
                 // Malformed remote messages are discarded without surfacing payload data.

@@ -26,6 +26,8 @@ public final class ToroHealthModule implements Module {
     private int displayPosition;
     private int displayX;
     private int displayY;
+    private float hudScaleX = 1.0f;
+    private float hudScaleY = 1.0f;
     private boolean showDamageParticles = true;
     private int damageColor = 0xFF0000;
     private int healColor = 0x00FF00;
@@ -108,6 +110,13 @@ public final class ToroHealthModule implements Module {
         else if (displayPosition == 3) { x = 2; y = height - 30; }
         else if (displayPosition == 4) { x = width - 102; y = height - 30; }
         else if (displayPosition == 5) { x = displayX; y = displayY; }
+        float scaleX = HudLayoutRegistry.scaleX("toro_health", hudScaleX);
+        float scaleY = HudLayoutRegistry.scaleY("toro_health", hudScaleY);
+        graphics.pose().pushMatrix();
+        graphics.pose().scale(scaleX, scaleY);
+        try {
+            x = Math.round(x / scaleX);
+            y = Math.round(y / scaleY);
         if (displayMode == 1) {
             graphics.text(client.font, Component.literal(name + "  " + (int) health + "/" + (int) max), x + 8, y + 4,
                     healthColor(ratio), true);
@@ -129,6 +138,9 @@ public final class ToroHealthModule implements Module {
         String hp = (int) health + "/" + (int) max;
         graphics.text(client.font, Component.literal(hp), barX + (barW - client.font.width(hp)) / 2, barY + 1,
                 ratio > .5f ? 0xFFFFFFFF : ratio > .25f ? 0xFFFFFFAA : 0xFFFFAAAA, true);
+        } finally {
+            graphics.pose().popMatrix();
+        }
     }
 
     private static boolean isTarget(LivingEntity living) {
@@ -211,6 +223,27 @@ public final class ToroHealthModule implements Module {
         saveConfig();
     }
 
+    public float hudScaleX() {
+        loadConfig();
+        return hudScaleX;
+    }
+
+    public float hudScaleY() {
+        loadConfig();
+        return hudScaleY;
+    }
+
+    public void setHudScale(float x, float y) {
+        loadConfig();
+        hudScaleX = HudLayoutMath.clampScale(x);
+        hudScaleY = HudLayoutMath.clampScale(y);
+    }
+
+    public void saveLayoutConfiguration() {
+        loadConfig();
+        saveConfig();
+    }
+
     public void setShowDamageParticles(boolean value) {
         showDamageParticles = value;
         saveConfig();
@@ -242,10 +275,20 @@ public final class ToroHealthModule implements Module {
         displayPosition = ConfigProperties.integer(properties, "displayPosition", 0, 0, 5);
         displayX = ConfigProperties.integer(properties, "displayX", 0, -20_000, 20_000);
         displayY = ConfigProperties.integer(properties, "displayY", 0, -20_000, 20_000);
+        hudScaleX = parseScale(ConfigProperties.string(properties, "hudScaleX", "1.0"));
+        hudScaleY = parseScale(ConfigProperties.string(properties, "hudScaleY", "1.0"));
         showDamageParticles = ConfigProperties.bool(properties, "showDamageParticles", true);
         damageColor = parseColor(properties.getProperty("damageColor"), 0xFF0000);
         healColor = parseColor(properties.getProperty("healColor"), 0x00FF00);
         hideDelayMs = ConfigProperties.integer(properties, "hideDelayMs", 200, 50, 5_000);
+    }
+
+    private static float parseScale(String value) {
+        try {
+            return HudLayoutMath.clampScale(Float.parseFloat(value));
+        } catch (RuntimeException ignored) {
+            return 1.0f;
+        }
     }
 
     private static int parseColor(String value, int fallback) {
@@ -271,6 +314,8 @@ public final class ToroHealthModule implements Module {
         properties.setProperty("displayPosition", Integer.toString(displayPosition));
         properties.setProperty("displayX", Integer.toString(displayX));
         properties.setProperty("displayY", Integer.toString(displayY));
+        properties.setProperty("hudScaleX", Float.toString(HudLayoutMath.clampScale(hudScaleX)));
+        properties.setProperty("hudScaleY", Float.toString(HudLayoutMath.clampScale(hudScaleY)));
         properties.setProperty("showDamageParticles", Boolean.toString(showDamageParticles));
         properties.setProperty("damageColor", Integer.toString(damageColor));
         properties.setProperty("healColor", Integer.toString(healColor));

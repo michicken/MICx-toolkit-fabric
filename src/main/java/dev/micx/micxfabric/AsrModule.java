@@ -45,11 +45,16 @@ public final class AsrModule implements Module {
     private volatile String stash = "";
     private volatile String apiKey = BUILT_IN_KEY;
     private volatile int pttKey = GLFW.GLFW_KEY_V;
+    private volatile int hudX = 8;
+    private volatile int hudBottom = 64;
+    private volatile float hudScaleX = 1.0f;
+    private volatile float hudScaleY = 1.0f;
     private volatile long generation;
     private volatile Session activeSession;
     private boolean previousPttDown;
     private boolean previousEnterDown;
     private boolean previousEscapeDown;
+    private boolean configLoaded;
 
     private enum State { IDLE, CONNECTING, RECORDING, FINALIZING, PENDING }
 
@@ -78,6 +83,8 @@ public final class AsrModule implements Module {
     }
 
     public void initializeConfig() {
+        if (configLoaded) return;
+        configLoaded = true;
         Path file = FabricRuntime.configPath().resolve("asr.properties");
         Properties properties = new Properties();
         try {
@@ -101,6 +108,10 @@ public final class AsrModule implements Module {
                 // Keep the default PTT key for malformed configuration.
             }
         }
+        hudX = ConfigProperties.integer(properties, "hudX", 8, 0, 9_999);
+        hudBottom = ConfigProperties.integer(properties, "hudBottom", 64, 0, 9_999);
+        hudScaleX = parseHudScale(properties.getProperty("hudScaleX"), 1.0f);
+        hudScaleY = parseHudScale(properties.getProperty("hudScaleY"), 1.0f);
         if (apiKey.isBlank()) {
             MicxFabric.LOGGER.warn("ASR is disabled until MICX_STEP_API_KEY or config/MICxToolkit/asr.properties api_key is configured");
         }
@@ -427,11 +438,26 @@ public final class AsrModule implements Module {
 
     public void drawHud(GuiGraphicsExtractor graphics) {
         if (!enabled || state == State.IDLE) return;
-        int y = graphics.guiHeight() - 64;
+        Minecraft client = Minecraft.getInstance();
+        float sx = HudLayoutRegistry.scaleX("asr", hudScaleX);
+        float sy = HudLayoutRegistry.scaleY("asr", hudScaleY);
+        int physicalHeight = HudLayoutMath.renderSize(42, hudScaleY,
+                HudLayoutConfig.instance().scaleY("asr"));
+        int y = graphics.guiHeight() - hudBottom - physicalHeight;
         String text = transcript.isBlank() ? "识别中…" : transcript;
-        graphics.text(Minecraft.getInstance().font, Component.literal(text), 8, y, 0xFFFFFFFF, true);
-        if (!stash.isBlank()) graphics.text(Minecraft.getInstance().font, Component.literal(stash), 8, y + 12, 0xFF888888, true);
-        if (state == State.PENDING) graphics.text(Minecraft.getInstance().font, Component.literal("[Enter] 发送  [Esc] 取消"), 8, y + 24, 0xFFB8B8B8, true);
+        graphics.pose().pushMatrix();
+        graphics.pose().scale(sx, sy);
+        try {
+            int logicalX = Math.round(hudX / sx);
+            int logicalY = Math.round(y / sy);
+            graphics.text(client.font, Component.literal(text), logicalX, logicalY, 0xFFFFFFFF, true);
+            if (!stash.isBlank()) graphics.text(client.font, Component.literal(stash), logicalX,
+                    logicalY + Math.round(12 / sy), 0xFF888888, true);
+            if (state == State.PENDING) graphics.text(client.font, Component.literal("[Enter] 发送  [Esc] 取消"), logicalX,
+                    logicalY + Math.round(24 / sy), 0xFFB8B8B8, true);
+        } finally {
+            graphics.pose().popMatrix();
+        }
     }
 
     private static String correct(String text) {
@@ -492,6 +518,10 @@ public final class AsrModule implements Module {
             properties.setProperty("api_key", configuredApiKey);
         }
         properties.setProperty("ptt_key", Integer.toString(configuredPttKey));
+        properties.setProperty("hudX", Integer.toString(hudX));
+        properties.setProperty("hudBottom", Integer.toString(hudBottom));
+        properties.setProperty("hudScaleX", Float.toString(hudScaleX));
+        properties.setProperty("hudScaleY", Float.toString(hudScaleY));
         try {
             AtomicProperties.store(file, properties, "MICx Toolkit ASR configuration");
             return true;
@@ -504,6 +534,46 @@ public final class AsrModule implements Module {
     public void setApiKey(String apiKey) {
         cancel();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
+    }
+
+    public int hudX() {
+        initializeConfig();
+        return hudX;
+    }
+
+    public int hudBottom() {
+        initializeConfig();
+        return hudBottom;
+    }
+
+    public float hudScaleX() {
+        initializeConfig();
+        return hudScaleX;
+    }
+
+    public float hudScaleY() {
+        initializeConfig();
+        return hudScaleY;
+    }
+
+    public void setHudPosition(int x, int bottom) {
+        initializeConfig();
+        hudX = Math.max(0, Math.min(9_999, x));
+        hudBottom = Math.max(0, Math.min(9_999, bottom));
+    }
+
+    public void setHudScale(float x, float y) {
+        initializeConfig();
+        hudScaleX = HudLayoutMath.clampScale(x);
+        hudScaleY = HudLayoutMath.clampScale(y);
+    }
+
+    private static float parseHudScale(String value, float fallback) {
+        try {
+            return HudLayoutMath.clampScale(Float.parseFloat(value));
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
     }
 
     public boolean consumeEscape() {

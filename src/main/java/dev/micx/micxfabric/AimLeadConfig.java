@@ -16,6 +16,10 @@ public final class AimLeadConfig {
     public int maxGhosts = 4;
     public int extraMs = 100;
     public int manualPing = 250;
+    public int markerOffsetX;
+    public int markerOffsetY = 6;
+    public float markerScaleX = 1.0f;
+    public float markerScaleY = 1.0f;
 
     private boolean loaded;
 
@@ -35,6 +39,10 @@ public final class AimLeadConfig {
         maxGhosts = ConfigProperties.integer(properties, "maxGhosts", 4, 1, 8);
         extraMs = ConfigProperties.integer(properties, "extraMs", 100, -100, 400);
         manualPing = ConfigProperties.integer(properties, "manualPing", 250, 0, 600);
+        markerOffsetX = ConfigProperties.integer(properties, "markerOffsetX", 0, -2_000, 2_000);
+        markerOffsetY = ConfigProperties.integer(properties, "markerOffsetY", 6, -2_000, 2_000);
+        markerScaleX = parseScale(ConfigProperties.string(properties, "markerScaleX", "1.0"));
+        markerScaleY = parseScale(ConfigProperties.string(properties, "markerScaleY", "1.0"));
     }
 
     public void save() {
@@ -49,6 +57,10 @@ public final class AimLeadConfig {
         properties.setProperty("maxGhosts", Integer.toString(clamp(maxGhosts, 1, 8)));
         properties.setProperty("extraMs", Integer.toString(clamp(extraMs, -100, 400)));
         properties.setProperty("manualPing", Integer.toString(clamp(manualPing, 0, 600)));
+        properties.setProperty("markerOffsetX", Integer.toString(clamp(markerOffsetX, -2_000, 2_000)));
+        properties.setProperty("markerOffsetY", Integer.toString(clamp(markerOffsetY, -2_000, 2_000)));
+        properties.setProperty("markerScaleX", Float.toString(HudLayoutMath.clampScale(markerScaleX)));
+        properties.setProperty("markerScaleY", Float.toString(HudLayoutMath.clampScale(markerScaleY)));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("aim-lead.properties"), properties,
                     "MICx AimLead configuration");
@@ -59,5 +71,13 @@ public final class AimLeadConfig {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static float parseScale(String value) {
+        try {
+            return HudLayoutMath.clampScale(Float.parseFloat(value));
+        } catch (RuntimeException ignored) {
+            return 1.0f;
+        }
     }
 }
