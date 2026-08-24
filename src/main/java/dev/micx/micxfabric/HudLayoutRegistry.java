@@ -41,12 +41,48 @@ public final class HudLayoutRegistry {
         if (initialized) return;
         initialized = true;
         addZombiesBlocks();
+        addLrIndicatorBlock();
+        addSprintBlock();
         addTeammateBlock();
         addTeamSyncBlock();
         addToroBlock();
         addAsrBlock();
         addDpsBlock();
         addAimMarkerBlock();
+    }
+
+    /** Sprint：左下 [Sprint] 状态文字（对齐 Forge）。 */
+    private static void addSprintBlock() {
+        ToggleSprintModule mod = ToggleSprintModule.instance();
+        BLOCKS.add(new HudLayoutBlock("sprint", "Sprint", "[Sprint]", 82, 16,
+                new HudLayoutBlock.Adapter() {
+                    public int x(int sw, int sh, int rw, int rh) { return mod.hudX(); }
+                    public int y(int sw, int sh, int rw, int rh) { return sh - mod.hudBottom() - rh; }
+                    public void setPosition(int x, int y, int sw, int sh, int rw, int rh) {
+                        mod.setHudPosition(Math.max(0, x), Math.max(0, sh - y - rh));
+                    }
+                    public void resetPosition() { mod.setHudPosition(8, 20); }
+                    public void save() { }
+                    public float moduleScaleX() { return 1.0f; }
+                    public float moduleScaleY() { return 1.0f; }
+                }));
+    }
+
+    /** LR Indicator：默认位置 = 快捷栏上方 80px，偏移字段 lrHudDx/Dy。 */
+    private static void addLrIndicatorBlock() {
+        LrIndicatorModule mod = LrIndicatorModule.instance();
+        BLOCKS.add(new HudLayoutBlock("lr_indicator", "LR Indicator", "① ② ③ ④", 110, 16,
+                new HudLayoutBlock.Adapter() {
+                    public int x(int sw, int sh, int rw, int rh) { return sw / 2 + mod.lrHudDx - rw / 2; }
+                    public int y(int sw, int sh, int rw, int rh) { return sh - 22 - 80 + mod.lrHudDy; }
+                    public void setPosition(int x, int y, int sw, int sh, int rw, int rh) {
+                        mod.setHudOffsets(x + rw / 2 - sw / 2, y - (sh - 22 - 80));
+                    }
+                    public void resetPosition() { mod.setHudOffsets(0, 0); }
+                    public void save() { }
+                    public float moduleScaleX() { return 1.0f; }
+                    public float moduleScaleY() { return 1.0f; }
+                }));
     }
 
     private static void addZombiesBlocks() {

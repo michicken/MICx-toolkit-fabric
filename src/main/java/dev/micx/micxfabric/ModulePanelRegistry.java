@@ -39,34 +39,133 @@ public final class ModulePanelRegistry {
                 EcoRateModule.instance(), EcoRatePanelScreen::new);
         real("lr_indicator", "LR Indicator", "LR 指示", GROUP_CORE,
                 "AA 物品栏上方的 LR 释放清单：绿=已放 18s 内，红=未放，轮换位置 /micx lr 2/3/4。",
-                LrIndicatorModule.instance(), null);
+                LrIndicatorModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        LrIndicatorModule.instance(), "LR Indicator", "LR 释放清单 · 蜂鸣与偏移",
+                        List.of(
+                                SimpleModuleScreen.Row.toggle("Beep 蜂鸣",
+                                        LrIndicatorModule.instance()::lrBeepEnabled,
+                                        v -> LrIndicatorModule.instance().lrBeepEnabled = v,
+                                        "LR 可释放时播放提示音。"),
+                                SimpleModuleScreen.Row.integer("Offset X",
+                                        () -> LrIndicatorModule.instance().lrHudDx,
+                                        v -> LrIndicatorModule.instance().lrHudDx = v, -300, 300,
+                                        "清单水平偏移（HUD Layout 拖动 Wave Table 不影响此处）。"),
+                                SimpleModuleScreen.Row.integer("Offset Y",
+                                        () -> LrIndicatorModule.instance().lrHudDy,
+                                        v -> LrIndicatorModule.instance().lrHudDy = v, -300, 300,
+                                        "清单垂直偏移。"))));
         real("auto_hide_visuals", "AutoHide Visuals", "自动隐藏", GROUP_MISC,
                 "对局结算 1 分钟藏 ESP/Chams/Outline/AimLead，R1/离图恢复。",
                 AutoHideVisualsModule.instance(), null);
         real("zombie_fade", "ZombieFade", "僵尸淡化", GROUP_MISC,
                 "近距离敌对生物半透明淡化。",
-                ZombieFadeModule.instance(), null);
+                ZombieFadeModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        ZombieFadeModule.instance(), "ZombieFade", "近距离怪物淡化",
+                        List.of(
+                                SimpleModuleScreen.Row.decimal("Radius 半径",
+                                        ZombieFadeModule.instance()::getRadius,
+                                        ZombieFadeModule.instance()::setRadius, 1, 10,
+                                        "玩家周围该半径（格）内的敌对生物淡化为半透明。"))));
         real("revive_aura", "ReviveAura", "自动救人", GROUP_CORE,
                 "队友倒地睡在附近时自动发送救援交互包（纯发包，范围/间隔可配）。",
-                ReviveAuraModule.instance(), null);
+                ReviveAuraModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        ReviveAuraModule.instance(), "ReviveAura", "自动救援发包",
+                        List.of(
+                                SimpleModuleScreen.Row.decimal("Range 范围",
+                                        ReviveAuraModule.instance()::getRange,
+                                        ReviveAuraModule.instance()::setRange, 1, 10,
+                                        "与倒地队友的最大救援距离（格）。"),
+                                SimpleModuleScreen.Row.decimal("Interval 间隔ms",
+                                        ReviveAuraModule.instance()::getIntervalMs,
+                                        ReviveAuraModule.instance()::setIntervalMs, 50, 1000,
+                                        "两次救援包之间的最小间隔。"))));
         real("last_mobs", "LastMobs", "残怪连线", GROUP_INFO,
                 "回合剩余怪 ≤N 时，准心向每只残怪拉黄色指示线（计分板权威计数）。",
-                LastMobsModule.instance(), null);
+                LastMobsModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        LastMobsModule.instance(), "LastMobs", "残怪牵线",
+                        List.of(
+                                SimpleModuleScreen.Row.integer("Max Count 阈值",
+                                        LastMobsModule.instance()::getMaxCount,
+                                        LastMobsModule.instance()::setMaxCount, 1, 10,
+                                        "剩余怪物 ≤ 该值时显示连线。"),
+                                SimpleModuleScreen.Row.integer("Alpha %",
+                                        LastMobsModule.instance()::getLineAlphaPct,
+                                        LastMobsModule.instance()::setLineAlphaPct, 20, 100,
+                                        "线条不透明度百分比。"))));
         real("spawn_marker", "SpawnMarker", "刷怪点标记", GROUP_INFO,
                 "AA 已知刷怪点固定灰色光柱：11 地面点 + 4 UFO 放怪口（纯预设）。",
-                SpawnMarkerModule.instance(), null);
+                SpawnMarkerModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        SpawnMarkerModule.instance(), "SpawnMarker", "刷怪点光柱",
+                        List.of(
+                                SimpleModuleScreen.Row.decimal("Alpha",
+                                        SpawnMarkerModule.instance()::getAlpha,
+                                        v -> SpawnMarkerModule.instance().setAlpha((float) v), 0.05, 1,
+                                        "标记整体透明度。"))));
         real("slime_forecast", "SlimeForecast", "史莱姆预告", GROUP_INFO,
                 "刷史莱姆/岩浆波次前在 12 个固定点显示绿 X（墨绿→亮绿→隐藏），Force 模式常显。",
-                SlimeForecastModule.instance(), null);
+                SlimeForecastModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        SlimeForecastModule.instance(), "SlimeForecast", "史莱姆波次预告",
+                        List.of(
+                                SimpleModuleScreen.Row.toggle("Force 常显",
+                                        SlimeForecastModule.instance()::isForceMode,
+                                        SlimeForecastModule.instance()::setForceMode,
+                                        "无视阶段状态常驻显示 12 个预测点。"),
+                                SimpleModuleScreen.Row.decimal("Alpha",
+                                        SlimeForecastModule.instance()::getAlpha,
+                                        v -> SlimeForecastModule.instance().setAlpha((float) v), 0.05, 1,
+                                        "X 标记透明度。"))));
         real("golem_marker", "GolemMarker", "铁傀儡标记", GROUP_INFO,
                 "铁傀儡 5 个固定出生点贴地灰 X，穿墙可见。",
-                GolemMarkerModule.instance(), null);
+                GolemMarkerModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        GolemMarkerModule.instance(), "GolemMarker", "铁傀儡出生点 X",
+                        List.of(
+                                SimpleModuleScreen.Row.decimal("Alpha",
+                                        GolemMarkerModule.instance()::getAlpha,
+                                        v -> GolemMarkerModule.instance().setAlpha((float) v), 0.05, 1,
+                                        "X 标记透明度。"))));
         real("view_hold", "ViewHold", "快捷视角", GROUP_MISC,
                 "按住绑定键切到背后/正面视角，松开恢复第一人称（需先绑定按键）。",
-                ViewHoldModule.instance(), null);
+                ViewHoldModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        ViewHoldModule.instance(), "ViewHold", "按住切视角",
+                        List.of(
+                                SimpleModuleScreen.Row.integer("Target View",
+                                        ViewHoldModule.instance()::getTargetView,
+                                        ViewHoldModule.instance()::setTargetView, 0, 2,
+                                        "0=背后第三人称 1=正面第三人称 2=第一人称。"))));
+        real("anti_reshift", "AntiReshift", "防松Shift", GROUP_MISC,
+                "救援途中防误松 Shift（Type B）：不自动重按、不发包，默认关闭；低血/救起自动放行。",
+                AntiReshiftModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        AntiReshiftModule.instance(), "AntiReshift", "救援防误松 Shift",
+                        List.of(
+                                SimpleModuleScreen.Row.integer("Duo 起效回合",
+                                        AntiReshiftModule.instance()::getDuoStartRound,
+                                        AntiReshiftModule.instance()::setDuoStartRound, 1, 100,
+                                        "双排从该回合开始生效。"),
+                                SimpleModuleScreen.Row.integer("3-4排 起效回合",
+                                        AntiReshiftModule.instance()::getNonDuoStartRound,
+                                        AntiReshiftModule.instance()::setNonDuoStartRound, 1, 100,
+                                        "三排/四排从该回合开始生效。"),
+                                SimpleModuleScreen.Row.decimal("低血放行 HP",
+                                        AntiReshiftModule.instance()::getLowHealthHp,
+                                        v -> AntiReshiftModule.instance().setLowHealthHp((float) v), 1, 20,
+                                        "低于该血量暂停防松（双排忽略此规则）。"))));
         real("magnet", "Magnet 吸附", "吸附", GROUP_COMBAT,
                 "按住右键时准心轻微吸向目标爆头点，手瞄快甩自动退场；仅 Zombies 生效。",
-                MagnetModule.instance(), null);
+                MagnetModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        MagnetModule.instance(), "Magnet", "视角吸附",
+                        List.of(
+                                SimpleModuleScreen.Row.decimal("Radius 度",
+                                        MagnetModule.instance()::getRadiusDeg,
+                                        MagnetModule.instance()::setRadiusDeg, 2, 30,
+                                        "吸附生效的准星锥角。"),
+                                SimpleModuleScreen.Row.decimal("Pull 强度",
+                                        MagnetModule.instance()::getPullStrength,
+                                        MagnetModule.instance()::setPullStrength, 0.02, 0.6,
+                                        "每 tick 指数收敛系数，越大吸得越快。"),
+                                SimpleModuleScreen.Row.decimal("Slow 减速",
+                                        MagnetModule.instance()::getSlowFactor,
+                                        MagnetModule.instance()::setSlowFactor, 0.1, 0.95,
+                                        "接近目标时的手部减速系数。"))));
         real("fullbright", "Fullbright", "全亮", GROUP_CORE,
                 "强制 gamma 全亮，Forge Fullbright 的 Fabric 等价实现；关闭时还原。",
                 FullbrightModule.instance(), null);

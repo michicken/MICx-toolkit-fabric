@@ -3,9 +3,9 @@ package dev.micx.micxfabric.mixin;
 import dev.micx.micxfabric.ChamsModule;
 import dev.micx.micxfabric.ZombieFadeModule;
 import dev.micx.micxfabric.ChamsRenderTypes;
+import dev.micx.micxfabric.MicxRenderKeys;
 import dev.micx.micxfabric.PlayerOutlineEspModule;
 import dev.micx.micxfabric.PlayerVisibilityModule;
-import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -34,8 +34,6 @@ import java.util.WeakHashMap;
 @Mixin(LivingEntityRenderer.class)
 public abstract class MixinLivingEntityRenderer {
     private static final Map<LivingEntityRenderState, AbstractClientPlayer> MICX_PLAYERS = new WeakHashMap<>();
-    private static final RenderStateDataKey<LivingEntity> MICX_ENTITY =
-            RenderStateDataKey.create(() -> "micx_entity");
 
     @Shadow
     protected abstract Identifier getTextureLocation(LivingEntityRenderState state);
@@ -43,7 +41,7 @@ public abstract class MixinLivingEntityRenderer {
     @Inject(method = "extractRenderState", at = @At("RETURN"))
     private void micx$rememberPlayer(LivingEntity entity, LivingEntityRenderState state,
                                      float partialTick, CallbackInfo callbackInfo) {
-        state.setData(MICX_ENTITY, entity);
+        state.setData(MicxRenderKeys.ENTITY, entity);
         synchronized (MICX_PLAYERS) {
             if (entity instanceof AbstractClientPlayer player) {
                 MICX_PLAYERS.put(state, player);
@@ -64,11 +62,18 @@ public abstract class MixinLivingEntityRenderer {
         synchronized (MICX_PLAYERS) {
             player = MICX_PLAYERS.get(state);
         }
-        if (player == null) return;
-        Minecraft client = Minecraft.getInstance();
-        int tint = PlayerVisibilityModule.modelTint(player, client);
-        if (tint == -1) return;
-        cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
+        if (player != null) {
+            int tint = PlayerVisibilityModule.modelTint(player, Minecraft.getInstance());
+            if (tint != -1) {
+                cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
+                return;
+            }
+        }
+        // ZombieFade：alpha 只在 translucent 管线生效；不切管线则淡化永远不可见
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        if (entity != null && ZombieFadeModule.instance().shouldFade(entity)) {
+            cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
+        }
     }
 
     @Inject(method = "getModelTint", at = @At("RETURN"), cancellable = true)
@@ -85,7 +90,7 @@ public abstract class MixinLivingEntityRenderer {
 
     @Inject(method = "getModelTint", at = @At("RETURN"), cancellable = true)
     private void micx$applyZombieFade(LivingEntityRenderState state, CallbackInfoReturnable<Integer> cir) {
-        LivingEntity entity = state.getData(MICX_ENTITY);
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
         if (entity == null || !ZombieFadeModule.instance().shouldFade(entity)) return;
         int orig = cir.getReturnValue();
         cir.setReturnValue(ZombieFadeModule.fadedTint(orig));
@@ -110,7 +115,7 @@ public abstract class MixinLivingEntityRenderer {
                                       ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
         RenderType type = vanillaType;
         if (renderState instanceof LivingEntityRenderState state) {
-            LivingEntity entity = state.getData(MICX_ENTITY);
+            LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
             if (ChamsModule.instance().shouldApply(entity, Minecraft.getInstance(), false)) {
                 RenderType chamsType = ChamsRenderTypes.entity(getTextureLocation(state));
                 if (chamsType != null) type = chamsType;

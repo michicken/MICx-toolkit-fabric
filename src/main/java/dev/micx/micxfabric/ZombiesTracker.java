@@ -194,14 +194,19 @@ public final class ZombiesTracker {
         return soundMetrics.fireWeapon(name, now);
     }
 
+    /** Hypixel 消息常带 § 码（如 "§6+120§e Gold"），金币正则匹配前必须剥离。 */
+    private static String stripFormatting(String text) {
+        return text == null ? "" : text.replaceAll("§.", "");
+    }
+
     public void onChatText(String text, long now) {
-        Matcher m = GOLD_GAIN.matcher(text == null ? "" : text);
+        Matcher m = GOLD_GAIN.matcher(stripFormatting(text));
         if (m.find()) { try { ecoRate.onSelfGoldGain(now, Integer.parseInt(m.group(1))); } catch (NumberFormatException ignored) {} }
         acceptEvent(ZombiesEventParser.parseChat(text), now);
     }
 
     public void onGameText(String text, long now) {
-        Matcher m = GOLD_GAIN.matcher(text == null ? "" : text);
+        Matcher m = GOLD_GAIN.matcher(stripFormatting(text));
         if (m.find()) { try { ecoRate.onSelfGoldGain(now, Integer.parseInt(m.group(1))); } catch (NumberFormatException ignored) {} }
         acceptEvent(ZombiesEventParser.parseChat(text), now);
     }

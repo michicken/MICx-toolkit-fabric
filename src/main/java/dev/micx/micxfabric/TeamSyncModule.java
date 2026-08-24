@@ -265,7 +265,9 @@ public final class TeamSyncModule implements Module {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return;
         try {
-            Matcher matcher = LR_RELEASE_CHAT.matcher(raw.trim());
+            // Hypixel 消息带 § 码，先剥离再匹配（"§6You struck ..." 会让 ^ 锚点失配）
+            String text = raw == null ? "" : raw.replaceAll("§.", "").trim();
+            Matcher matcher = LR_RELEASE_CHAT.matcher(text);
             if (!matcher.matches()) return;
             String target = matcher.group(1).trim();
             Matcher count = Pattern.compile("(\\d+).*").matcher(target);

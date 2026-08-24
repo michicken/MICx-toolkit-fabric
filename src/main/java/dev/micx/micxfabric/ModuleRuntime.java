@@ -47,6 +47,7 @@ public final class ModuleRuntime {
         register(GolemMarkerModule.instance());
         register(ViewHoldModule.instance());
         register(MagnetModule.instance());
+        register(AntiReshiftModule.instance());
         register(RoundTimerModule.instance());
         register(EcoRateModule.instance());
         register(RightClickerModule.instance());

@@ -7,6 +7,7 @@ import dev.micx.micxfabric.LastMobsModule;
 import dev.micx.micxfabric.TeammateHpModule;
 import dev.micx.micxfabric.TeamSyncModule;
 import dev.micx.micxfabric.ToroHealthModule;
+import dev.micx.micxfabric.ToggleSprintModule;
 import dev.micx.micxfabric.LrIndicatorModule;
 import dev.micx.micxfabric.ZombiesAssistModule;
 import net.minecraft.resources.Identifier;
@@ -30,5 +31,6 @@ public final class HudRuntime {
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "lr-indicator"), LrIndicatorModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "last-mobs"), LastMobsModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "zombies-assist"), ZombiesAssistModule.instance()::drawHud);
+        backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "toggle-sprint"), ToggleSprintModule.instance()::drawHud);
     }
 }

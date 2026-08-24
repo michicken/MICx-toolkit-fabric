@@ -459,8 +459,8 @@ public final class ZombiesAssistModule implements Module {
                 ? 0L : Math.max(0L, System.currentTimeMillis() - tracker.roundStartMs());
         String gameTime = tracker.gameTimeSeconds() >= 0
                 ? formatClockSeconds(tracker.gameTimeSeconds()) : "?";
-        String text = "Round " + round + " | Time: " + gameTime + " | Left " + left;
-        if (tracker.isInAlienArcadium()) text += " | AA";
+        String text = "§fRound §6" + round + " §7| §fTime:§a" + gameTime + " §7| §fLeft:§c" + left;
+        if (tracker.isInAlienArcadium()) text += " §7| §bAA";
         drawCentered(graphics, client, "zombies.top", text, cfg.topHudXOffset, cfg.topHudY,
                 cfg.topHudScale, 0xFFE8A73E, true);
 
@@ -487,15 +487,15 @@ public final class ZombiesAssistModule implements Module {
     private static void drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
                                         ZombiesTracker tracker, ZombiesConfig cfg) {
         List<String> lines = new ArrayList<>();
-        if (tracker.isInAlienArcadium()) lines.add("Alien Arcadium");
-        else if (!tracker.sidebarTitle().isBlank()) lines.add(tracker.sidebarTitle());
+        if (tracker.isInAlienArcadium()) lines.add("§bAlien Arcadium");
+        else if (!tracker.sidebarTitle().isBlank()) lines.add("§f" + tracker.sidebarTitle());
 
         ThreatCounts threats = scanThreats(client, cfg.tooStrictGreen);
         boolean threatNearCrosshair = cfg.specialThreatHud && specialThreatRound(tracker.round());
         if (cfg.specialThreatHud && !threatNearCrosshair && !threats.empty()) {
-            if (threats.too > 0) lines.add("TOO " + threats.too);
-            if (threats.giant > 0) lines.add("Giant " + threats.giant);
-            if (threats.clown > 0) lines.add("Clown " + threats.clown);
+            if (threats.too > 0) lines.add("§fTOO §c" + threats.too);
+            if (threats.giant > 0) lines.add("§fGiant §c" + threats.giant);
+            if (threats.clown > 0) lines.add("§fClown §c" + threats.clown);
         }
 
         ZombiesEventState state = tracker.eventState();
@@ -505,8 +505,8 @@ public final class ZombiesAssistModule implements Module {
             if ("down".equals(status)) down++;
             if ("dead".equals(status) || "quit".equals(status)) dead++;
         }
-        if (down > 0) lines.add("Down players " + down);
-        if (dead > 0) lines.add("Dead / quit " + dead);
+        if (down > 0) lines.add("§fDown players §d" + down);
+        if (dead > 0) lines.add("§fDead / quit §7" + dead);
 
         if (lines.isEmpty()) return;
         float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
@@ -519,8 +519,9 @@ public final class ZombiesAssistModule implements Module {
             int logicalRight = Math.round(right / scaleX);
             int logicalY = Math.round(y / scaleY);
             for (String line : lines) {
-                graphics.text(client.font, Component.literal(line),
-                        logicalRight - client.font.width(line), logicalY,
+                Component component = LegacyText.of(line);
+                graphics.text(client.font, component,
+                        logicalRight - client.font.width(component), logicalY,
                         0xFFD8DDE3, true);
                 logicalY += client.font.lineHeight + 2;
             }
@@ -622,8 +623,9 @@ public final class ZombiesAssistModule implements Module {
             int right = Math.round((graphics.guiWidth() - cfg.tacticalHudRight) / scaleX);
             int y = Math.round((cfg.tacticalHudY + yOffset) / scaleY);
             for (String line : lines) {
-                graphics.text(client.font, Component.literal(line),
-                        right - client.font.width(line), y, 0xFFD8DDE3, true);
+                Component component = LegacyText.of(line);
+                graphics.text(client.font, component,
+                        right - client.font.width(component), y, 0xFFD8DDE3, true);
                 y += client.font.lineHeight + 2;
             }
         } finally {
@@ -667,15 +669,37 @@ public final class ZombiesAssistModule implements Module {
                 } else {
                     gs = String.format(Locale.ROOT, "%,d", gv);
                 }
-                String line = name + " " + gs;
-                int color = flash ? 0xFF55FF55 : 0xFFE8A73E;
-                graphics.text(client.font, Component.literal(line),
-                        right - client.font.width(line), y, color, true);
+                int baseColor = flash ? 0xFF55FF55 : 0xFFE8A73E;
+                // 击杀列：tab 计分板 LIST 目标，最右红字（对齐 Forge col4）
+                int kills = playerKills(client, name);
+                String ks = kills >= 0 ? Integer.toString(kills) : "--";
+                int kx = right - client.font.width(ks);
+                graphics.text(client.font, Component.literal(ks), kx, y,
+                        flash ? 0xFF55FF55 : 0xFFFF5555, true);
+                Component main = LegacyText.of(name + " " + gs);
+                graphics.text(client.font, main, kx - 8 - client.font.width(main),
+                        y, baseColor, true);
                 y += client.font.lineHeight + 2;
             }
         } finally {
             graphics.pose().popMatrix();
         }
+    }
+
+    /** 从 tab 计分板(LIST 目标)读玩家击杀数；无则 -1。不产生副作用。 */
+    private static int playerKills(Minecraft client, String name) {
+        try {
+            if (client.level == null) return -1;
+            net.minecraft.world.scores.Scoreboard sb = client.level.getScoreboard();
+            net.minecraft.world.scores.Objective objective =
+                    sb.getDisplayObjective(net.minecraft.world.scores.DisplaySlot.LIST);
+            if (objective == null) return -1;
+            for (net.minecraft.world.scores.PlayerScoreEntry entry : sb.listPlayerScores(objective)) {
+                if (name.equals(entry.owner())) return entry.value();
+            }
+        } catch (Exception ignored) {
+        }
+        return -1;
     }
 
     private void drawCooldownHud(GuiGraphicsExtractor graphics, Minecraft client,
@@ -874,8 +898,9 @@ public final class ZombiesAssistModule implements Module {
         try {
             int logicalY = 0;
             for (String line : lines) {
-                graphics.text(client.font, Component.literal(line),
-                        -client.font.width(line) / 2, logicalY, color, true);
+                Component component = LegacyText.of(line);
+                graphics.text(client.font, component,
+                        -client.font.width(component) / 2, logicalY, color, true);
                 logicalY += client.font.lineHeight + 2;
             }
         } finally {
@@ -1084,12 +1109,13 @@ public final class ZombiesAssistModule implements Module {
                                      String text, int xOffset, int y, float scale, int color, boolean shadow) {
         float scaleX = HudLayoutRegistry.scaleX(layoutId, scale);
         float scaleY = HudLayoutRegistry.scaleY(layoutId, scale);
+        Component component = LegacyText.of(text);
+        int width = client.font.width(component);
         graphics.pose().pushMatrix();
         graphics.pose().translate(graphics.guiWidth() / 2.0f + xOffset, y);
         graphics.pose().scale(scaleX, scaleY);
         try {
-            graphics.text(client.font, Component.literal(text),
-                    -client.font.width(text) / 2, 0, color, shadow);
+            graphics.text(client.font, component, -width / 2, 0, color, shadow);
         } finally {
             graphics.pose().popMatrix();
         }

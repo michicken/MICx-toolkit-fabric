@@ -38,7 +38,9 @@ public final class ChamsRenderTypes {
                 .withShaderDefine("PER_FACE_LIGHTING")
                 .withBindGroupLayout(BindGroupLayouts.SAMPLER1)
                 .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-                .withCull(false)
+                // 保持背面剔除（默认）：关 cull 会从正面看到模型背后的皮肤。
+                // Forge 版靠压缩深度范围保留自遮挡；26.2 无 depthRange，
+                // ALWAYS_PASS + 剔除是等价近似——正面片元永远可见，背面被剔除。
                 .build();
     }
 

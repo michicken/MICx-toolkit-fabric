@@ -55,6 +55,14 @@ public final class LrIndicatorModule implements Module {
         saveConfig();
     }
 
+    /** HUD Layout 编辑器拖动时设置偏移（相对快捷栏上方的默认位置）。 */
+    public void setHudOffsets(int dx, int dy) {
+        loadConfig();
+        lrHudDx = Math.max(-300, Math.min(300, dx));
+        lrHudDy = Math.max(-300, Math.min(300, dy));
+        saveConfig();
+    }
+
     public static void onRoundChanged(int round) {
         LrIndicatorModule m = ACTIVE;
         if (m == null || !m.enabled) return;

@@ -2,6 +2,7 @@ package dev.micx.micxfabric;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
@@ -20,6 +21,9 @@ public final class ToggleSprintModule implements Module {
     private boolean enabled;
     private boolean active = true;
     private InputBinding binding = new InputBinding(DEFAULT_KEY);
+    private boolean hudEnabled = true;
+    private int hudX = 8;
+    private int hudBottom = 20;
     private boolean configLoaded;
 
     private ToggleSprintModule() {
@@ -123,6 +127,44 @@ public final class ToggleSprintModule implements Module {
         }
     }
 
+    /** 对齐 Forge：屏幕左下 [Sprint] 状态文字。 */
+    public void drawHud(GuiGraphicsExtractor graphics) {
+        if (!enabled || !hudEnabled) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.options == null) return;
+        String text = active ? "\u00a77[\u00a7aSprint\u00a77]" : "\u00a77[\u00a78Sprint OFF\u00a77]";
+        graphics.text(client.font, LegacyText.of(text), hudX,
+                graphics.guiHeight() - hudBottom, 0xFFFFFF, true);
+    }
+
+    public boolean hudEnabled() {
+        loadConfig();
+        return hudEnabled;
+    }
+
+    public int hudX() {
+        loadConfig();
+        return hudX;
+    }
+
+    public int hudBottom() {
+        loadConfig();
+        return hudBottom;
+    }
+
+    public void setHudEnabled(boolean value) {
+        loadConfig();
+        hudEnabled = value;
+        saveConfig();
+    }
+
+    public void setHudPosition(int x, int bottom) {
+        loadConfig();
+        hudX = Math.max(0, Math.min(9_999, x));
+        hudBottom = Math.max(0, Math.min(9_999, bottom));
+        saveConfig();
+    }
+
     private void loadConfig() {
         if (configLoaded) return;
         configLoaded = true;
@@ -132,6 +174,9 @@ public final class ToggleSprintModule implements Module {
         binding = new InputBinding(ConfigProperties.integer(properties, "keyCode", DEFAULT_KEY,
                 -108, GLFW.GLFW_KEY_LAST));
         active = ConfigProperties.bool(properties, "active", true);
+        hudEnabled = ConfigProperties.bool(properties, "hudEnabled", true);
+        hudX = ConfigProperties.integer(properties, "hudX", 8, 0, 9_999);
+        hudBottom = ConfigProperties.integer(properties, "hudBottom", 20, 0, 9_999);
     }
 
     public void saveConfig() {
@@ -140,6 +185,9 @@ public final class ToggleSprintModule implements Module {
         Properties properties = new Properties();
         properties.setProperty("keyCode", Integer.toString(binding.code()));
         properties.setProperty("active", Boolean.toString(active));
+        properties.setProperty("hudEnabled", Boolean.toString(hudEnabled));
+        properties.setProperty("hudX", Integer.toString(hudX));
+        properties.setProperty("hudBottom", Integer.toString(hudBottom));
         try {
             AtomicProperties.store(file, properties, "MICx ToggleSprint configuration");
         } catch (IOException exception) {

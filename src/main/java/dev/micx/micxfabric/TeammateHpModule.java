@@ -28,11 +28,8 @@ import java.util.Set;
  * 绝对血量刻度血条（全队最大血池基准）、金盾叠加、手持图标（剑按格挡语义换皮）、
  * 潜行红石块、开枪橙色闪点、右侧技能列（LR/Heal 冷却 + LR 命中徽章）、QUIT/DEAD/DOWN 幽灵卡。
  *
- * <p>与 Forge 的差异（数据源缺失，暂缓项）：
- * <ul>
- *   <li>DOWN 卡无出血倒计时 —— Fabric ZombiesTracker 暂无 downElapsedMs；</li>
- *   <li>无 fr 二救冷却显示与 ReviveHolo 救援进度 —— 无对应信源。</li>
- * </ul></p>
+ * <p>与 Forge 的差异：fr 二救冷却来自聊天事件时间戳（frCooldownUntil），与 Forge 等价；
+ * ReviveHolo 救援进度（盔甲架 holo 扫描）暂缓。</p>
  */
 public final class TeammateHpModule implements Module {
     private static final TeammateHpModule INSTANCE = new TeammateHpModule();
@@ -316,7 +313,7 @@ public final class TeammateHpModule implements Module {
                 } else if ("dead".equals(st) && !down) {
                     drawDeadGhost(graphics, name, x, y);
                 } else if (down && player == null) {
-                    drawDownGhost(graphics, name, x, y);
+                    drawDownGhost(graphics, client, tracker, name, x, y, now);
                 } else if (player != null) {
                     drawTeammateHp(graphics, client, tracker, player, now, x, y, scaleMax, down);
                 } else {
@@ -393,13 +390,27 @@ public final class TeammateHpModule implements Module {
         graphics.fill(contentLeft(x), barY, right, barY + BAR_H, 0x99000000);
     }
 
-    /** 倒地且实体被服务器换成尸体 NPC：紫条占位卡。（出血倒计时暂缓：无 downElapsedMs 信源） */
-    private void drawDownGhost(GuiGraphicsExtractor graphics, String name, int x, int y) {
-        Minecraft client = Minecraft.getInstance();
+    /** 倒地且实体被服务器换成尸体 NPC：紫条占位卡，出血倒计时来自聊天 KNOCK 事件时间戳。 */
+    private void drawDownGhost(GuiGraphicsExtractor graphics, Minecraft client, ZombiesTracker tracker,
+                               String name, int x, int y, long now) {
         int right = drawCardBase(graphics, client, name, x, y, 0xFFB05CFF, 0xFFD9A8FF);
-        graphics.text(client.font, "DOWN", right - client.font.width("DOWN"), y + 5, 0xFFB05CFF, true);
+        long downLeftMs = downLeftMs(tracker, name, now);
+        String text = String.format(java.util.Locale.ROOT, "DOWN %.1fs", downLeftMs / 1000.0);
+        graphics.text(client.font, text, right - client.font.width(text), y + 5, 0xFFB05CFF, true);
         int barY = y + CARD_HEIGHT - BAR_H - 5;
-        graphics.fill(contentLeft(x), barY, right, barY + BAR_H, 0x99000000);
+        int contentX = contentLeft(x);
+        graphics.fill(contentX, barY, right, barY + BAR_H, 0x99000000);
+        int filled = (int) ((right - contentX) * (downLeftMs / (float) DOWN_BLEEDOUT_MS));
+        if (filled > 0) graphics.fill(contentX, barY, contentX + filled, barY + BAR_H, 0xFFB05CFF);
+    }
+
+    private static final long DOWN_BLEEDOUT_MS = 25_000L;
+
+    /** 倒地出血剩余毫秒；无 KNOCK 时间戳时返回满窗。 */
+    private static long downLeftMs(ZombiesTracker tracker, String name, long now) {
+        Long since = tracker.eventState().downSince().get(name);
+        if (since == null || since <= 0L) return DOWN_BLEEDOUT_MS;
+        return Math.max(0L, DOWN_BLEEDOUT_MS - (now - since));
     }
 
     /** 存活但实体未加载（远距/切图）：共享快照回填血量，占位不消失。 */
@@ -496,11 +507,12 @@ public final class TeammateHpModule implements Module {
             }
         }
 
-        // HP number — 右对齐；倒地显示 DOWN 占位（Hypixel 会重置假满血，且无出血倒计时信源）
+        // HP number — 右对齐；倒地显示救援/出血倒计时而不是被重置的假满血
+        long downLeftMs = isDown ? downLeftMs(tracker, name, now) : 0L;
         String hpText;
         int hpColor;
         if (isDown) {
-            hpText = "DOWN";
+            hpText = String.format(java.util.Locale.ROOT, "DOWN %.1fs", downLeftMs / 1000.0);
             hpColor = 0xFFB05CFF;
         } else {
             hpText = (int) totalDisplay + "/" + (int) max;
@@ -518,7 +530,19 @@ public final class TeammateHpModule implements Module {
         int hpW = client.font.width(hpText);
         graphics.text(client.font, hpText, statusRightX - hpW, textY, hpColor, true);
 
-        // Distance — HP 左侧灰字
+        // Distance — HP 左侧灰字；fr 二救冷却窗口内优先显示 fr 剩余（对齐 Forge）
+        Long frUntil = tracker.eventState().frCooldownUntil().get(name);
+        long frMs = frUntil == null ? 0L : Math.max(0L, frUntil - now);
+        if ((showDistance || frMs > 0) && !isSelf) {
+            if (frMs > 0 && !isDown) {
+                String frText = String.format(java.util.Locale.ROOT, "fr %.1fs", frMs / 1000f);
+                int frW = client.font.width(frText);
+                int frX = statusRightX - hpW - 6 - frW;
+                if (frX >= contentX) {
+                    graphics.text(client.font, frText, frX, textY, 0xFFFFCC44, true);
+                }
+            }
+        }
         if (showDistance && !isSelf) {
             String distText = String.format("+%.1fm", client.player.distanceTo(player));
             int distW = client.font.width(distText);
@@ -528,12 +552,16 @@ public final class TeammateHpModule implements Module {
             }
         }
 
-        // Bottom bar — 绝对血量刻度：底槽长度 = 自己血池/全队最大血池
-        int troughW = Math.max(10, (int) (contentW * (max / scaleMax)));
+        // Bottom bar — 绝对血量刻度：底槽长度 = 自己血池/全队最大血池；
+        // 倒地时底槽拉满当出血倒计时用（ratio 已换为剩余时间比例）
+        float barRatio = isDown ? downLeftMs / (float) DOWN_BLEEDOUT_MS : Math.min(ratio, 1.0f);
+        int troughW = isDown ? Math.max(10, statusRightX - contentX)
+                : Math.max(10, (int) (contentW * (max / scaleMax)));
         graphics.fill(contentX, barY, contentX + troughW, barY + BAR_H, 0x99000000);
-        int filled = (int) (troughW * Math.min(ratio, 1.0f));
+        int filled = (int) (troughW * barRatio);
         if (filled > 0) {
-            graphics.fill(contentX, barY, contentX + filled, barY + BAR_H, hpBarColor(hp));
+            graphics.fill(contentX, barY, contentX + filled, barY + BAR_H,
+                    isDown ? 0xFFB05CFF : hpBarColor(hp));
             graphics.fill(contentX, barY, contentX + filled, barY + 1, 0x40FFFFFF);
             if (!isDown && hp < 6f) {
                 graphics.fill(Math.max(contentX, contentX + filled - 2), barY, contentX + filled, barY + BAR_H, 0xFFFF7777);
