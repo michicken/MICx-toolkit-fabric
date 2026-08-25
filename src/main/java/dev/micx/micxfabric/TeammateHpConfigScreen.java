@@ -60,6 +60,12 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.showDistance(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
+        graphics.text(font, "Revive Timer", contentLeft(), y + 4, TEXT);
+        graphics.text(font, "B=读倒地 holo 救援计时（服务端真值）；A=25s 本地估算。", contentLeft(), y + 17, TEXT_DIM);
+        drawButton(graphics, module.isReviveHoloB() ? "B（读 hologram）" : "A（25s 本地）",
+                contentRight() - 156, y, 156, 18,
+                isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
+        y += 38;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
@@ -124,7 +130,12 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
                 module.setShowDistance(!module.showDistance());
                 return true;
             }
-            y += 38 + 14 + 20 + 28 + 34 + 14 + 14 + 20;
+            y += 38;
+            if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
+                module.setReviveHoloB(!module.isReviveHoloB());
+                return true;
+            }
+            y += 14 + 20 + 28 + 34 + 14 + 14 + 20;
             if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
                 listening = true;
                 return true;

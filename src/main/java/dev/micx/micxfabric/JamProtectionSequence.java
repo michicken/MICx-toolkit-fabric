@@ -33,6 +33,11 @@ final class JamProtectionSequence {
         this.previousSlot = previousSlot;
     }
 
+    /** 触发保护前的原槽位（豁免进入时恢复用）。 */
+    int previousSlot() {
+        return previousSlot;
+    }
+
     Action advance(int selectedSlot, long now) {
         if (finished) return Action.of(Kind.COMPLETE, -1);
         if (stage == SWITCH) {

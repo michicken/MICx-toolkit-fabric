@@ -46,6 +46,8 @@ public final class TeammateHpModule implements Module {
     private boolean overlayEnabled = true;
     private boolean showHidden;
     private boolean showDistance = true;
+    /** Revive Timer 模式：B=读盔甲架 holo 救援计时（服务端真值）；A=25s 本地估算。 */
+    private boolean reviveHoloB = true;
     private int cardWidth = 180;
     private int bgAlpha = 70;
     private int screenX = 8;
@@ -205,6 +207,16 @@ public final class TeammateHpModule implements Module {
         saveConfig();
     }
 
+    public boolean isReviveHoloB() {
+        return reviveHoloB;
+    }
+
+    public void setReviveHoloB(boolean value) {
+        reviveHoloB = value;
+        if (!value) ReviveHoloTracker.get().clear();
+        saveConfig();
+    }
+
     public void setCardWidth(int value) {
         cardWidth = clamp(value, 100, 400);
         saveConfig();
@@ -296,8 +308,8 @@ public final class TeammateHpModule implements Module {
         int x = Math.round(screenX / scaleX);
         int y = Math.round(screenY / scaleY);
 
-        // B 模式：每帧驱动 holo 扫描（内部 100ms 节流），DOWN 卡用服务端救援真值
-        ReviveHoloTracker.get().tick(client, tracker);
+        // B 模式：每帧驱动 holo 扫描（内部 100ms 节流），DOWN 卡用服务端救援真值；A 模式跳过
+        if (reviveHoloB) ReviveHoloTracker.get().tick(client, tracker);
 
         // 绝对血量刻度基准 = 全队最大血池（1 HP = 相同像素）
         float scaleMax = 20f;
@@ -425,7 +437,7 @@ public final class TeammateHpModule implements Module {
                                String name, int x, int y, long now) {
         int right = drawCardBase(graphics, client, name, x, y, 0xFFB05CFF, 0xFFD9A8FF);
         long downLeftMs = downLeftMs(tracker, name, now);
-        ReviveHoloTracker.Info holo = ReviveHoloTracker.get().get(name);
+        ReviveHoloTracker.Info holo = reviveHoloB ? ReviveHoloTracker.get().get(name) : null;
         String text = downStatusText(holo, downLeftMs / 1000.0);
         graphics.text(client.font, text, right - client.font.width(text), y + 5,
                 downStatusColor(holo), true);
@@ -546,7 +558,7 @@ public final class TeammateHpModule implements Module {
         long downLeftMs = isDown ? downLeftMs(tracker, name, now) : 0L;
         String hpText;
         int hpColor;
-        ReviveHoloTracker.Info holo = isDown ? ReviveHoloTracker.get().get(name) : null;
+        ReviveHoloTracker.Info holo = isDown && reviveHoloB ? ReviveHoloTracker.get().get(name) : null;
         if (isDown) {
             hpText = downStatusText(holo, downLeftMs / 1000.0);
             hpColor = downStatusColor(holo);
@@ -734,6 +746,7 @@ public final class TeammateHpModule implements Module {
         overlayEnabled = ConfigProperties.bool(properties, "overlayEnabled", true);
         showHidden = ConfigProperties.bool(properties, "showHidden", false);
         showDistance = ConfigProperties.bool(properties, "showDistance", true);
+        reviveHoloB = ConfigProperties.bool(properties, "reviveHoloB", true);
         cardWidth = ConfigProperties.integer(properties, "cardWidth", 180, 100, 400);
         bgAlpha = ConfigProperties.integer(properties, "bgAlpha", 70, 0, 200);
         screenX = ConfigProperties.integer(properties, "screenX", 8, 0, 9_999);
@@ -747,6 +760,7 @@ public final class TeammateHpModule implements Module {
         properties.setProperty("overlayEnabled", Boolean.toString(overlayEnabled));
         properties.setProperty("showHidden", Boolean.toString(showHidden));
         properties.setProperty("showDistance", Boolean.toString(showDistance));
+        properties.setProperty("reviveHoloB", Boolean.toString(reviveHoloB));
         properties.setProperty("cardWidth", Integer.toString(cardWidth));
         properties.setProperty("bgAlpha", Integer.toString(bgAlpha));
         properties.setProperty("screenX", Integer.toString(screenX));

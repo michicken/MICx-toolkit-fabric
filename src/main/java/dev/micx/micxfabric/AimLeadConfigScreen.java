@@ -75,6 +75,10 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
         y += 14;
         section(graphics, "DISPLAY / 显示", y);
         y += 20;
+        graphics.text(font, "Ghost Box", contentLeft(), y + 4, TEXT);
+        drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.renderGhost,
+                isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
+        y += 38;
         graphics.text(font, "Fire Dot", contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.fireDot,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
@@ -142,6 +146,11 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
                 return true;
             }
             y += 38 + 14 + 20;
+            if (isInside(event.x(), event.y(), contentRight() - 44, y, 44, 16)) {
+                config.renderGhost = !config.renderGhost;
+                return true;
+            }
+            y += 38;
             if (isInside(event.x(), event.y(), contentRight() - 44, y, 44, 16)) {
                 config.fireDot = !config.fireDot;
                 return true;

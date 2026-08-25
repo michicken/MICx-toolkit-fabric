@@ -10,10 +10,14 @@ import net.minecraft.network.chat.Component;
 /** Functional KeyboardClicker settings for mode selection, delay, gate, and two bindings. */
 public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     private EditBox intervalBox;
+    private EditBox threatBox;
     private boolean listeningToggle;
     private boolean listeningMode;
     private final int[] modeToggleY = new int[4];
     private final int[] modeToggleX = new int[4];
+    private int protectToggleY = -1;
+    private int exemptToggleY = -1;
+    private int threatY = -1;
 
     public KeyboardClickerConfigScreen(Screen parent) {
         super(parent, "KeyboardClicker", "键盘连点 · 原生按键队列");
@@ -26,6 +30,11 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         intervalBox.setValue(Integer.toString(KeyboardClickerModule.instance().clickInterval()));
         intervalBox.setBordered(true);
         addRenderableWidget(intervalBox);
+        threatBox = new EditBox(font, 0, 0, 64, 20, Component.literal("threat"));
+        threatBox.setMaxLength(4);
+        threatBox.setValue(Float.toString(KeyboardClickerModule.instance().getThreatRange()));
+        threatBox.setBordered(true);
+        addRenderableWidget(threatBox);
     }
 
     @Override
@@ -65,6 +74,30 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         }
         y += 2;
         y = wrapped(graphics, "可同时勾选多个组合；V 只在已勾选模式间循环，` 切换连点开关。至少保留 1 项，范围 40–100 ms。",
+                contentLeft(), y, TEXT_DIM, contentWidth());
+        y += 14;
+        graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
+        y += 14;
+        section(graphics, "JAM PROTECT / 防卡弹", y);
+        y += 20;
+        protectToggleY = y;
+        graphics.text(font, "保护模式（模式 B）", contentLeft(), y + 4, TEXT);
+        graphics.text(font, "实验：切到瞬间检测前兆，40ms 后左键换弹 + 90ms 切走。", contentLeft(), y + 17, TEXT_DIM);
+        drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.isJamProtectModeB(),
+                isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
+        y += 38;
+        exemptToggleY = y;
+        graphics.text(font, "智能豁免(r59/70/80/90/100/101)", contentLeft(), y + 4, TEXT);
+        graphics.text(font, "怪物贴身时自动停用防卡弹，威胁消失立即恢复。", contentLeft(), y + 17, TEXT_DIM);
+        drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.isJamExemptEnabled(),
+                isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
+        y += 38;
+        threatY = y;
+        graphics.text(font, "Threat Range (格)", contentLeft(), y + 4, TEXT);
+        threatBox.setX(contentRight() - 64);
+        threatBox.setY(y);
+        y += 30;
+        y = wrapped(graphics, "豁免回合内该距离（1-8 格）内存在怪物即视为贴身。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
@@ -120,8 +153,22 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
                 }
                 return true;
             }
+            if (protectToggleY >= 0 && isInside(event.x(), event.y(),
+                    contentRight() - 44, protectToggleY - scrollOffset() + 1, 44, 16)) {
+                KeyboardClickerModule module = KeyboardClickerModule.instance();
+                module.setJamProtectModeB(!module.isJamProtectModeB());
+                return true;
+            }
+            if (exemptToggleY >= 0 && isInside(event.x(), event.y(),
+                    contentRight() - 44, exemptToggleY - scrollOffset() + 1, 44, 16)) {
+                KeyboardClickerModule module = KeyboardClickerModule.instance();
+                module.setJamExemptEnabled(!module.isJamExemptEnabled());
+                return true;
+            }
             int keyY = contentTop() - scrollOffset() + 21;
-            keyY += 38 + 38 + 14 + 20 + 30 + 4 * 24 + 2 + 14 + 14 + 20;
+            // 38+38 状态区两行；14+20 分隔+MODES 标题；30 当前行；96+2 四模式行；
+            // 14 模式提示；14+20+38+38+30+14+14 防卡弹区（分隔/标题/两开关/输入框/提示/分隔）
+            keyY += 38 + 38 + 14 + 20 + 30 + 4 * 24 + 2 + 14 + 14 + 20 + 14 + 20 + 38 + 38 + 30 + 14 + 14;
             if (isInside(event.x(), event.y(), contentRight() - 156, keyY, 156, 18)) {
                 listeningToggle = true;
                 listeningMode = false;
@@ -159,9 +206,16 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     protected void saveAndClose() {
         try {
             KeyboardClickerModule.instance().setClickInterval(Integer.parseInt(intervalBox.getValue().trim()));
-            super.saveAndClose();
         } catch (NumberFormatException exception) {
             setErrorMessage("间隔必须是 40–100 ms 的数字");
+            return;
         }
+        try {
+            KeyboardClickerModule.instance().setThreatRange(Float.parseFloat(threatBox.getValue().trim()));
+        } catch (NumberFormatException exception) {
+            setErrorMessage("威胁距离必须是 1–8 的数字");
+            return;
+        }
+        super.saveAndClose();
     }
 }

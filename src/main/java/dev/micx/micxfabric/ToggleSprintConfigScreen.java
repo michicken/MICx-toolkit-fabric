@@ -29,6 +29,11 @@ public final class ToggleSprintConfigScreen extends ModuleConfigScreen {
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
+        graphics.text(font, "HUD Text", contentLeft(), y + 4, TEXT);
+        graphics.text(font, "屏幕左下角显示 [Sprint] / [Sprint OFF] 状态字样。", contentLeft(), y + 17, TEXT_DIM);
+        drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.hudEnabled(),
+                isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
+        y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
         section(graphics, "KEYBIND / 快捷键", y);
@@ -64,7 +69,13 @@ public final class ToggleSprintConfigScreen extends ModuleConfigScreen {
                 module.saveConfig();
                 return true;
             }
-            int bindY = activeY + 38 + 14 + 20;
+            int hudY = activeY + 38;
+            if (isInside(event.x(), event.y(), contentRight() - 44, hudY, 44, 16)) {
+                ToggleSprintModule module = ToggleSprintModule.instance();
+                module.setHudEnabled(!module.hudEnabled());
+                return true;
+            }
+            int bindY = hudY + 38 + 14 + 20;
             if (isInside(event.x(), event.y(), contentRight() - 156, bindY, 156, 18)) {
                 listening = true;
                 return true;

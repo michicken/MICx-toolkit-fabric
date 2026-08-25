@@ -31,6 +31,22 @@ public final class KeyboardClickerModule implements Module {
     private static final float VERY_LOW_RATIO = 0.75f;
     private static final long JAM_DETECT_MS = 150L;
     private static final long SKIP_LOG_INTERVAL_MS = 1_000L;
+    /* ---- 模式 B（保护模式，Forge 同参） ---- */
+    /** 前兆阈值：磨损 ≥ 88% 且耐久不变 → 记 40ms 后左键换弹。 */
+    private static final float JAM_PRECURSOR_RATIO = 0.88f;
+    /** 模式 B 触发前兆后的切走窗口（ms）：90ms 内切到其他枪。 */
+    private static final long MODE_B_SWITCH_MS = 90L;
+    /** 模式 B 切到后延迟多久补左键换弹（ms）。 */
+    private static final long MODE_B_LEFT_CLICK_MS = 40L;
+    /** 待执行左键最长等待（ms），超时放弃防悬挂。 */
+    private static final long MODE_B_PENDING_MAX_DELAY_MS = 500L;
+    /* ---- 威胁感知豁免 ---- */
+    private static final float THREAT_RANGE_MIN = 1.0f;
+    private static final float THREAT_RANGE_MAX = 8.0f;
+    private static final float DEFAULT_THREAT_RANGE = 4.0f;
+    /** 豁免回合内威胁扫描间隔（tick）：每 5 tick(~250ms) 扫一次，中间用缓存。 */
+    private static final int THREAT_SCAN_INTERVAL_TICKS = 5;
+    private static final long EXEMPT_NOTICE_INTERVAL_MS = 10_000L;
     private static final int DOWN_NORMAL = 0;
     private static final int DOWN_DOWNED = 1;
     private static final int DOWN_PROTECTING = 2;
@@ -45,6 +61,21 @@ public final class KeyboardClickerModule implements Module {
     private int modeKey = DEFAULT_MODE_KEY;
     private int clickInterval = 50;
     private boolean rightClickTrigger;
+    /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补左键。 */
+    private boolean jamProtectModeB;
+    /** 智能豁免总开关：r59/70/80/90/100/101 威胁贴身时停用防卡弹链路。 */
+    private boolean jamExemptEnabled = true;
+    /** 威胁扫描距离（格）。 */
+    private float threatRange = DEFAULT_THREAT_RANGE;
+    private final JamExemptState jamExempt = new JamExemptState();
+    private boolean threatNearby;
+    private int threatScanCounter;
+    private long lastExemptNoticeAt;
+    /* ---- 模式 B 待执行左键状态 ---- */
+    private int pendingLeftClickSlot = -1;
+    private long pendingLeftClickAt;
+    private long pendingLeftClickSetAt;
+    private boolean modeBSwitch90;
     private boolean configLoaded;
     private Properties config = new Properties();
 
@@ -152,32 +183,159 @@ public final class KeyboardClickerModule implements Module {
         advanceProtectionSequence(client, now);
         advanceDownJamProtection(client, now);
         resetClickerModesOnNewGame();
+        updateJamExempt(client, now);
         checkJamDetection(client, now);
         checkDownedJamDetection(client, now);
 
         if (pendingProtection != null || downJamState == DOWN_PROTECTING) return;
         if (now < stuckPauseUntil) return;
         if (modeIndex == 0 || (rightClickTrigger && !client.options.keyUse.isDown())) return;
-        if (now - lastClick < clickInterval) return;
+        // 模式 B 触发前兆后的 90ms 快速切走窗口
+        if (now - lastClick < (modeBSwitch90 ? MODE_B_SWITCH_MS : clickInterval)) return;
 
         int[] sequence = MODES[modeIndex];
         if (sequence.length == 0) return;
         for (int attempts = 0; attempts < sequence.length; attempts++) {
             int hotbarSlot = sequence[(sequenceIndex + attempts) % sequence.length];
             ItemStack item = client.player.getInventory().getItem(hotbarSlot);
-            if (!item.isEmpty() && item.getMaxDamage() > 0 && item.getDamageValue() > 0) {
+            // 模式 A（现状）：有耐久且不满 → 正在换弹/卡弹，跳过；模式 B：任意轮转
+            if (!jamProtectModeB && !item.isEmpty() && item.getMaxDamage() > 0
+                    && item.getDamageValue() > 0) {
                 emitSkipDiagnostic(hotbarSlot, item, now);
                 continue;
             }
             queueHotbarSlot(hotbarSlot);
             sequenceIndex = (sequenceIndex + attempts + 1) % sequence.length;
             lastClick = now;
+            // 模式 B（实验）：切到瞬间检测前兆——磨损极高且当前没在变化
+            // → 记 40ms 后左键换弹（90ms 切走窗口内，不叠加），避免同帧按键的机器特征
+            if (jamProtectModeB && !item.isEmpty() && item.getMaxDamage() > 0
+                    && !jamExempt.isExempt()) {
+                int damage = item.getDamageValue();
+                Integer previous = slotLastDamage.get(hotbarSlot);
+                if (damage >= item.getMaxDamage() * JAM_PRECURSOR_RATIO
+                        && previous != null && previous == damage) {
+                    pendingLeftClickSlot = hotbarSlot;
+                    pendingLeftClickAt = now + MODE_B_LEFT_CLICK_MS;
+                    pendingLeftClickSetAt = now;
+                    modeBSwitch90 = true;
+                    MicxFabric.LOGGER.debug("KeyboardClicker mode B precursor on slot {}", hotbarSlot);
+                }
+                slotLastDamage.put(hotbarSlot, damage);
+            } else {
+                modeBSwitch90 = false;
+            }
             return;
         }
     }
 
+    /** 模式 B 待执行左键：到期且未豁免、未超时、仍持目标槽 → 左键换弹。 */
+    private void advancePendingLeftClick(Minecraft client, long now) {
+        if (pendingLeftClickSlot < 0) return;
+        if (!jamExempt.isExempt()
+                && now <= pendingLeftClickAt + MODE_B_PENDING_MAX_DELAY_MS
+                && selectedSlot(client) == pendingLeftClickSlot) {
+            queueLeftClick();
+            MicxFabric.LOGGER.debug("KeyboardClicker mode B left click for slot {}", pendingLeftClickSlot);
+        }
+        pendingLeftClickSlot = -1;
+        pendingLeftClickAt = 0L;
+        pendingLeftClickSetAt = 0L;
+    }
+
+    /**
+     * 威胁感知豁免（r59/70/80/90/100/101）：进入/离开豁免时各发一次聊天提醒（10s 节流）。
+     * 豁免期间 checkJamDetection / 保护序列 / 模式 B 左键均直接跳过。
+     */
+    private void updateJamExempt(Minecraft client, long now) {
+        advancePendingLeftClick(client, now);
+        if (!jamExemptEnabled) {
+            if (jamExempt.isExempt()) jamExempt.reset();
+            threatNearby = false;
+            threatScanCounter = 0;
+            return;
+        }
+        int round = ZombiesTracker.instance().round();
+
+        // 性能：非豁免回合零扫描；豁免回合内每 THREAT_SCAN_INTERVAL_TICKS tick 扫一次，
+        // 中间 tick 复用缓存结果，避免状态机因"非扫描 tick 无结果"误判威胁消失。
+        boolean threat = false;
+        if (JamExemptState.isExemptRound(round)) {
+            if (threatScanCounter++ % THREAT_SCAN_INTERVAL_TICKS == 0) {
+                threatNearby = hasThreatInRange(client);
+            }
+            threat = threatNearby;
+        } else {
+            threatScanCounter = 0;
+            threatNearby = false;
+        }
+
+        JamExemptState.Event event = jamExempt.observe(round, threat);
+        if (event == JamExemptState.Event.ENTERED) {
+            // 取消进行中的保护序列并恢复原槽，避免豁免期间残留一次切槽
+            if (pendingProtection != null) {
+                JamProtectionSequence sequence = pendingProtection;
+                int previous = sequence.previousSlot();
+                if (previous >= 0 && previous <= 8) queueHotbarSlot(previous);
+                pendingProtection = null;
+            }
+            // 清空耐久跟踪，恢复时重新建立 150ms 观察窗口
+            slotVeryLowSince.clear();
+            slotLastDamage.clear();
+            // 模式 B：取消悬挂的待执行左键与 90ms 覆盖（豁免期间不左键）
+            pendingLeftClickSlot = -1;
+            pendingLeftClickAt = 0L;
+            pendingLeftClickSetAt = 0L;
+            modeBSwitch90 = false;
+            sendJamExemptNotice(client, "§e[KeyboardClicker] §c防卡弹已停用（第"
+                    + jamExempt.exemptRound() + "回合，怪物贴身）");
+        } else if (event == JamExemptState.Event.EXITED) {
+            sendJamExemptNotice(client, "§e[KeyboardClicker] §a防卡弹已恢复");
+        }
+    }
+
+    /**
+     * 攻击范围内是否存在怪物（仅豁免回合内被调用，节流后每 ~250ms 一次）。
+     * 敌对判定与 ESP 同口径：Monster（僵尸/史莱姆/岩浆/巨人…）+ 铁傀儡 + 狼。
+     */
+    private boolean hasThreatInRange(Minecraft client) {
+        if (client == null || client.level == null || client.player == null) return false;
+        double rangeSq = (double) threatRange * threatRange;
+        try {
+            for (net.minecraft.world.entity.Entity entity : client.level.entitiesForRendering()) {
+                if (!(entity instanceof net.minecraft.world.entity.LivingEntity living)) continue;
+                if (!(living instanceof net.minecraft.world.entity.monster.Monster)
+                        && !(living instanceof net.minecraft.world.entity.animal.golem.IronGolem)
+                        && !(living instanceof net.minecraft.world.entity.animal.wolf.Wolf)) {
+                    continue;
+                }
+                double dx = living.getX() - client.player.getX();
+                double dy = living.getY() - client.player.getY();
+                double dz = living.getZ() - client.player.getZ();
+                if (dx * dx + dy * dy + dz * dz <= rangeSq) return true;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return false;
+    }
+
+    private void sendJamExemptNotice(Minecraft client, String text) {
+        if (client != null && client.player != null) {
+            if (now_() - lastExemptNoticeAt < EXEMPT_NOTICE_INTERVAL_MS) return;
+            lastExemptNoticeAt = now_();
+            client.player.sendSystemMessage(net.minecraft.network.chat.Component.literal(text));
+        }
+    }
+
+    private static long now_() {
+        return System.currentTimeMillis();
+    }
+
     private void checkJamDetection(Minecraft client, long now) {
         if (downJamState == DOWN_PROTECTING) return;
+        // 模式 B（实验）：不走旧检测/保护序列，前兆处理在轮转循环内
+        if (jamProtectModeB) return;
+        if (jamExempt.isExempt()) return;   // 威胁豁免：不检测不触发
         if (modeIndex == 0) {
             slotVeryLowSince.clear();
             slotLastDamage.clear();
@@ -468,6 +626,48 @@ public final class KeyboardClickerModule implements Module {
         saveConfig();
     }
 
+    public boolean isJamProtectModeB() {
+        loadConfig();
+        return jamProtectModeB;
+    }
+
+    public void setJamProtectModeB(boolean value) {
+        loadConfig();
+        jamProtectModeB = value;
+        if (value) {
+            cancelProtection("mode_b_enabled");
+            clearJamSlotAll();
+        }
+        saveConfig();
+    }
+
+    public boolean isJamExemptEnabled() {
+        loadConfig();
+        return jamExemptEnabled;
+    }
+
+    public void setJamExemptEnabled(boolean value) {
+        loadConfig();
+        jamExemptEnabled = value;
+        if (!value) jamExempt.reset();
+        saveConfig();
+    }
+
+    public float getThreatRange() {
+        loadConfig();
+        return threatRange;
+    }
+
+    public void setThreatRange(float value) {
+        threatRange = Math.max(THREAT_RANGE_MIN, Math.min(THREAT_RANGE_MAX, value));
+        saveConfig();
+    }
+
+    private void clearJamSlotAll() {
+        slotVeryLowSince.clear();
+        slotLastDamage.clear();
+    }
+
     private List<Integer> enabledModes() {
         loadConfig();
         List<Integer> modes = new ArrayList<>();
@@ -487,6 +687,10 @@ public final class KeyboardClickerModule implements Module {
         modeKey = ConfigProperties.integer(config, "modeKey", DEFAULT_MODE_KEY, -108, GLFW.GLFW_KEY_LAST);
         clickInterval = ConfigProperties.integer(config, "clickIntervalMs", 50, MIN_INTERVAL, MAX_INTERVAL);
         rightClickTrigger = ConfigProperties.bool(config, "rightClickTrigger", false);
+        jamProtectModeB = ConfigProperties.bool(config, "jamProtectModeB", false);
+        jamExemptEnabled = ConfigProperties.bool(config, "jamExemptEnabled", true);
+        threatRange = (float) ConfigProperties.real(config, "threatRange",
+                DEFAULT_THREAT_RANGE, THREAT_RANGE_MIN, THREAT_RANGE_MAX);
         pendingMode = enabledModesFromConfig().stream().findFirst().orElse(1);
     }
 
@@ -505,6 +709,9 @@ public final class KeyboardClickerModule implements Module {
         properties.setProperty("modeKey", Integer.toString(modeKey));
         properties.setProperty("clickIntervalMs", Integer.toString(clickInterval));
         properties.setProperty("rightClickTrigger", Boolean.toString(rightClickTrigger));
+        properties.setProperty("jamProtectModeB", Boolean.toString(jamProtectModeB));
+        properties.setProperty("jamExemptEnabled", Boolean.toString(jamExemptEnabled));
+        properties.setProperty("threatRange", Float.toString(threatRange));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("keyboard-clicker.properties"), properties,
                     "MICx KeyboardClicker configuration");

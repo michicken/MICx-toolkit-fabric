@@ -251,10 +251,14 @@ public final class ZombiesAssistModule implements Module {
         ZombiesEventState state = tracker.eventState();
         if (state.consumeGameOver()) {
             if (config.postGameStats && state.latches().claimGameOver(round)) {
-                sendLocalMessage(client, "Game Over | down " + state.totalDowns()
-                        + " | revive " + state.totalRevives() + " | death " + state.totalDeaths()
-                        + " | hits " + tracker.hits() + " | crit " + tracker.crits()
-                        + " | LR " + tracker.lrUses());
+                String stats = "Game Over | down " + state.totalDowns()
+                        + " | revive " + state.totalRevives() + " | death " + state.totalDeaths();
+                // showStats（Hits / Crit 开关）控制命中统计段，与 Forge 口径一致
+                if (config.showStats) {
+                    stats += " | hits " + tracker.hits() + " | crit " + tracker.crits();
+                }
+                stats += " | LR " + tracker.lrUses();
+                sendLocalMessage(client, stats);
             }
         }
         tracker.finishGameOverSession();

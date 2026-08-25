@@ -87,6 +87,16 @@ public final class MagnetModule implements Module {
     public void setSlowMode(boolean v) { slowMode = v; saveConfig(); }
     public boolean isHitboxOnly() { loadConfig(); return hitboxOnly; }
     public void setHitboxOnly(boolean v) { hitboxOnly = v; saveConfig(); }
+    public boolean isZombiesOnly() { loadConfig(); return zombiesOnly; }
+    public void setZombiesOnly(boolean v) { zombiesOnly = v; saveConfig(); }
+    public boolean isIncludeSlime() { loadConfig(); return includeSlime; }
+    public void setIncludeSlime(boolean v) { includeSlime = v; saveConfig(); }
+    public boolean isIncludeGolem() { loadConfig(); return includeGolem; }
+    public void setIncludeGolem(boolean v) { includeGolem = v; saveConfig(); }
+    public boolean isIncludeGiant() { loadConfig(); return includeGiant; }
+    public void setIncludeGiant(boolean v) { includeGiant = v; saveConfig(); }
+    public double getHeadshotStopDeg() { loadConfig(); return headshotStopDeg; }
+    public void setHeadshotStopDeg(double v) { headshotStopDeg = Math.max(0.5, Math.min(10.0, v)); saveConfig(); }
 
     @Override public void tick(Minecraft mc) {
         if (!enabled || mc == null || mc.player == null || mc.level == null) {

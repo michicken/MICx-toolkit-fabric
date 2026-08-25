@@ -95,6 +95,10 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.showPing,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
+        graphics.text(font, "Ping Button", contentLeft(), y + 4, TEXT);
+        drawButton(graphics, pingButtonLabel(config.pingButton), contentRight() - 156, y, 156, 18,
+                isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
+        y += 34;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
@@ -171,7 +175,12 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
                 config.showPing = !config.showPing;
                 return true;
             }
-            y += 38 + 14 + 20 + 28 + 34 + 14 + 20 + 28 + 34 + 20;
+            y += 38;
+            if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
+                config.pingButton = config.pingButton >= 2 ? -1 : config.pingButton + 1;
+                return true;
+            }
+            y += 34 + 14 + 20 + 28 + 34 + 14 + 20 + 28 + 34 + 20;
             if (isInside(event.x(), event.y(), contentRight() - 156, y, 156, 18)) {
                 listening = true;
                 return true;
@@ -212,5 +221,15 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
         } catch (NumberFormatException exception) {
             setErrorMessage("TeamSync 数值必须是有效整数");
         }
+    }
+
+    /** Forge btnCn 同款：-1=Off 0=Left 1=Right 2=Middle。 */
+    private static String pingButtonLabel(int button) {
+        return switch (button) {
+            case 0 -> "Left";
+            case 1 -> "Right";
+            case 2 -> "Middle";
+            default -> "Off";
+        };
     }
 }

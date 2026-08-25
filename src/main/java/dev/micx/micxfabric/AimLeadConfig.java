@@ -8,6 +8,8 @@ import java.util.Properties;
 public final class AimLeadConfig {
     public boolean autoPing = true;
     public boolean gameRtt = true;
+    /** 渲染预测幽灵框；关闭则完全不画（框/线/绿点），预测计算照常供 Magnet 幽灵框重测。 */
+    public boolean renderGhost = true;
     public boolean fireDot = true;
     public boolean drawLink = true;
     public boolean serverShadow = false;
@@ -31,6 +33,7 @@ public final class AimLeadConfig {
         Properties properties = ConfigProperties.load(current, legacy);
         autoPing = ConfigProperties.bool(properties, "autoPing", true);
         gameRtt = ConfigProperties.bool(properties, "gameRtt", true);
+        renderGhost = ConfigProperties.bool(properties, "renderGhost", true);
         fireDot = ConfigProperties.bool(properties, "fireDot", true);
         drawLink = ConfigProperties.bool(properties, "drawLink", true);
         serverShadow = ConfigProperties.bool(properties, "serverShadow", false);
@@ -49,6 +52,7 @@ public final class AimLeadConfig {
         Properties properties = new Properties();
         properties.setProperty("autoPing", Boolean.toString(autoPing));
         properties.setProperty("gameRtt", Boolean.toString(gameRtt));
+        properties.setProperty("renderGhost", Boolean.toString(renderGhost));
         properties.setProperty("fireDot", Boolean.toString(fireDot));
         properties.setProperty("drawLink", Boolean.toString(drawLink));
         properties.setProperty("serverShadow", Boolean.toString(serverShadow));

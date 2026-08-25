@@ -43,6 +43,8 @@ public final class MicxClientCommands {
         String top = args[0].toLowerCase(Locale.ROOT);
         switch (top) {
             case "list" -> printList(source);
+            case "panel", "gui" -> openPanel(source);
+            case "copy" -> copyToClipboard(source, args);
             case "toggle" -> toggle(source, args);
             case "pv", "playervisibility" -> playerVisibility(source, args);
             case "toro", "torohealth" -> toro(source, args);
@@ -58,6 +60,17 @@ public final class MicxClientCommands {
             case "reset" -> reset(source);
             default -> printList(source);
         }
+        return 1;
+    }
+
+    private static int copyToClipboard(FabricClientCommandSource source, String[] args) {
+        if (args.length < 2) {
+            reply(source, "§cusage: /micx copy <text>");
+            return 0;
+        }
+        String text = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+        source.getClient().keyboardHandler.setClipboard(text);
+        reply(source, "§a已复制: §f" + text);
         return 1;
     }
 

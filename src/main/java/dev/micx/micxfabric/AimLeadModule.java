@@ -182,7 +182,7 @@ public final class AimLeadModule implements Module {
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {
-        if (!enabled || !config.fireDot) return;
+        if (!enabled || !config.renderGhost || !config.fireDot) return;
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.level == null) return;
         GhostTarget target = selectedTarget(client);
@@ -202,7 +202,7 @@ public final class AimLeadModule implements Module {
     }
 
     private void collectSubmits(LevelRenderContext context) {
-        if (!enabled) return;
+        if (!enabled || !config.renderGhost) return;
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.level == null || client.player == null) return;
         List<GhostTarget> targets = targets(client);
