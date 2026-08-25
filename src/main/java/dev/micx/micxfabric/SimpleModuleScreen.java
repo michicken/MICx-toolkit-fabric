@@ -127,7 +127,7 @@ public final class SimpleModuleScreen extends ModuleConfigScreen {
                 y = wrapped(graphics, row.desc, contentLeft(), y, TEXT_DIM, contentWidth()) + 6;
             }
         }
-        setContentHeight(y - contentTop());
+        setContentHeight(y - (contentTop() - scrollOffset()));
     }
 
     private int nextBoxIndex;

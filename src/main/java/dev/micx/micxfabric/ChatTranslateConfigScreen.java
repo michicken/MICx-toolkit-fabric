@@ -59,7 +59,7 @@ public final class ChatTranslateConfigScreen extends ModuleConfigScreen {
         y += 14;
         y = wrapped(graphics, "只处理中文普通消息；/ 命令、纯英文和超长文本不拦截。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

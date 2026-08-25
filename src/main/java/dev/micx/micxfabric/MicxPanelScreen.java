@@ -84,12 +84,37 @@ public final class MicxPanelScreen extends Screen {
 
         buildEntries();
         if (selectedId == null || ModulePanelRegistry.get(selectedId) == null) {
+            String last = PanelState.lastModule();
+            if (last != null) {
+                String[] parts = last.split("/", 2);
+                String candId = parts[0];
+                String candSub = parts.length > 1 ? parts[1] : null;
+                boolean valid = ModulePanelRegistry.get(candId) != null
+                        && (candSub == null || ModulePanelRegistry.submodule(candId, candSub) != null);
+                if (valid) {
+                    selectedId = candId;
+                    selectedSubId = candSub;
+                }
+            }
+        }
+        if (selectedId == null || ModulePanelRegistry.get(selectedId) == null) {
             selectedId = entries.stream()
                     .filter(entry -> !entry.header)
                     .map(entry -> entry.id)
                     .findFirst()
                     .orElse(null);
             selectedSubId = null;
+        } else {
+            // Ensure restored entry is visible
+            for (RailEntry e : entries) {
+                if (!e.header && e.id.equals(selectedId) && java.util.Objects.equals(e.subId, selectedSubId)) {
+                    int view = Math.max(0, footerTop - headerBottom);
+                    int y = e.contentY;
+                    if (y < railScroll) railScroll = y;
+                    else if (y + e.height > railScroll + view) railScroll = y + e.height - view;
+                    break;
+                }
+            }
         }
         clampRailScroll();
     }
@@ -442,6 +467,7 @@ public final class MicxPanelScreen extends Screen {
                         && entry.screenY <= footerTop) {
                     selectedId = entry.id;
                     selectedSubId = entry.subId;
+                    PanelState.setLastModule(selectedSubId == null ? selectedId : selectedId + "/" + selectedSubId);
                     errorMessage = null;
                     return true;
                 }
@@ -499,7 +525,8 @@ public final class MicxPanelScreen extends Screen {
         if (descriptor.hasKeybind()) {
             int keybindY = findKeybindY(descriptor);
             int clearW = 42;
-            int bindW = 58;
+            // 与 drawKeybindControl 相同的动态宽度，保证按钮变宽后命中区一致
+            int bindW = Math.max(58, font.width(descriptor.keybind().keyLabel()) + 16);
             int clearX = right - clearW;
             int bindX = clearX - 4 - bindW;
             if (mouseX >= bindX && mouseX < bindX + bindW
@@ -574,18 +601,21 @@ public final class MicxPanelScreen extends Screen {
         } else {
             value = keybind.keyLabel();
         }
-        graphics.text(font, "Bind", x, y + 3, TEXT);
-        graphics.text(font, keybind.description(), x, y + 15, TEXT_FAINT);
         int clearW = 42;
-        int bindW = 58;
+        int bindW = Math.max(58, font.width(listening ? "监听中" : value) + 16);
         int clearX = right - clearW;
         int bindX = clearX - 4 - bindW;
-        drawAction(graphics, bindX, y + 1, bindW, 18, listening ? "监听中" : "Bind",
+        // Button itself shows the bound key (beautified), not fixed "Bind"
+        drawAction(graphics, bindX, y + 1, bindW, 18, listening ? "监听中" : value,
                 mouseX >= bindX && mouseX < bindX + bindW && mouseY >= y + 1 && mouseY < y + 19);
         drawAction(graphics, clearX, y + 1, clearW, 18, "Clear",
                 mouseX >= clearX && mouseX < right && mouseY >= y + 1 && mouseY < y + 19);
-        graphics.text(font, trim(value, Math.max(20, bindX - x - 8)), x, y + 27,
-                listening ? AMBER : TEXT_DIM);
+        // Secondary line: description + chord progress hint
+        String sub = listening
+                ? (keybind.supportsChord() ? "按下键 " + (capturedCount + 1) + "/" + KeyChord.MAX_KEYS + " · ESC 完成" : "任意键或鼠标键 · ESC 取消")
+                : keybind.description();
+        graphics.text(font, trim(sub, Math.max(20, right - x)), x, y + 27,
+                listening ? AMBER : TEXT_FAINT);
     }
 
     /** 捕获一个组合键；重复键忽略，满 3 个自动提交。 */
@@ -692,6 +722,9 @@ public final class MicxPanelScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (selectedId != null) {
+            PanelState.setLastModule(selectedSubId == null ? selectedId : selectedId + "/" + selectedSubId);
+        }
         minecraft.setScreenAndShow(parent);
     }
 

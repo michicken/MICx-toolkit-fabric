@@ -132,7 +132,7 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
         y += 34;
         y = wrapped(graphics, "主键首次按下启用模块；再次按下切换 HUD。Ping 鼠标键沿用 Forge 编码 -100 + button。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     private void place(EditBox box, int x, int y) {

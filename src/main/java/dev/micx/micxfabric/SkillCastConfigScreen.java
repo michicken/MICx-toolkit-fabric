@@ -35,7 +35,7 @@ public final class SkillCastConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics,
                 "触发只使用 26.2 原生 MultiPlayerGameMode，不手工构造自定义技能包；无世界、暂停或配置页时不会发送操作。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

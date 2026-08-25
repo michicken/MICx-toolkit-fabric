@@ -77,7 +77,7 @@ public final class PlayerVisibilityConfigScreen extends ModuleConfigScreen {
         y += 32;
         y = wrapped(graphics, "Fabric 透明模式使用实体 extraction state 的 translucent render type，不修改全局 OpenGL 状态。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

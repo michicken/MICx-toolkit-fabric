@@ -105,7 +105,7 @@ public final class ToroHealthConfigScreen extends ModuleConfigScreen {
         drawButton(graphics, colorLabel(module.healColor()), contentRight() - 112, y, 112, 18,
                 isInside(mouseX, mouseY, contentRight() - 112, y, 112, 18));
         y += 28;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     private int wrapped(GuiGraphicsExtractor graphics, String text) {

@@ -44,7 +44,8 @@ public final class ModuleKeybindAdapter implements ModuleKeybind {
     @Override
     public String keyLabel() {
         InputBinding binding = getter.get();
-        return binding == null ? "未绑定" : binding.label();
+        if (binding == null || binding.isUnbound()) return "未绑定";
+        return KeyChord.keyName(binding.code());
     }
 
     @Override

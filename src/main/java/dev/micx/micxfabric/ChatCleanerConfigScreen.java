@@ -32,7 +32,7 @@ public final class ChatCleanerConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics,
                 "当前 Fabric 实现不提供关键词过滤、消息删除策略编辑或服务器级消息管理。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

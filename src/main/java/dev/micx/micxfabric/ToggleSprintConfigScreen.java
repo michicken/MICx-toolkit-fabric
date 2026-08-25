@@ -45,7 +45,7 @@ public final class ToggleSprintConfigScreen extends ModuleConfigScreen {
         y += 34;
         y = wrapped(graphics, "绑定语义与原 1.8.9 一致：键盘使用 GLFW key code，鼠标使用 -100 + button。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

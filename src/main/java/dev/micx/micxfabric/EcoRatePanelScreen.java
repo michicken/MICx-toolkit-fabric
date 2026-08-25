@@ -49,7 +49,7 @@ public final class EcoRatePanelScreen extends ModuleConfigScreen {
         g.fill(contentLeft(), y, contentRight(), y+1, LINE); y+=14;
         info(g, "速率 = 过去2分钟纯增长（买装备不影响）：自己按聊天 +Gold 事件，队友按记分板正增量；数值每10秒刷新一次。模块关闭时后台采集继续，中途开启立即有数据。", y);
         y+=46;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

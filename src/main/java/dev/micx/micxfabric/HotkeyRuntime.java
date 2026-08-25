@@ -26,6 +26,27 @@ public final class HotkeyRuntime {
                 handleBinding(module, module.id() + ":primary", module.primaryBinding(), blocked, client, true);
             }
             handleBinding(module, module.id() + ":secondary", module.secondaryBinding(), blocked, client, false);
+            // 面板侧统一绑定：模块无自有快捷键字段时，组合键直接当模块总开关
+            int[] panelChord = ModulePanelRegistry.panelChord(module.id());
+            if (chord == null && module.primaryBinding() == null
+                    && panelChord != null && !KeyChord.isEmpty(panelChord)) {
+                handlePanelToggle(module, module.id() + ":panel", panelChord, blocked, client);
+            }
+        }
+    }
+
+    /** 面板侧绑定：all-down 上升沿切换模块开关并聊天提示。 */
+    private static void handlePanelToggle(Module module, String stateId, int[] chord,
+                                          boolean blocked, Minecraft client) {
+        boolean down = KeyChord.isAllDown(chord, client);
+        Boolean old = PREVIOUS.get(stateId);
+        PREVIOUS.put(stateId, down);
+        if (blocked || !down || Boolean.TRUE.equals(old)) return;
+        boolean next = !module.enabled();
+        module.setEnabled(next);
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(ChatMessageStyles.notice(
+                    module.id() + " " + (next ? "ON" : "OFF")));
         }
     }
 
@@ -69,6 +90,7 @@ public final class HotkeyRuntime {
         PREVIOUS.remove(moduleId);
         PREVIOUS.remove(moduleId + ":primary");
         PREVIOUS.remove(moduleId + ":secondary");
+        PREVIOUS.remove(moduleId + ":panel");
     }
 
     /** Backward-compatible alias used by older callers. */

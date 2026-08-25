@@ -93,7 +93,7 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics, "默认 H 键；名单优先使用当前加载的其他玩家，最多固定显示四张卡片。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

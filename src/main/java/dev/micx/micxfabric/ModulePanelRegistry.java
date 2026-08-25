@@ -6,28 +6,84 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 /** Panel metadata; runtime registration is maintained separately in ModuleRuntime. */
 public final class ModulePanelRegistry {
     public static final String GROUP_CORE = "core";
-    public static final String GROUP_COMBAT = "combat";
+    public static final String GROUP_VISION = "vision";
+    public static final String GROUP_ACTION = "action";
     public static final String GROUP_INFO = "info";
     public static final String GROUP_SQUAD = "squad";
+    public static final String GROUP_CHAT = "chat";
     public static final String GROUP_MISC = "misc";
+    public static final String GROUP_DEBUG = "debug";
+    // 兼容旧引用
+    public static final String GROUP_COMBAT = GROUP_ACTION;
     public static final List<String> GROUP_ORDER = List.of(
-            GROUP_CORE, GROUP_COMBAT, GROUP_INFO, GROUP_SQUAD, GROUP_MISC);
+            GROUP_CORE, GROUP_VISION, GROUP_ACTION, GROUP_INFO, GROUP_SQUAD, GROUP_CHAT, GROUP_MISC, GROUP_DEBUG);
 
     private static final Map<String, GroupMetadata> GROUPS = new LinkedHashMap<>();
     private static final Map<String, ModulePanelDescriptor> DESCRIPTORS = new LinkedHashMap<>();
     private static final Map<String, List<SubmoduleDescriptor>> SUBMODULES = new LinkedHashMap<>();
     private static int nextOrder;
+    /** Forge ModuleMeta order 映射：用于与 1.8.9 左栏排序一致，缺口回退 nextOrder。 */
+    private static final Map<String, Integer> META_ORDER = new LinkedHashMap<>();
+    private static final Map<String, String> META_GROUP = new LinkedHashMap<>();
+
+    private static void meta(String id, String group, int order) {
+        META_GROUP.put(id, group);
+        META_ORDER.put(id, order);
+    }
 
     static {
-        GROUPS.put(GROUP_CORE, new GroupMetadata("CORE", "Alien Arcadium 核心"));
-        GROUPS.put(GROUP_COMBAT, new GroupMetadata("COMBAT", "战斗辅助"));
+        // 复刻 src/main/java/dev/micx/micxtoolkit/gui/ModuleMeta.java 的分组与 order
+        meta("zombies_assist", GROUP_CORE, 0);
+        meta("lr_indicator", GROUP_CORE, 1);
+        meta("anti_axe", GROUP_CORE, 2);
+        meta("sword_block", GROUP_CORE, 10);
+        meta("round_timer", GROUP_CORE, 11);
+        meta("eco_rate", GROUP_CORE, 12);
+        meta("esp", GROUP_VISION, 0);
+        meta("spawn_marker", GROUP_VISION, 1);
+        meta("golem_marker", GROUP_VISION, 2);
+        meta("slime_forecast", GROUP_VISION, 3);
+        meta("chams", GROUP_VISION, 4);
+        meta("zombie_fade", GROUP_VISION, 5);
+        meta("player_outline_esp", GROUP_VISION, 6);
+        meta("last_mobs", GROUP_VISION, 7);
+        meta("fullbright", GROUP_VISION, 8);
+        meta("aim_lead", GROUP_ACTION, 2);
+        meta("magnet", GROUP_ACTION, 2);
+        meta("right_clicker", GROUP_ACTION, 2);
+        meta("skill_cast", GROUP_ACTION, 3);
+        meta("keyboard_clicker", GROUP_ACTION, 4);
+        meta("noreload", GROUP_ACTION, 4);
+        meta("revive_aura", GROUP_ACTION, 4);
+        meta("dps_counter", GROUP_INFO, 0);
+        meta("toro_health", GROUP_INFO, 1);
+        meta("teammate_hp", GROUP_INFO, 2);
+        meta("team_sync", GROUP_SQUAD, 0);
+        meta("chat_cleaner", GROUP_CHAT, 0);
+        meta("chat_translate", GROUP_CHAT, 1);
+        meta("chat_copy", GROUP_CHAT, 3);
+        meta("auto_text", GROUP_CHAT, 4);
+        meta("welcome", GROUP_CHAT, 5);
+        meta("view_hold", GROUP_MISC, 1);
+        meta("toggle_sprint", GROUP_MISC, 2);
+        meta("player_visibility", GROUP_MISC, 3);
+        meta("auto_hide_visuals", GROUP_MISC, 4);
+        meta("asr", GROUP_MISC, 6);
+        meta("anti_reshift", GROUP_MISC, 7);
+
+        GROUPS.put(GROUP_CORE, new GroupMetadata("CORE", "Zombies 核心"));
+        GROUPS.put(GROUP_VISION, new GroupMetadata("VISION", "战斗 · 视觉"));
+        GROUPS.put(GROUP_ACTION, new GroupMetadata("ACTION", "战斗 · 操作"));
         GROUPS.put(GROUP_INFO, new GroupMetadata("HUD & INFO", "信息面板"));
         GROUPS.put(GROUP_SQUAD, new GroupMetadata("SQUAD", "队伍协同"));
+        GROUPS.put(GROUP_CHAT, new GroupMetadata("CHAT", "聊天"));
         GROUPS.put(GROUP_MISC, new GroupMetadata("MISC", "视觉 · 输入"));
+        GROUPS.put(GROUP_DEBUG, new GroupMetadata("DEBUG", "调试"));
 
         real("sword_block", "SwordBlock", "剑格挡", GROUP_CORE, "客户端视觉格挡动画，不提供服务端伤害减免。",
                 SwordBlockModule.instance(), SwordBlockConfigScreen::new);
@@ -54,7 +110,7 @@ public final class ModulePanelRegistry {
                                         () -> LrIndicatorModule.instance().lrHudDy,
                                         v -> LrIndicatorModule.instance().lrHudDy = v, -300, 300,
                                         "清单垂直偏移。"))));
-        real("auto_hide_visuals", "AutoHide Visuals", "自动隐藏", GROUP_MISC,
+        real("auto_hide_visuals", "AutoHide Visuals", "自动隐藏", GROUP_DEBUG,
                 "对局结算 1 分钟藏 ESP/Chams/Outline/AimLead，R1/离图恢复。",
                 AutoHideVisualsModule.instance(), null);
         real("zombie_fade", "ZombieFade", "僵尸淡化", GROUP_MISC,
@@ -125,17 +181,7 @@ public final class ModulePanelRegistry {
                                         "X 标记透明度。"))));
         real("view_hold", "ViewHold", "快捷视角", GROUP_MISC,
                 "按住绑定键切到背后/正面视角，松开恢复第一人称；正面视角支持俯仰镜像（需先绑定按键）。",
-                ViewHoldModule.instance(), parent -> new SimpleModuleScreen(parent,
-                        ViewHoldModule.instance(), "ViewHold", "按住切视角",
-                        List.of(
-                                SimpleModuleScreen.Row.integer("Target View",
-                                        ViewHoldModule.instance()::getTargetView,
-                                        ViewHoldModule.instance()::setTargetView, 1, 2,
-                                        "1=背后第三人称 2=正面第三人称。"),
-                                SimpleModuleScreen.Row.toggle("俯仰镜像 Pitch Mirror",
-                                        ViewHoldModule.instance()::isPitchMirror,
-                                        ViewHoldModule.instance()::setPitchMirror,
-                                        "正面视角时渲染帧内取反 pitch（相机翻到面前上方俯视自己）。"))));
+                ViewHoldModule.instance(), ViewHoldConfigScreen::new);
         real("anti_reshift", "AntiReshift", "防松Shift", GROUP_MISC,
                 "救援途中防误松 Shift（Type B）：不自动重按、不发包，默认关闭；低血/救起自动放行。",
                 AntiReshiftModule.instance(), parent -> new SimpleModuleScreen(parent,
@@ -318,8 +364,11 @@ public final class ModulePanelRegistry {
     private static void real(String id, String display, String chinese, String group,
                              String description, Module module,
                              java.util.function.Function<net.minecraft.client.gui.screens.Screen, net.minecraft.client.gui.screens.Screen> factory) {
-        register(new ModulePanelDescriptor(id, display, chinese, group, nextOrder++, description,
+        String g = META_GROUP.getOrDefault(id, group);
+        int o = META_ORDER.getOrDefault(id, nextOrder);
+        register(new ModulePanelDescriptor(id, display, chinese, g, o, description,
                 module, factory, keybindFor(id, module)));
+        nextOrder++;
     }
 
     private static void unmigrated(String id, String display, String chinese, String group,
@@ -330,42 +379,90 @@ public final class ModulePanelRegistry {
 
     private static void blocked(String id, String display, String chinese, String group,
                                 String description) {
-        register(new ModulePanelDescriptor(id, display, chinese, group, nextOrder++, description,
+        int o = META_ORDER.getOrDefault(id, nextOrder);
+        String g = META_GROUP.getOrDefault(id, group);
+        register(new ModulePanelDescriptor(id, display, chinese, g, o, description,
                 new UnmigratedModule(id), null, null, false, true));
+        nextOrder++;
     }
 
     private static ModuleKeybind keybindFor(String id, Module module) {
-        return switch (id) {
-            case "player_visibility" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> PlayerVisibilityModule.instance().setKeyCode(code));
-            case "teammate_hp" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> TeammateHpModule.instance().setKeyCode(code));
-            case "toggle_sprint" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> ToggleSprintModule.instance().setKeyCode(code));
-            case "right_clicker" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> RightClickerModule.instance().setKeyCode(code));
-            case "view_hold" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> ViewHoldModule.instance().setKeyCode(code));
-            case "skill_cast" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> SkillCastModule.instance().setKeyCode(code));
-            case "keyboard_clicker" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> KeyboardClickerModule.instance().setToggleKey(code));
-            case "team_sync" -> new ModuleKeybindAdapter(id, "Forge 主快捷键",
-                    module::primaryBinding, code -> {
-                        TeamSyncModule.instance().config().toggleKeyCode = code;
-                        TeamSyncModule.instance().saveConfig();
-                    });
-            case "revive_aura" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
-                    ReviveAuraModule.instance()::primaryChord,
-                    ReviveAuraModule.instance()::setToggleKeyCodes);
-            case "magnet" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
-                    MagnetModule.instance()::primaryChord,
-                    MagnetModule.instance()::setToggleKeyCodes);
-            case "last_mobs" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
-                    LastMobsModule.instance()::primaryChord,
-                    LastMobsModule.instance()::setToggleKeyCodes);
-            default -> null;
-        };
+        String desc = "主快捷键（最多 3 键，空为未绑定）";
+        int[] chord = module.primaryChord();
+        if (chord != null) {
+            return new ModuleChordAdapter(id, desc, module::primaryChord, codes -> setPrimaryChord(module, codes));
+        }
+        InputBinding single = module.primaryBinding();
+        if (single != null) {
+            return new ModuleChordAdapter(id, desc,
+                    () -> KeyChord.single(module.primaryBinding().code()),
+                    codes -> setPrimarySingle(module, KeyChord.primary(codes)));
+        }
+        // 无自带绑定的模块：组合键存面板侧（micx-panel-bindings.properties），HotkeyRuntime 统一触发开关
+        return new ModuleChordAdapter(id, desc,
+                () -> panelChord(id), codes -> setPanelChord(id, codes));
+    }
+
+    /* ---- 面板侧统一绑定：给没有自有快捷键字段的模块补“每个模块都能绑” ---- */
+
+    private static final Map<String, int[]> PANEL_CHORDS = new LinkedHashMap<>();
+    private static boolean panelChordsLoaded;
+
+    private static void ensurePanelChordsLoaded() {
+        if (panelChordsLoaded) return;
+        panelChordsLoaded = true;
+        Properties p = ConfigProperties.load(
+                FabricRuntime.configPath().resolve("micx-panel-bindings.properties"), null);
+        for (String key : p.stringPropertyNames()) {
+            int[] codes = KeyChord.parse(p.getProperty(key, ""));
+            if (!KeyChord.isEmpty(codes)) PANEL_CHORDS.put(key, codes);
+        }
+    }
+
+    /** 面板侧为该模块保存的组合键；未绑定返回 null。 */
+    public static int[] panelChord(String id) {
+        ensurePanelChordsLoaded();
+        return PANEL_CHORDS.get(id);
+    }
+
+    private static void setPanelChord(String id, int[] codes) {
+        ensurePanelChordsLoaded();
+        int[] normalized = KeyChord.normalize(codes);
+        HotkeyRuntime.clearModule(id);
+        if (KeyChord.isEmpty(normalized)) {
+            PANEL_CHORDS.remove(id);
+        } else {
+            PANEL_CHORDS.put(id, normalized);
+        }
+        Properties p = new Properties();
+        for (Map.Entry<String, int[]> entry : PANEL_CHORDS.entrySet()) {
+            p.setProperty(entry.getKey(), KeyChord.format(entry.getValue()));
+        }
+        try {
+            AtomicProperties.store(FabricRuntime.configPath().resolve("micx-panel-bindings.properties"), p,
+                    "MICx panel-side module bindings");
+        } catch (java.io.IOException exception) {
+            MicxFabric.LOGGER.warn("Unable to save panel bindings", exception);
+        }
+    }
+
+    private static void setPrimaryChord(Module module, int[] codes) {
+        if (module instanceof ReviveAuraModule m) m.setToggleKeyCodes(codes);
+        else if (module instanceof MagnetModule m) m.setToggleKeyCodes(codes);
+        else if (module instanceof LastMobsModule m) m.setToggleKeyCodes(codes);
+    }
+
+    private static void setPrimarySingle(Module module, int code) {
+        if (module instanceof PlayerVisibilityModule m) m.setKeyCode(code);
+        else if (module instanceof TeammateHpModule m) m.setKeyCode(code);
+        else if (module instanceof ToggleSprintModule m) m.setKeyCode(code);
+        else if (module instanceof RightClickerModule m) m.setKeyCode(code);
+        else if (module instanceof ViewHoldModule m) m.setKeyCode(code);
+        else if (module instanceof SkillCastModule m) m.setKeyCode(code);
+        else if (module instanceof KeyboardClickerModule m) m.setToggleKey(code);
+        else if (module instanceof TeamSyncModule m) { m.config().toggleKeyCode = code; m.saveConfig(); }
+        else if (module instanceof NoReloadModule m) m.setKeyCode(code);
+        else setPrimaryChord(module, KeyChord.single(code));
     }
 
     public static void register(ModulePanelDescriptor descriptor) {

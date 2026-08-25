@@ -117,7 +117,8 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
         y += 8;
         y = wrapped(graphics, "碰撞夹取只限制预测位移；实体消失、世界切换或禁用时清空轨迹。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        y += 16;
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

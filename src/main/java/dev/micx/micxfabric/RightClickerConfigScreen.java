@@ -76,7 +76,7 @@ public final class RightClickerConfigScreen extends ModuleConfigScreen {
         y += 34;
         y = wrapped(graphics, "区间可在 1-50 调节，Min>Max 会自动交换；与 SkillCast 互斥，不会叠加包。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

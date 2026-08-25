@@ -49,7 +49,7 @@ public final class ChamsConfigScreen extends ModuleConfigScreen {
         y += 20;
         y = wrapped(graphics, "不复用 ESP 的线框管线，不绘制纯色方框；模块关闭、断开或切世界时会清空遮挡缓存。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

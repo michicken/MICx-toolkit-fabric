@@ -1,6 +1,5 @@
 package dev.micx.micxfabric;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -46,8 +45,6 @@ public final class InputBinding {
 
     public String label() {
         if (isUnbound()) return "未绑定";
-        if (code < 0) return "Mouse " + (code + 100);
-        String name = InputConstants.getKey(new KeyEvent(code, 0, 0)).getName();
-        return name == null || name.isBlank() ? "Key " + code : name;
+        return KeyChord.keyName(code);
     }
 }

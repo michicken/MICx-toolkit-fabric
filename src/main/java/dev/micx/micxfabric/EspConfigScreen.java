@@ -88,7 +88,7 @@ public final class EspConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics, "Gate Round 10–110；Show Under 1–100。TOO/Giant 优先目标和完整 TeamSync white target 仍待后续接入。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

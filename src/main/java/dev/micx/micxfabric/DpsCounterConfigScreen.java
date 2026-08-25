@@ -34,7 +34,7 @@ public final class DpsCounterConfigScreen extends ModuleConfigScreen {
         y += 14;
         y = wrapped(graphics, "当前 HUD 位置沿用 Forge 的右上角布局；HUD Layout 编辑器尚未迁移。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

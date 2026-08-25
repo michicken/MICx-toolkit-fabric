@@ -116,7 +116,7 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         y += 34;
         y = wrapped(graphics, "按 1 可暂停，按 2/3/4 可恢复原版模式；所有操作受世界与 Screen 状态保护。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

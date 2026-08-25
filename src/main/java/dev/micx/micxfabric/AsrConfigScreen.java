@@ -48,7 +48,7 @@ public final class AsrConfigScreen extends ModuleConfigScreen {
         section(graphics, "PUSH TO TALK / 按键说话", y);
         y += 20;
         graphics.text(font, "PTT key", contentLeft(), y + 4, TEXT);
-        String keyText = listening ? "按键或鼠标键 · ESC 取消" : new InputBinding(pttKey).label();
+        String keyText = listening ? "按键或鼠标键 · ESC 取消" : KeyChord.keyName(pttKey);
         int clearX = contentRight() - 52;
         int buttonX = clearX - 164;
         drawButton(graphics, keyText, buttonX, y, 160, 20,
@@ -65,7 +65,7 @@ public final class AsrConfigScreen extends ModuleConfigScreen {
         y += 20;
         y = wrapped(graphics, "识别结果按 Enter 发送，Escape 取消；连接、录音和最终确认超时沿用当前模块实现。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
-        setContentHeight(Math.max(y, 160) - contentTopForLayout());
+        setContentHeight(Math.max(y, 160) - contentTop() + scrollOffset());
     }
 
     @Override

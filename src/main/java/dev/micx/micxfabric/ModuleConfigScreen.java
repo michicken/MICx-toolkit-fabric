@@ -101,8 +101,8 @@ public abstract class ModuleConfigScreen extends Screen {
         graphics.fill(cardX, contentBottom, cardX + cardW, contentBottom + 1, LINE);
 
         graphics.enableScissor(cardX + 1, contentTop, cardX + cardW - 1, contentBottom);
-        int oldScroll = contentScroll;
-        drawContent(graphics, mouseX, mouseY, contentTop - oldScroll);
+        int top = contentTop - contentScroll;
+        drawContent(graphics, mouseX, mouseY, top);
         graphics.disableScissor();
         drawScrollbar(graphics);
         if (errorMessage != null && !errorMessage.isBlank()) {

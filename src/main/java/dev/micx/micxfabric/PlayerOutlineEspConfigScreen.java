@@ -49,7 +49,7 @@ public final class PlayerOutlineEspConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics, "范围 8–256 格。原 Forge 的投影厚度 1–5px × 1.20 尚未替换原生固定 outline shader，因此本页不提供假厚度滑块。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

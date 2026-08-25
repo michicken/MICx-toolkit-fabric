@@ -21,8 +21,8 @@ class InputBindingTest {
         assertTrue(middle.matches(new MouseButtonEvent(0.0, 0.0, new MouseButtonInfo(2, 0))));
         assertFalse(middle.matches(new MouseButtonEvent(0.0, 0.0, new MouseButtonInfo(1, 0))));
         assertTrue(side.matches(new MouseButtonEvent(0.0, 0.0, new MouseButtonInfo(4, 0))));
-        assertEquals("Mouse 2", middle.label());
-        assertEquals("Mouse 4", side.label());
+        assertEquals("MMB", middle.label());
+        assertEquals("MB5", side.label());
     }
 
     @Test
@@ -51,7 +51,7 @@ class InputBindingTest {
         adapter.setKeyCode(-100);
         assertEquals(-100, written.get());
         assertEquals(-100, adapter.keyCode());
-        assertEquals("Mouse 0", adapter.keyLabel());
+        assertEquals("LMB", adapter.keyLabel());
 
         adapter.setKeyCode(0);
         assertEquals(GLFW.GLFW_KEY_UNKNOWN, written.get());

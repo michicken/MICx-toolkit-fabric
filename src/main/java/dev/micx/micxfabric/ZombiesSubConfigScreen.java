@@ -95,7 +95,7 @@ abstract class ZombiesSubConfigScreen extends ModuleConfigScreen {
         y += 14;
         info(graphics, "修改在离开页面时校验并保存；整数和缩放值均按 Forge 范围限制。", y);
         y += 34;
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

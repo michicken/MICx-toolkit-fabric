@@ -77,7 +77,7 @@ public final class AutoTextConfigScreen extends ModuleConfigScreen {
         }
         y = wrapped(graphics, "文本按原配置逐项保存到 AutoText；空文本或未绑定行不会发送。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
-        setContentHeight(y - contentTop());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override

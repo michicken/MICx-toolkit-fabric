@@ -33,7 +33,7 @@ public final class SwordBlockConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics,
                 "关闭模块只会停止 MICx 的剑动画 Mixin 行为；原版物品使用逻辑仍由游戏负责。",
                 contentLeft(), y, TEXT_FAINT, contentWidth());
-        setContentHeight(y - contentTopForLayout());
+        setContentHeight(y - contentTop() + scrollOffset());
     }
 
     @Override
