@@ -448,8 +448,8 @@ public final class ZombiesAssistModule implements Module {
         }
 
         drawTopHud(graphics, client, tracker, cfg);
-        drawTacticalHud(graphics, client, tracker, cfg);
-        drawAuxiliaryHud(graphics, client, tracker, cfg);
+        int tacticalLines = drawTacticalHud(graphics, client, tracker, cfg);
+        drawAuxiliaryHud(graphics, client, tracker, cfg, tacticalLines);
         if (cfg.showPowerups) drawPowerUpPanel(graphics, client, tracker, cfg, true);
         drawSlimeEcoHud(graphics, client, tracker, cfg);
         drawWaveTableHud(graphics, client, tracker, cfg);
@@ -488,8 +488,8 @@ public final class ZombiesAssistModule implements Module {
                 cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale, color, false);
     }
 
-    private static void drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
-                                        ZombiesTracker tracker, ZombiesConfig cfg) {
+    private static int drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
+                                         ZombiesTracker tracker, ZombiesConfig cfg) {
         List<String> lines = new ArrayList<>();
         if (tracker.isInAlienArcadium()) lines.add("§bAlien Arcadium");
         else if (!tracker.sidebarTitle().isBlank()) lines.add("§f" + tracker.sidebarTitle());
@@ -512,7 +512,7 @@ public final class ZombiesAssistModule implements Module {
         if (down > 0) lines.add("§fDown players §d" + down);
         if (dead > 0) lines.add("§fDead / quit §7" + dead);
 
-        if (lines.isEmpty()) return;
+        if (lines.isEmpty()) return 0;
         float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
         float scaleY = HudLayoutRegistry.scaleY("zombies.tactical", cfg.tacticalHudScale);
         int right = Math.max(4, graphics.guiWidth() - Math.max(0, cfg.tacticalHudRight));
@@ -532,6 +532,7 @@ public final class ZombiesAssistModule implements Module {
         } finally {
             graphics.pose().popMatrix();
         }
+        return lines.size();
     }
 
     private void updateBlockAlert(Minecraft client, ZombiesTracker tracker) {
@@ -548,7 +549,7 @@ public final class ZombiesAssistModule implements Module {
     }
 
     private void drawAuxiliaryHud(GuiGraphicsExtractor graphics, Minecraft client,
-                                  ZombiesTracker tracker, ZombiesConfig cfg) {
+                                  ZombiesTracker tracker, ZombiesConfig cfg, int tacticalRenderedLines) {
         long now = System.currentTimeMillis();
         int round = tracker.round();
         long elapsed = tracker.roundStartMs() <= 0L
@@ -586,7 +587,8 @@ public final class ZombiesAssistModule implements Module {
             String growth = slimeGrowthLine(slimeGrowth.snapshot(), snapshotAge);
             if (growth != null) rightLines.add(growth);
         }
-        drawRightLines(graphics, client, rightLines, cfg, 2);
+        int rightYGap = tacticalRenderedLines == 0 ? 2 : tacticalRenderedLines * (client.font.lineHeight + 2) + 2;
+        drawRightLines(graphics, client, rightLines, cfg, rightYGap);
 
         if (cfg.frCoach) drawCooldownHud(graphics, client, tracker, cfg, now);
         if (cfg.lsAssist && lsState.shouldShow()) {

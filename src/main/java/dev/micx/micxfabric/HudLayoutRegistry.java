@@ -251,7 +251,8 @@ public final class HudLayoutRegistry {
 
     private static void addDpsBlock() {
         DpsCounterModule mod = DpsCounterModule.instance();
-        BLOCKS.add(new HudLayoutBlock("dps_counter", "DPS Counter", "OBS DPS 128", 90, 14,
+        // Height covers 3 lines (OBS DPS + RC + GS) at ~10px each — fixes editor overlap where 14px hid the lower rows.
+        BLOCKS.add(new HudLayoutBlock("dps_counter", "DPS Counter", "OBS DPS 128\nRC ON/OFF\nGS 23/234/24/34", 90, 34,
                 new HudLayoutBlock.Adapter() {
                     public int x(int sw, int sh, int rw, int rh) { return sw - mod.hudRight() - rw; }
                     public int y(int sw, int sh, int rw, int rh) { return mod.hudY(); }

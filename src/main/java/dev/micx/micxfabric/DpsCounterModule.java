@@ -3,25 +3,21 @@ package dev.micx.micxfabric;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
 import java.util.Properties;
 
-/** One-second client-side damage window based on health and absorption deltas. */
+/**
+ * One-second client-side damage window based on health and absorption deltas.
+ * Hud: Top-right 3-line block (OBS DPS + RC + GS) matching Forge DpsCounterModule stacking
+ * — OBS DPS at dpsHudTop (red/yellow/green by value), RC at yOff=yTop+10, GS at yOff+10.
+ */
 public final class DpsCounterModule implements Module {
     private static final DpsCounterModule INSTANCE = new DpsCounterModule();
     private static final long WINDOW_MS = 1_000L;
-    private final Map<Integer, HealthSnapshot> previous = new HashMap<>();
-    private final ArrayDeque<DamageSample> damage = new ArrayDeque<>();
+    private final java.util.Map<Integer, HealthSnapshot> previous = new java.util.HashMap<>();
+    private final java.util.ArrayDeque<DamageSample> damage = new java.util.ArrayDeque<>();
     private boolean enabled;
     private boolean overlayEnabled = true;
     private int hudRight = 4;
@@ -71,9 +67,9 @@ public final class DpsCounterModule implements Module {
             clearTracking();
             activeLevel = client.level;
         }
-        Set<Integer> seen = new HashSet<>();
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (!(entity instanceof LivingEntity living) || living.isRemoved()) continue;
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (net.minecraft.world.entity.Entity entity : client.level.entitiesForRendering()) {
+            if (!(entity instanceof net.minecraft.world.entity.LivingEntity living) || living.isRemoved()) continue;
             int id = living.getId();
             seen.add(id);
             float health = Math.max(0.0f, living.getHealth());
@@ -143,18 +139,41 @@ public final class DpsCounterModule implements Module {
 
     public void drawHud(GuiGraphicsExtractor graphics) {
         if (!enabled || !overlayEnabled()) return;
-        int value = dps();
-        int color = value > 10 ? 0xFF55D68B : value > 0 ? 0xFFE8A73E : 0xFFE06A6A;
-        String text = "OBS DPS " + value;
         Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) return;
         float sx = HudLayoutRegistry.scaleX("dps_counter", hudScaleX());
         float sy = HudLayoutRegistry.scaleY("dps_counter", hudScaleY());
         graphics.pose().pushMatrix();
         graphics.pose().scale(sx, sy);
         try {
-            int x = Math.max(4, Math.round((graphics.guiWidth() - hudRight()) / sx) - client.font.width(text));
-            int y = Math.round(hudY() / sy);
-            graphics.text(client.font, Component.literal(text), x, y, color, true);
+            int yOff = Math.round(hudY() / sy);
+            int right = Math.round((graphics.guiWidth() - hudRight()) / sx);
+            // Line 1: OBS DPS + value — 0 pink (#E06A6A), 1-10 amber, >10 green (matches pre-fix, Forge does red/yellow/green)
+            int value = dps();
+            int color = value > 10 ? 0xFF55D68B : value > 0 ? 0xFFE8A73E : 0xFFE06A6A;
+            String text = "OBS DPS " + value;
+            int w = client.font.width(text);
+            graphics.text(client.font, Component.literal(text), right - w, yOff, color, true);
+            yOff += 10;
+
+            // RC: RC active toggle (mouse middle), not enabled() — else always ON
+            boolean rcOn = RightClickerModule.isActive();
+            String rcLine = "§eRC§0:§r " + (rcOn ? "§a" : "§c") + (rcOn ? "ON" : "OFF");
+            net.minecraft.network.chat.Component rcComp = LegacyText.of(rcLine);
+            int rw = client.font.width(rcComp);
+            graphics.text(client.font, rcComp, right - rw, yOff, 0xFFFFFF, true);
+
+            // GS: always show mode number (23/234/24/34), green when active red when not — never "OFF"
+            KeyboardClickerModule kbc = KeyboardClickerModule.instance();
+            boolean gsOn = !"OFF".equals(kbc.modeName());
+            String gsVal = kbc.modeName();
+            if (gsVal == null || "OFF".equals(gsVal)) {
+                gsVal = kbc.isMode23() ? "23" : kbc.isMode234() ? "234" : kbc.isMode24() ? "24" : kbc.isMode34() ? "34" : "23";
+            }
+            String gsLine = "§eGS§0:§r " + (gsOn ? "§a" : "§c") + gsVal;
+            net.minecraft.network.chat.Component gsComp = LegacyText.of(gsLine);
+            int gw = client.font.width(gsComp);
+            graphics.text(client.font, gsComp, right - gw, yOff + 10, 0xFFFFFF, true);
         } finally {
             graphics.pose().popMatrix();
         }
