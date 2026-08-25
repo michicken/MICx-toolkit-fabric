@@ -101,6 +101,15 @@ public final class ViewHoldModule implements Module {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;
         if (!state.isManaging() || !ViewHoldState.pitchMirrorActive(state.target())) return;
+        if (mirrorActive) {
+            // 上一帧 renderLevel 中途异常跳过了 RETURN：当前 pitch 还在镜像域，
+            // 先按保存值补偿恢复回真实域，否则会把镜像值当真实值存档导致视角永久翻转
+            mc.player.setXRot(net.minecraft.util.Mth.clamp(
+                    ViewHoldState.unmirrorPitch(mc.player.getXRot(), mirrorSavedPitch), -90.0f, 90.0f));
+            mc.player.xRotO = net.minecraft.util.Mth.clamp(
+                    ViewHoldState.unmirrorPitch(mc.player.xRotO, mirrorSavedPrevPitch), -90.0f, 90.0f);
+            mirrorActive = false;
+        }
         mirrorSavedPitch = mc.player.getXRot();
         mirrorSavedPrevPitch = mc.player.xRotO;
         mc.player.setXRot(-mirrorSavedPitch);

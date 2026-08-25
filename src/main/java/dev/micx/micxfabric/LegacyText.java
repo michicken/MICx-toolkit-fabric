@@ -32,6 +32,10 @@ public final class LegacyText {
             char ch = legacy.charAt(i);
             if (ch == '\u00a7' && i + 1 < legacy.length()) {
                 char code = Character.toLowerCase(legacy.charAt(i + 1));
+                // 1.8.9 语义：码只影响其后的文本，先按旧样式刷出已累积段
+                ChatFormatting prevColor = color;
+                boolean prevBold = bold;
+                boolean prevItalic = italic;
                 ChatFormatting byCode = ChatFormatting.getByCode(code);
                 if (byCode == ChatFormatting.RESET) {
                     color = null;
@@ -46,7 +50,7 @@ public final class LegacyText {
                     if (code == 'o' || code == 'O') italic = true;
                 }
                 if (plain.length() > 0) {
-                    root.append(styled(plain.toString(), color, bold, italic));
+                    root.append(styled(plain.toString(), prevColor, prevBold, prevItalic));
                     plain.setLength(0);
                 }
                 i += 2;
