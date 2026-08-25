@@ -33,7 +33,7 @@ public abstract class MixinEquipmentLayerRenderer {
     @Inject(method = "renderLayers(Lnet/minecraft/client/resources/model/EquipmentClientInfo$LayerType;"
             + "Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/client/model/Model;Ljava/lang/Object;"
             + "Lnet/minecraft/world/item/ItemStack;Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;I"
             + "Lnet/minecraft/resources/Identifier;II)V",
             at = @At("HEAD"))
     private void micx$captureEntity(Object layerType, Object assetKey, Object model, Object state,
@@ -45,7 +45,7 @@ public abstract class MixinEquipmentLayerRenderer {
     @Inject(method = "renderLayers(Lnet/minecraft/client/resources/model/EquipmentClientInfo$LayerType;"
             + "Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/client/model/Model;Ljava/lang/Object;"
             + "Lnet/minecraft/world/item/ItemStack;Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;I"
             + "Lnet/minecraft/resources/Identifier;II)V",
             at = @At("RETURN"))
     private void micx$releaseEntity(CallbackInfo ci) {
@@ -56,7 +56,7 @@ public abstract class MixinEquipmentLayerRenderer {
             method = "renderLayers(Lnet/minecraft/client/resources/model/EquipmentClientInfo$LayerType;"
                     + "Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/client/model/Model;Ljava/lang/Object;"
                     + "Lnet/minecraft/world/item/ItemStack;Lcom/mojang/blaze3d/vertex/PoseStack;"
-                    + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+                    + "Lnet/minecraft/client/renderer/SubmitNodeCollector;I"
                     + "Lnet/minecraft/resources/Identifier;II)V",
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/rendertype/RenderTypes;armorCutoutNoCull("
