@@ -19,9 +19,31 @@ public final class HotkeyRuntime {
                 || client.gui == null
                 || client.gui.screen() != null;
         for (Module module : ModuleRuntime.modules()) {
-            handleBinding(module, module.id() + ":primary", module.primaryBinding(), blocked, client, true);
+            int[] chord = module.primaryChord();
+            if (chord != null) {
+                handleChord(module, module.id() + ":primary", chord, blocked, client);
+            } else {
+                handleBinding(module, module.id() + ":primary", module.primaryBinding(), blocked, client, true);
+            }
             handleBinding(module, module.id() + ":secondary", module.secondaryBinding(), blocked, client, false);
         }
+    }
+
+    /** 组合键 all-down 上升沿：与单键共用边沿状态与回调。 */
+    private static void handleChord(Module module, String stateId, int[] chord,
+                                    boolean blocked, Minecraft client) {
+        if (KeyChord.isEmpty(chord)) {
+            PREVIOUS.remove(stateId);
+            return;
+        }
+        boolean down = KeyChord.isAllDown(chord, client);
+        boolean old = PREVIOUS.getOrDefault(stateId, false);
+        PREVIOUS.put(stateId, down);
+        if (blocked || !down || old) return;
+        boolean newlyEnabled = !module.enabled();
+        if (newlyEnabled) module.setEnabled(true);
+        if (!module.enabled()) return;
+        module.onPrimaryPressed(client, newlyEnabled);
     }
 
     private static void handleBinding(Module module, String stateId, InputBinding binding,

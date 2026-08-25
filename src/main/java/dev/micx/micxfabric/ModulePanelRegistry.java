@@ -355,6 +355,15 @@ public final class ModulePanelRegistry {
                         TeamSyncModule.instance().config().toggleKeyCode = code;
                         TeamSyncModule.instance().saveConfig();
                     });
+            case "revive_aura" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
+                    ReviveAuraModule.instance()::primaryChord,
+                    ReviveAuraModule.instance()::setToggleKeyCodes);
+            case "magnet" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
+                    MagnetModule.instance()::primaryChord,
+                    MagnetModule.instance()::setToggleKeyCodes);
+            case "last_mobs" -> new ModuleChordAdapter(id, "开关组合键（最多 3 键）",
+                    LastMobsModule.instance()::primaryChord,
+                    LastMobsModule.instance()::setToggleKeyCodes);
             default -> null;
         };
     }

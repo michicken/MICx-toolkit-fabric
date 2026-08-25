@@ -44,6 +44,8 @@ public final class MicxPanelScreen extends Screen {
     private String selectedId;
     private String selectedSubId;
     private String listeningKeybindId;
+    private final int[] capturedKeys = new int[KeyChord.MAX_KEYS];
+    private int capturedCount;
     private int railScroll;
     private int railContentHeight;
     private String errorMessage;
@@ -406,8 +408,14 @@ public final class MicxPanelScreen extends Screen {
         if (listeningKeybindId != null) {
             ModulePanelDescriptor listeningDescriptor = ModulePanelRegistry.get(listeningKeybindId);
             if (listeningDescriptor != null && listeningDescriptor.hasKeybind()) {
-                listeningDescriptor.keybind().setKeyCode(-100 + event.button());
-                listeningKeybindId = null;
+                ModuleKeybind keybind = listeningDescriptor.keybind();
+                if (keybind.supportsChord()) {
+                    // Forge WidgetKeybind 语义：监听中任意位置点击 = 捕获一个鼠标键
+                    captureChordKey(keybind, -100 + event.button());
+                } else {
+                    keybind.setKeyCode(-100 + event.button());
+                    listeningKeybindId = null;
+                }
                 errorMessage = null;
                 return true;
             }
@@ -497,6 +505,8 @@ public final class MicxPanelScreen extends Screen {
             if (mouseX >= bindX && mouseX < bindX + bindW
                     && mouseY >= keybindY + 1 && mouseY < keybindY + 19) {
                 listeningKeybindId = descriptor.id();
+                capturedCount = 0;
+                java.util.Arrays.fill(capturedKeys, 0);
                 errorMessage = null;
                 return true;
             }
@@ -556,7 +566,14 @@ public final class MicxPanelScreen extends Screen {
                                     int mouseX, int mouseY) {
         ModuleKeybind keybind = descriptor.keybind();
         boolean listening = descriptor.id().equals(listeningKeybindId);
-        String value = listening ? "按键或鼠标键 · ESC 取消" : keybind.keyLabel();
+        String value;
+        if (listening) {
+            value = keybind.supportsChord()
+                    ? "按下键 " + (capturedCount + 1) + "/" + KeyChord.MAX_KEYS + " · ESC 完成"
+                    : "按键或鼠标键 · ESC 取消";
+        } else {
+            value = keybind.keyLabel();
+        }
         graphics.text(font, "Bind", x, y + 3, TEXT);
         graphics.text(font, keybind.description(), x, y + 15, TEXT_FAINT);
         int clearW = 42;
@@ -569,6 +586,32 @@ public final class MicxPanelScreen extends Screen {
                 mouseX >= clearX && mouseX < right && mouseY >= y + 1 && mouseY < y + 19);
         graphics.text(font, trim(value, Math.max(20, bindX - x - 8)), x, y + 27,
                 listening ? AMBER : TEXT_DIM);
+    }
+
+    /** 捕获一个组合键；重复键忽略，满 3 个自动提交。 */
+    private void captureChordKey(ModuleKeybind keybind, int code) {
+        if (code == 0 || keybind == null) return;
+        for (int i = 0; i < capturedCount; i++) {
+            if (capturedKeys[i] == code) return;
+        }
+        if (capturedCount >= KeyChord.MAX_KEYS) return;
+        capturedKeys[capturedCount++] = code;
+        if (capturedCount >= KeyChord.MAX_KEYS) {
+            finishChordCapture(keybind);
+            listeningKeybindId = null;
+        }
+    }
+
+    private void finishChordCapture(ModuleKeybind keybind) {
+        if (capturedCount == 0) {
+            keybind.clear();
+        } else {
+            int[] codes = new int[KeyChord.MAX_KEYS];
+            System.arraycopy(capturedKeys, 0, codes, 0, capturedCount);
+            keybind.setChordCodes(codes);
+        }
+        java.util.Arrays.fill(capturedKeys, 0);
+        capturedCount = 0;
     }
 
     private int findKeybindY(ModulePanelDescriptor descriptor) {
@@ -615,14 +658,25 @@ public final class MicxPanelScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (listeningKeybindId != null) {
             if (event.isEscape()) {
+                // Forge 语义：ESC = 提交已捕获（未捕获任何键则解除绑定）
+                ModulePanelDescriptor escapeDescriptor = ModulePanelRegistry.get(listeningKeybindId);
+                if (escapeDescriptor != null && escapeDescriptor.hasKeybind()
+                        && escapeDescriptor.keybind().supportsChord()) {
+                    finishChordCapture(escapeDescriptor.keybind());
+                }
                 listeningKeybindId = null;
                 errorMessage = null;
                 return true;
             }
             ModulePanelDescriptor descriptor = ModulePanelRegistry.get(listeningKeybindId);
             if (descriptor != null && descriptor.hasKeybind()) {
-                descriptor.keybind().setKeyCode(event.key());
-                listeningKeybindId = null;
+                ModuleKeybind keybind = descriptor.keybind();
+                if (keybind.supportsChord()) {
+                    captureChordKey(keybind, event.key());
+                } else {
+                    keybind.setKeyCode(event.key());
+                    listeningKeybindId = null;
+                }
                 errorMessage = null;
                 return true;
             }

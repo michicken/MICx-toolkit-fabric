@@ -54,6 +54,24 @@ public final class LastMobsModule implements Module {
         ModuleStateStore.put(id(), v);
     }
 
+    /** 开关组合键（最多 3 键）：默认空绑定。 */
+    private int[] toggleKeyCodes = KeyChord.EMPTY;
+
+    @Override public int[] primaryChord() { loadConfig(); return toggleKeyCodes; }
+
+    public void setToggleKeyCodes(int[] codes) {
+        toggleKeyCodes = KeyChord.normalize(codes);
+        saveConfig();
+    }
+
+    @Override public void onPrimaryPressed(net.minecraft.client.Minecraft client, boolean newlyEnabled) {
+        if (!newlyEnabled) setEnabled(false);
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(dev.micx.micxfabric.ChatMessageStyles.notice(
+                    enabled() ? "LastMobs 开启：剩余 ≤" + getMaxCount() + " 只时准心拉线" : "LastMobs 关闭"));
+        }
+    }
+
     public int getMaxCount() { loadConfig(); return maxCount; }
     public void setMaxCount(int n) { maxCount = Math.max(1, Math.min(10, n)); saveConfig(); }
     public int getLineAlphaPct() { loadConfig(); return lineAlphaPct; }
@@ -152,12 +170,14 @@ public final class LastMobsModule implements Module {
         Properties p = ConfigProperties.load(cur, leg);
         maxCount = ConfigProperties.integer(p, "maxCount", DEFAULT_MAX_COUNT, 1, 10);
         lineAlphaPct = ConfigProperties.integer(p, "lineAlphaPct", DEFAULT_ALPHA_PCT, 20, 100);
+        toggleKeyCodes = KeyChord.readConfig(p, "toggleKeys", "toggleKey", 0);
     }
 
     private void saveConfig() {
         Properties p = new Properties();
         p.setProperty("maxCount", Integer.toString(maxCount));
         p.setProperty("lineAlphaPct", Integer.toString(lineAlphaPct));
+        KeyChord.writeConfig(p, "toggleKeys", "toggleKey", toggleKeyCodes);
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("last-mobs.properties"), p, "MICx LastMobs");
         } catch (IOException e) {

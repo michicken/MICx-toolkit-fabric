@@ -18,5 +18,15 @@ public interface ModuleKeybind {
         throw new UnsupportedOperationException("Keybind is not writable");
     }
 
+    /** 是否支持多键组合捕获（chord）；false 时面板走单键即时提交。 */
+    default boolean supportsChord() {
+        return false;
+    }
+
+    /** 组合捕获提交（1–3 键，空数组 = 解除绑定）。 */
+    default void setChordCodes(int[] codes) {
+        throw new UnsupportedOperationException("Keybind is not writable");
+    }
+
     void clear();
 }

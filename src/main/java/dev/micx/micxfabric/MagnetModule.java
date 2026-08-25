@@ -69,6 +69,24 @@ public final class MagnetModule implements Module {
     @Override public boolean defaultEnabled() { return false; }
     @Override public boolean enabled() { return enabled; }
 
+    /** 开关组合键（最多 3 键）：默认空绑定。 */
+    private int[] toggleKeyCodes = KeyChord.EMPTY;
+
+    @Override public int[] primaryChord() { loadConfig(); return toggleKeyCodes; }
+
+    public void setToggleKeyCodes(int[] codes) {
+        toggleKeyCodes = KeyChord.normalize(codes);
+        saveConfig();
+    }
+
+    @Override public void onPrimaryPressed(net.minecraft.client.Minecraft client, boolean newlyEnabled) {
+        if (!newlyEnabled) setEnabled(false);
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(dev.micx.micxfabric.ChatMessageStyles.notice(
+                    "Magnet 吸附 " + (enabled() ? "已开启（按住右键触发）" : "已关闭")));
+        }
+    }
+
     @Override public void setEnabled(boolean v) {
         loadConfig();
         enabled = v;
@@ -374,6 +392,7 @@ public final class MagnetModule implements Module {
         includeSlime = ConfigProperties.bool(p, "includeSlime", false);
         includeGolem = ConfigProperties.bool(p, "includeGolem", false);
         includeGiant = ConfigProperties.bool(p, "includeGiant", true);
+        toggleKeyCodes = KeyChord.readConfig(p, "toggleKeys", "toggleKey", 0);
         zombiesOnly = ConfigProperties.bool(p, "zombiesOnly", true);
     }
 
@@ -389,6 +408,7 @@ public final class MagnetModule implements Module {
         p.setProperty("includeGolem", Boolean.toString(includeGolem));
         p.setProperty("includeGiant", Boolean.toString(includeGiant));
         p.setProperty("zombiesOnly", Boolean.toString(zombiesOnly));
+        KeyChord.writeConfig(p, "toggleKeys", "toggleKey", toggleKeyCodes);
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("magnet.properties"), p, "MICx Magnet");
         } catch (IOException e) {

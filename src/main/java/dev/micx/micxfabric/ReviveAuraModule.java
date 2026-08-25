@@ -53,6 +53,24 @@ public final class ReviveAuraModule implements Module {
         }
     }
 
+    /** 开关组合键（最多 3 键）：默认空绑定（Forge 2026-08-14 定稿：新模块禁止预设默认键）。 */
+    private int[] toggleKeyCodes = KeyChord.EMPTY;
+
+    @Override public int[] primaryChord() { loadConfig(); return toggleKeyCodes; }
+
+    public void setToggleKeyCodes(int[] codes) {
+        toggleKeyCodes = KeyChord.normalize(codes);
+        saveConfig();
+    }
+
+    @Override public void onPrimaryPressed(net.minecraft.client.Minecraft client, boolean newlyEnabled) {
+        if (!newlyEnabled) setEnabled(false);
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(dev.micx.micxfabric.ChatMessageStyles.notice(
+                    "ReviveAura " + (enabled() ? "ON" : "OFF")));
+        }
+    }
+
     @Override public void resetState() { lastRevive = 0L; }
 
     private void loadConfig() {
@@ -65,12 +83,14 @@ public final class ReviveAuraModule implements Module {
         if (rv != null) try { range = Math.max(1.0, Math.min(10.0, Double.parseDouble(rv.trim()))); } catch (Exception ignored) {}
         String iv = p.getProperty("intervalMs");
         if (iv != null) try { intervalMs = Math.max(50.0, Math.min(1000.0, Double.parseDouble(iv.trim()))); } catch (Exception ignored) {}
+        toggleKeyCodes = KeyChord.readConfig(p, "toggleKeys", "toggleKey", 0);
     }
 
     private void saveConfig() {
         Properties p = new Properties();
         p.setProperty("range", Double.toString(range));
         p.setProperty("intervalMs", Double.toString(intervalMs));
+        KeyChord.writeConfig(p, "toggleKeys", "toggleKey", toggleKeyCodes);
         try { AtomicProperties.store(FabricRuntime.configPath().resolve("revive-aura.properties"), p, "MICx ReviveAura"); } catch (IOException e) { MicxFabric.LOGGER.warn("Unable to save ReviveAura configuration", e); }
     }
 }

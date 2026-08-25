@@ -87,6 +87,18 @@ public final class ScoreboardFrame {
     public boolean isZombies() { return zombies; }
     public boolean isAlienArcadium() { return alienArcadium; }
 
+    private static final String CHINESE_AA_MAP = "外星游乐园";
+
+    /** 中文本地化 Alien Arcadium 判定（地图名或侧栏任一行含"外星游乐园"）。 */
+    public boolean isChineseAlienArcadium() {
+        if (map != null && map.contains(CHINESE_AA_MAP)) return true;
+        for (String line : lines) {
+            if (line != null && line.contains(CHINESE_AA_MAP)) return true;
+        }
+        if (title != null && title.contains(CHINESE_AA_MAP)) return true;
+        return false;
+    }
+
     public String playerStatus(String name) {
         if (name == null || name.isBlank()) return null;
         for (int i = 0; i < lines.size(); i++) {

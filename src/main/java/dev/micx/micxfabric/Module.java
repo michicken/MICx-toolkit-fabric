@@ -17,6 +17,11 @@ public interface Module {
         return null;
     }
 
+    /** Optional primary combo chord (up to 3 keys, all-down edge); takes precedence over {@link #primaryBinding()}. */
+    default int[] primaryChord() {
+        return null;
+    }
+
     /** Called on the press edge of the optional primary binding. */
     default void onPrimaryPressed(Minecraft client) {
     }
