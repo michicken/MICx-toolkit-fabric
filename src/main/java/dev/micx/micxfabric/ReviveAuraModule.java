@@ -29,7 +29,7 @@ public final class ReviveAuraModule implements Module {
         loadConfig();
         enabled = v;
         ModuleStateStore.put(id(), v);
-        if (v) lastRevive = 0L;
+        if (v) { lastRevive = 0L; sendLogs = 0; scanLogAt = 0L; }
     }
 
     public double getRange() { loadConfig(); return range; }
@@ -37,18 +37,62 @@ public final class ReviveAuraModule implements Module {
     public double getIntervalMs() { loadConfig(); return intervalMs; }
     public void setIntervalMs(double v) { intervalMs = Math.max(50.0, Math.min(1000.0, v)); saveConfig(); }
 
+    /** 诊断：扫描状态日志节流时间戳。 */
+    private long scanLogAt;
+    /** 诊断：已打过的发包日志条数（上限 10，enable 时清零）。 */
+    private int sendLogs;
+
+    /** 倒地判定：isSleeping() 在 26.2 对 Via 转来的 1.8.9 尸体可能恒 false，
+     *  放宽为 Pose.SLEEPING 任一命中（1.8.9 无 Pose 元数据，靠 Via 映射，用日志实测验证）。 */
+    private static boolean isDownCandidate(Player player) {
+        return player.isSleeping()
+                || player.getPose() == net.minecraft.world.entity.Pose.SLEEPING;
+    }
+
     @Override public void tick(Minecraft client) {
         if (!enabled || client == null || client.player == null || client.level == null) return;
         long now = System.currentTimeMillis();
+        // 扫描状态日志只在发现倒地候选时输出（平时零输出；-Dmicx.diag=true 恢复常开）
+        boolean diagAll = Boolean.getBoolean("micx.diag");
+        if (now - scanLogAt >= 3000L) {
+            scanLogAt = now;
+            int players = 0;
+            int candidates = 0;
+            int inRange = 0;
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (!(entity instanceof Player p) || p == client.player) continue;
+                players++;
+                if (isDownCandidate(p)) {
+                    candidates++;
+                    if (client.player.distanceTo(p) <= range) inRange++;
+                }
+            }
+            if (diagAll || candidates > 0) {
+                MicxFabric.LOGGER.info("[micx-revive] scan: players={} candidates={} inRange={} range={}", players, candidates, inRange, range);
+            }
+        }
         if (now - lastRevive < intervalMs) return;
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof Player player)) continue;
             if (player == client.player) continue;
-            if (!player.isSleeping()) continue;
+            if (!isDownCandidate(player)) continue;
             if (client.player.distanceTo(player) > range) continue;
             if (client.getConnection() == null) return;
-            client.getConnection().send(new ServerboundInteractPacket(player.getId(), InteractionHand.MAIN_HAND, Vec3.ZERO, false));
+            // 26.2 协议无"无坐标 INTERACT"（LpVec3 零向量=空坐标单字节哨兵，write 非空解引用），
+            // Via 转 1.8.9 恒为 INTERACT_AT。location 对准目标 hitbox（原版右键同款相对偏移），
+            // 不转头纯发包；Hyp 不校验视线遮挡。
+            Vec3 eye = client.player.getEyePosition();
+            Vec3 rel = player.getBoundingBox().clip(eye, player.position())
+                    .map(v -> v.subtract(player.getX(), player.getY(), player.getZ()))
+                    .orElse(Vec3.ZERO);
+            client.getConnection().send(new ServerboundInteractPacket(player.getId(), InteractionHand.MAIN_HAND, rel, false));
             lastRevive = now;
+            if (sendLogs++ < 10) {
+                MicxFabric.LOGGER.info("[micx-revive] send -> {} dist={} rel=({},{},{}) sleeping={} pose={}",
+                        player.getName().getString(), String.format("%.1f", client.player.distanceTo(player)),
+                        String.format("%.2f", rel.x), String.format("%.2f", rel.y), String.format("%.2f", rel.z),
+                        player.isSleeping(), player.getPose());
+            }
             break;
         }
     }

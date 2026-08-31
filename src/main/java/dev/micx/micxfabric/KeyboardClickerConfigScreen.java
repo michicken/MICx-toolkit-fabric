@@ -10,14 +10,12 @@ import net.minecraft.network.chat.Component;
 /** Functional KeyboardClicker settings for mode selection, delay, gate, and two bindings. */
 public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     private EditBox intervalBox;
-    private EditBox threatBox;
     private boolean listeningToggle;
     private boolean listeningMode;
     private final int[] modeToggleY = new int[4];
     private final int[] modeToggleX = new int[4];
     private int protectToggleY = -1;
     private int exemptToggleY = -1;
-    private int threatY = -1;
 
     public KeyboardClickerConfigScreen(Screen parent) {
         super(parent, "KeyboardClicker", "键盘连点 · 原生按键队列");
@@ -30,11 +28,6 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         intervalBox.setValue(Integer.toString(KeyboardClickerModule.instance().clickInterval()));
         intervalBox.setBordered(true);
         addRenderableWidget(intervalBox);
-        threatBox = new EditBox(font, 0, 0, 64, 20, Component.literal("threat"));
-        threatBox.setMaxLength(4);
-        threatBox.setValue(Float.toString(KeyboardClickerModule.instance().getThreatRange()));
-        threatBox.setBordered(true);
-        addRenderableWidget(threatBox);
     }
 
     @Override
@@ -87,18 +80,10 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         exemptToggleY = y;
-        graphics.text(font, "智能豁免(r59/70/80/90/100/101)", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "怪物贴身时自动停用防卡弹，威胁消失立即恢复。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, "智能豁免", contentLeft(), y + 4, TEXT);
+        graphics.text(font, "准星指向 TOO 时全局停用防卡弹，移开立即恢复。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.isJamExemptEnabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
-        y += 38;
-        threatY = y;
-        graphics.text(font, "Threat Range (格)", contentLeft(), y + 4, TEXT);
-        threatBox.setX(contentRight() - 64);
-        threatBox.setY(y);
-        y += 30;
-        y = wrapped(graphics, "豁免回合内该距离（1-8 格）内存在怪物即视为贴身。",
-                contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
@@ -208,12 +193,6 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
             KeyboardClickerModule.instance().setClickInterval(Integer.parseInt(intervalBox.getValue().trim()));
         } catch (NumberFormatException exception) {
             setErrorMessage("间隔必须是 40–100 ms 的数字");
-            return;
-        }
-        try {
-            KeyboardClickerModule.instance().setThreatRange(Float.parseFloat(threatBox.getValue().trim()));
-        } catch (NumberFormatException exception) {
-            setErrorMessage("威胁距离必须是 1–8 的数字");
             return;
         }
         super.saveAndClose();

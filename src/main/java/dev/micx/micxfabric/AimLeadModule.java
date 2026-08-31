@@ -1,14 +1,23 @@
 package dev.micx.micxfabric;
 
+import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.network.chat.Component;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.LayeringTransform;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PositionMoveRotation;
@@ -20,32 +29,58 @@ import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3f;
+import dev.micx.micxfabric.mixin.RenderPipelinesAccess;
+import dev.micx.micxfabric.mixin.RenderTypeAccess;
 
-import java.util.ArrayDeque;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AimLead prediction based on positions received from the server movement packets.
- * Client interpolation history is deliberately not used as a server-position source.
+ * AimLead —— 高延迟预瞄补偿（纯渲染，不改任何发包）。v0.2.11 全量对齐 Forge 1.8.9：
+ *
+ * <ul>
+ *   <li>采样：客户端渲染位置（服务器广播 + 本地模拟合成，覆盖投放/飘落怪），
+ *       同坐标去重；packet mixin 路径只保留 L0 影子框（服务器最后报的坐标）用途。</li>
+ *   <li>测速：相邻样本对差分（≤8 对/1500ms 窗）→ rejectVelocityPair 剔尖峰 →
+ *       水平分量中位数 + verticalVelocity 短窗（3 对）中位数；lv* 兜底 ≤2500ms。</li>
+ *   <li>转向检测：新旧半窗 cos&lt;0.766 或速率比 &lt;0.4/&gt;2.5 → lowConf + 短窗响应。</li>
+ *   <li>急停/停更：STOP_WINDOW 160ms 净位移 + 中位速度 → justStopped；
+ *       SERVER_STALE 250ms + 慢速豁免 0.3 m/s → serverStale；shouldHoldBack 收缩。</li>
+ *   <li>碰撞钳制（X/Z sweep，120ms 轨迹缓存）+ groundBelow 防穿地（300ms 缓存）。</li>
+ *   <li>帧间平滑 rx/ry/rz：移动 0.78 / 收缩 0.92。</li>
+ *   <li>渲染：L2 命中=绿(20% 填充)、正常=黄(11%)、lowConf=灰(5%)、L0 影子=青；
+ *       绿点 HUD 以 fireNowAtMs 粘滞 120ms。</li>
+ *   <li>ping：game-RTT（tab 补全往返）→ tab → SLP（服务器列表协议，daemon 5s）
+ *       → manual；连接切换清样本。</li>
+ * </ul>
  */
 public final class AimLeadModule implements Module {
     private static final AimLeadModule INSTANCE = new AimLeadModule();
-    private static final int SAMPLE_LIMIT = 12;
-    private static final long SAMPLE_TTL_MS = 2_500L;
-    private static final double SPIKE_SPEED = 8.0;
-    private static final double HIDE_SPEED = 15.0;
-    private static final double MIN_LEAD = 0.3;
+    private static final int SAMPLE_CAP = 12;
+    private static final long SAMPLE_TTL_MS = 2_000L;
+    private static final long STALE_DROP_MS = 3_500L;
+    private static final double MAX_SPEED = 15.0;        // 水平限幅（垂直不限）
+    private static final double RAY_RANGE = 70.0;        // L2 射线长度
+    private static final long FIRE_DOT_STICKY_MS = 120L;
     private static final RenderType LINE_TYPE = EspRenderTypes.espLines();
+    private static final RenderType FILL_TYPE = createFillType();
 
     private final AimLeadConfig config = new AimLeadConfig();
     private final Map<Integer, Track> tracks = new ConcurrentHashMap<>();
     private volatile Object activeLevel;
+    private volatile Object latencyConnection;
     private volatile int gameRtt = -1;
     private volatile int gameJitter;
     private volatile long gameAt;
@@ -54,7 +89,22 @@ public final class AimLeadModule implements Module {
     private volatile long rttRequestAt;
     private volatile int rttRequestId;
     private volatile int nextRttId;
+    private long lastRttRequestMs;
     private boolean enabled;
+
+    /* ---- SLP ping（daemon 线程，5s 周期） ---- */
+    private volatile boolean slpRun = false;
+    private Thread slpThread;
+    private final int[] slpRecent = new int[3];
+    private int slpRecentN;
+    private volatile int slpPing = 0;
+    private volatile long slpAt = 0;
+
+    /* ---- 渲染帧复用（客户端单线程） ---- */
+    private final Set<Integer> lastDrawnIds = new HashSet<>();
+    private volatile long fireNowAtMs = 0L;
+    private final double[] pvx = new double[8], pvy = new double[8], pvz = new double[8];
+    private final double[] medScratch = new double[8];
 
     private AimLeadModule() {
         LevelRenderEvents.COLLECT_SUBMITS.register(this::collectSubmits);
@@ -64,16 +114,18 @@ public final class AimLeadModule implements Module {
         return INSTANCE;
     }
 
+    /* ==================== packet 入口：仅维护 L0 影子坐标（服务器最后广播位置） ==================== */
+
     public static void recordSpawn(int id, Vec3 position) {
-        INSTANCE.record(id, position, System.currentTimeMillis(), true);
+        INSTANCE.shadow(id, position);
     }
 
     public static void recordRelative(Entity entity, Vec3 position) {
-        if (entity != null) INSTANCE.record(entity.getId(), position, System.currentTimeMillis(), false);
+        if (entity != null) INSTANCE.shadow(entity.getId(), position);
     }
 
     public static void recordAbsolute(int id, Vec3 position) {
-        INSTANCE.record(id, position, System.currentTimeMillis(), true);
+        INSTANCE.shadow(id, position);
     }
 
     public static void recordTeleport(int id, Vec3 currentPosition, Entity entity,
@@ -85,7 +137,15 @@ public final class AimLeadModule implements Module {
         PositionMoveRotation previous = new PositionMoveRotation(base, entity.getKnownMovement(),
                 entity.getYRot(), entity.getXRot());
         PositionMoveRotation absolute = PositionMoveRotation.calculateAbsolute(previous, change, relatives);
-        recordAbsolute(id, absolute.position());
+        INSTANCE.shadow(id, absolute.position());
+    }
+
+    /** L0 影子：服务器最后报的绝对坐标；不进测速样本（测速用 tick 的渲染位置）。 */
+    private void shadow(int id, Vec3 position) {
+        if (!enabled || position == null) return;
+        Track track = tracks.get(id);
+        if (track == null) return;   // 只给已有轨迹的目标记录影子（不凭空建轨迹）
+        track.setShadow(position);
     }
 
     public static void remove(int id) {
@@ -94,6 +154,8 @@ public final class AimLeadModule implements Module {
 
     public static void clearTracks() {
         INSTANCE.tracks.clear();
+        INSTANCE.lastDrawnIds.clear();
+        INSTANCE.fireNowAtMs = 0L;
         synchronized (INSTANCE) {
             INSTANCE.gameRtt = -1;
             INSTANCE.gameJitter = 0;
@@ -104,6 +166,8 @@ public final class AimLeadModule implements Module {
         INSTANCE.rttRequestAt = 0L;
         INSTANCE.lastRttRequestMs = 0L;
         INSTANCE.activeLevel = null;
+        INSTANCE.latencyConnection = null;
+        INSTANCE.clearSlp();
     }
 
     @Override
@@ -139,9 +203,15 @@ public final class AimLeadModule implements Module {
     public void setEnabled(boolean enabled) {
         loadConfig();
         this.enabled = enabled;
-        if (!enabled) clearTracks();
+        if (enabled) startSlp();
+        else {
+            stopSlp();
+            clearTracks();
+        }
         ModuleStateStore.put(id(), enabled);
     }
+
+    /* ==================== tick：渲染位置采样 + game-RTT ==================== */
 
     @Override
     public void tick(Minecraft client) {
@@ -157,21 +227,58 @@ public final class AimLeadModule implements Module {
         }
         long now = System.currentTimeMillis();
         long nowMono = System.nanoTime() / 1_000_000L;
-        tracks.entrySet().removeIf(entry -> {
-            Track track = entry.getValue();
-            Entity entity = client.level.getEntity(entry.getKey());
-            return entity == null || entity.isRemoved() || now - track.latestTime() > SAMPLE_TTL_MS;
-        });
+
+        // game-RTT 常开测量（每 10s 一次 ≈ 聊天栏按一下 Tab）
+        Object connection = client.getConnection();
+        if (latencyConnection != connection) {
+            latencyConnection = connection;
+            clearLatencySamples();
+            lastRttRequestMs = 0L;
+        }
         if (rttRequestAt != 0L && nowMono - rttRequestAt > 3_000L) {
             rttRequestAt = 0L;
         }
-        if (config.gameRtt && config.autoPing && rttRequestAt == 0L && client.getConnection() != null
-                && now - lastRttRequestMs > 1_000L) {
+        if (config.gameRtt && config.autoPing && rttRequestAt == 0L && connection != null
+                && now - lastRttRequestMs > 10_000L) {
             requestRtt(client);
         }
-    }
 
-    private long lastRttRequestMs;
+        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies()) {
+            if (!tracks.isEmpty()) tracks.clear();
+            return;
+        }
+
+        // 渲染位置采样（对齐 Forge 2.26.9 posX 决策）
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!(entity instanceof LivingEntity living) || !isTarget(living)) continue;
+            if (living.isDeadOrDying() || living.getHealth() <= 0f) continue;
+            if (living.tickCount < 6) continue;   // 刚刷出，位置未稳定
+
+            Track track = tracks.computeIfAbsent(entity.getId(), ignored -> {
+                Track t = new Track();
+                // 新生怪加速：用客户端 motion 预填速度，首个样本即可低置信预测
+                Vec3 delta = living.getDeltaMovement();
+                if (delta.lengthSqr() > 0.0025) {
+                    t.lvx = delta.x;
+                    t.lvy = delta.y;
+                    t.lvz = delta.z;
+                }
+                t.lvAt = now;
+                return t;
+            });
+            track.lastSeenMs = now;
+            Vec3 pos = living.position();
+            int n = track.size();
+            if (n > 0) {
+                int i0 = track.idx(0);
+                if (track.xs[i0] == pos.x && track.ys[i0] == pos.y && track.zs[i0] == pos.z) continue;   // 未更新不重写
+            }
+            track.add(now, pos.x, pos.y, pos.z);
+        }
+        // 2s 未见的轨迹清理
+        tracks.entrySet().removeIf(entry ->
+                entry.getValue().size() == 0 || now - entry.getValue().lastSeenMs > SAMPLE_TTL_MS);
+    }
 
     private void requestRtt(Minecraft client) {
         rttRequestId = ++nextRttId;
@@ -181,12 +288,13 @@ public final class AimLeadModule implements Module {
                 rttRequestId, "/"));
     }
 
+    /* ==================== HUD：准星绿点（120ms 粘滞） ==================== */
+
     public void drawHud(GuiGraphicsExtractor graphics) {
         if (!enabled || !config.renderGhost || !config.fireDot) return;
+        if (System.currentTimeMillis() - fireNowAtMs > FIRE_DOT_STICKY_MS) return;
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.level == null) return;
-        GhostTarget target = selectedTarget(client);
-        if (target == null || !isCrosshairHit(client, target.box())) return;
         int x = graphics.guiWidth() / 2 + config.markerOffsetX;
         int y = graphics.guiHeight() / 2 + config.markerOffsetY;
         float sx = HudLayoutRegistry.scaleX("aim_lead_marker", config.markerScaleX);
@@ -195,152 +303,713 @@ public final class AimLeadModule implements Module {
         graphics.pose().translate(x, y);
         graphics.pose().scale(sx, sy);
         try {
-            graphics.fill(-2, 0, 3, 2, 0xFF50E68A);
+            graphics.fill(-2, 0, 3, 2, 0xFF00E676);
         } finally {
             graphics.pose().popMatrix();
         }
     }
 
+    /* ==================== 世界渲染：候选选择 + 三色幽灵框 ==================== */
+
     private void collectSubmits(LevelRenderContext context) {
-        if (!enabled || !config.renderGhost) return;
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || client.player == null) return;
-        List<GhostTarget> targets = targets(client);
-        if (targets.isEmpty()) return;
-        SubmitNodeCollector collector = context.submitNodeCollector();
-        Vec3 camera = client.gameRenderer.mainCamera().position();
-        PoseStack pose = context.poseStack();
-        for (GhostTarget target : targets) {
-            AABB box = target.box();
-            Vec3 origin = target.serverBox().getCenter();
-            Vec3 ghostCenter = box.getCenter();
-            if (config.serverShadow) submitBox(collector, pose, target.serverBox(), camera, 0xAA28D7E8);
-            submitBox(collector, pose, box, camera, 0xAA50E68A);
-            if (config.drawLink && ghostCenter.distanceToSqr(origin) >= MIN_LEAD * MIN_LEAD) {
-                submitLine(collector, pose, origin.subtract(camera), ghostCenter.subtract(camera), camera, 0xCC50E68A);
+        try {
+            if (!enabled || !config.renderGhost) return;
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.level == null || client.player == null) return;
+            if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies()) return;
+
+            List<Ghost> ghosts = buildGhosts(client);
+            if (ghosts.isEmpty()) return;
+
+            SubmitNodeCollector collector = context.submitNodeCollector();
+            PoseStack pose = context.poseStack();
+            Vec3 camera = client.gameRenderer.mainCamera().position();
+            for (Ghost ghost : ghosts) {
+                try {
+                    Entity entity = ghost.entity();
+                    double w = entity.getBbWidth() * 0.5;
+                    double h = entity.getBbHeight();
+                    double px = ghost.px() - camera.x, py = ghost.py() - camera.y, pz = ghost.pz() - camera.z;
+
+                    // L0 影子框（青，调试）
+                    if (config.serverShadow) {
+                        Track track = tracks.get(entity.getId());
+                        if (track != null) {
+                            submitWireBox(collector, pose, track.lsx - camera.x, track.lsy - camera.y,
+                                    track.lsz - camera.z, w, h, 0.59f, 0.85f, 0.95f, 0.35f);
+                        }
+                    }
+
+                    // L1 幽灵框：命中=绿，正常=黄，低置信=灰（+半透明填充提高杂乱背景辨识度）
+                    float cr, cg, cb, la, fa;
+                    if (ghost.hit()) {
+                        cr = 0.15f; cg = 0.95f; cb = 0.30f; la = 0.95f; fa = 0.20f;
+                    } else if (ghost.lowConf()) {
+                        cr = 0.60f; cg = 0.60f; cb = 0.60f; la = 0.45f; fa = 0.05f;
+                    } else {
+                        cr = 1.00f; cg = 0.85f; cb = 0.15f; la = 0.85f; fa = 0.11f;
+                    }
+                    submitFillBox(collector, pose, px, py, pz, w, h, cr, cg, cb, fa);
+                    submitWireBox(collector, pose, px, py, pz, w, h, cr, cg, cb, la);
+
+                    // 本体 → 幽灵连线（识别归属）
+                    if (config.drawLink) {
+                        double ex = entity.getX() - camera.x;
+                        double ey = entity.getY() + h * 0.5 - camera.y;
+                        double ez = entity.getZ() - camera.z;
+                        submitLine(collector, pose, ex, ey, ez, px, py + h * 0.5, pz, 1.0f, 1.0f, 1.0f, 0.3f);
+                    }
+                } catch (Throwable t) {
+                    MicxFabric.LOGGER.warn("AimLead ghost skipped: {}", t.toString());
+                }
             }
+        } catch (Throwable t) {
+            MicxFabric.LOGGER.warn("AimLead collectSubmits skipped: {}", t.toString());
         }
     }
 
-    private void submitBox(SubmitNodeCollector collector, PoseStack pose, AABB box, Vec3 camera, int color) {
-        AABB local = box.move(-box.minX, -box.minY, -box.minZ);
-        Vec3 offset = new Vec3(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
-        pose.pushPose();
-        pose.translate(offset.x, offset.y, offset.z);
-        collector.submitShapeOutline(pose, net.minecraft.world.phys.shapes.Shapes.create(local), LINE_TYPE,
-                color, 2.0f, false);
-        pose.popPose();
-    }
-
-    private void submitLine(SubmitNodeCollector collector, PoseStack pose, Vec3 start, Vec3 end, Vec3 camera, int color) {
-        Vector3f a = new Vector3f((float) start.x, (float) start.y, (float) start.z);
-        Vector3f b = new Vector3f((float) end.x, (float) end.y, (float) end.z);
-        collector.submitCustomGeometry(pose, LINE_TYPE, (stackPose, consumer) -> {
-            line(consumer, stackPose, a, b, color);
-        });
-    }
-
-    private static void line(VertexConsumer consumer, PoseStack.Pose pose, Vector3f a, Vector3f b, int color) {
-        int red = color >> 16 & 255;
-        int green = color >> 8 & 255;
-        int blue = color & 255;
-        int alpha = color >>> 24;
-        consumer.addVertex(pose, a.x, a.y, a.z).setColor(red, green, blue, alpha)
-                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
-        consumer.addVertex(pose, b.x, b.y, b.z).setColor(red, green, blue, alpha)
-                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
-    }
-
-    private List<GhostTarget> targets(Minecraft client) {
-        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies()) return List.of();
-        List<GhostTarget> result = new ArrayList<>();
-        Vec3 eye = client.player.getEyePosition(1.0f);
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (!(entity instanceof LivingEntity living) || !isTarget(living) || living.isDeadOrDying()) continue;
-            double distanceSq = eye.distanceToSqr(living.getBoundingBox().getCenter());
-            if (distanceSq < config.minDist * (double) config.minDist) continue;
-            Track track = tracks.get(entity.getId());
-            if (track == null) {
-                recordAbsolute(entity.getId(), entity.getPositionCodec().getBase());
-                track = tracks.get(entity.getId());
-            }
-            if (track == null) continue;
-            Vec3 serverPosition = track.latest();
-            Vec3 velocity = track.velocity();
-            double speed = velocity.length();
-            if (speed > HIDE_SPEED) continue;
-            long now = System.currentTimeMillis();
-            double tau = effectivePing() + config.extraMs;
-            double seconds = clamp(tau, 50.0, 1200.0) / 1000.0;
-            Vec3 predicted = serverPosition.add(velocity.scale(seconds));
-            AABB serverBox = living.getBoundingBox().move(serverPosition.subtract(living.position()));
-            AABB predictedBox = serverBox.move(predicted.subtract(serverPosition));
-            predictedBox = clampToCollision(living, predictedBox, predicted.subtract(living.position()));
-            if (predictedBox.getCenter().distanceToSqr(living.getBoundingBox().getCenter()) < MIN_LEAD * MIN_LEAD) continue;
-            result.add(new GhostTarget(living, serverBox, predictedBox, velocity));
-        }
-        result.sort(Comparator.comparingDouble(target -> eye.distanceToSqr(target.box().getCenter())));
-        return result.subList(0, Math.min(config.maxGhosts, result.size()));
-    }
-
-    /** Magnet 减速带幽灵框重建用：该实体的预测 AABB；未启用/无预测/不在候选时返回 null。 */
-    public AABB leadBoxFor(LivingEntity entity) {
-        if (!enabled || entity == null) return null;
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.level == null) return null;
-        for (GhostTarget target : targets(client)) {
-            if (target.entity() == entity) return target.box();
-        }
-        return null;
-    }
-
-    private GhostTarget selectedTarget(Minecraft client) {
-        List<GhostTarget> targets = targets(client);
-        if (targets.isEmpty()) return null;
+    /** 阶段①便宜角度粗排（粘滞）→ 阶段②昂贵 computeLeadPoint + L2 射线 → 精确角度终排。 */
+    private List<Ghost> buildGhosts(Minecraft client) {
+        List<Ghost> result = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        double tauS = tauMs() / 1000.0;
         Vec3 eye = client.player.getEyePosition(1.0f);
         Vec3 look = client.player.getViewVector(1.0f);
-        double best = Double.MAX_VALUE;
-        GhostTarget selected = null;
-        for (GhostTarget target : targets) {
-            Vec3 center = target.box().getCenter();
-            Vec3 delta = center.subtract(eye);
-            double distance = delta.length();
-            if (distance <= 0.01) continue;
-            double angle = 1.0 - look.dot(delta.normalize());
-            if (angle < best) {
-                best = angle;
-                selected = target;
+        double minD2 = (double) config.minDist * config.minDist;
+
+        List<Cand> cands = new ArrayList<>();
+        for (Map.Entry<Integer, Track> entry : tracks.entrySet()) {
+            Track track = entry.getValue();
+            if (track.size() < 2) continue;
+            Entity entity = client.level.getEntity(entry.getKey());
+            if (!(entity instanceof LivingEntity living) || !isTarget(living)) continue;
+            if (living.isDeadOrDying() || living.getHealth() <= 0f) continue;
+            double dx = living.getX() - client.player.getX();
+            double dy = living.getY() - client.player.getY();
+            double dz = living.getZ() - client.player.getZ();
+            if (dx * dx + dy * dy + dz * dz < minD2) continue;
+
+            double ex = living.getX() - eye.x;
+            double ey = living.getY() + living.getBbHeight() * 0.5 - eye.y;
+            double ez = living.getZ() - eye.z;
+            double len = Math.sqrt(ex * ex + ey * ey + ez * ez);
+            double dot = len > 1e-6 ? (ex * look.x + ey * look.y + ez * look.z) / len : 1.0;
+            double angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
+            if (lastDrawnIds.contains(entry.getKey())) angle -= 0.08;   // 粘滞：上帧在画的优先进候选
+            cands.add(new Cand(living, track, angle));
+        }
+        if (cands.isEmpty()) return result;
+        cands.sort(Comparator.comparingDouble(c -> c.angle));
+
+        int limit = Math.min(cands.size(), config.maxGhosts + 6);
+        List<Ghost> ghosts = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            Cand cand = cands.get(i);
+            LivingEntity living = cand.entity;
+            Track track = cand.track;
+            LeadPoint lp = computeLeadPoint(living, track, now, tauS);
+            if (lp == null) {
+                track.showing = false;
+                continue;
+            }
+            if (lp.holdBack) {
+                if (!track.showing) continue;
+                if (!Double.isNaN(track.rx)) {
+                    double ddx = track.rx - lp.x, ddz = track.rz - lp.z;
+                    if (ddx * ddx + ddz * ddz < 0.12) {
+                        track.showing = false;
+                        continue;
+                    }
+                }
+            } else {
+                track.showing = true;
+            }
+
+            // 帧间平滑（移动 0.78 / 收缩 0.92）
+            double smooth = lp.holdBack ? AimLeadRoundRules.RETURN_SMOOTH : AimLeadRoundRules.MOVING_SMOOTH;
+            if (Double.isNaN(track.rx)) {
+                track.rx = lp.x;
+                track.ry = lp.y;
+                track.rz = lp.z;
+            } else {
+                track.rx += (lp.x - track.rx) * smooth;
+                track.ry += (lp.y - track.ry) * smooth;
+                track.rz += (lp.z - track.rz) * smooth;
+            }
+
+            // L2：射线 vs 幽灵 hitbox
+            double w = living.getBbWidth() * 0.5;
+            AABB box = new AABB(track.rx - w, track.ry, track.rz - w,
+                    track.rx + w, track.ry + living.getBbHeight(), track.rz + w);
+            Vec3 end = eye.add(look.scale(RAY_RANGE));
+            boolean hit = !lp.lowConf && (box.contains(eye) || box.clip(eye, end).isPresent());
+
+            // 精确预测夹角终排
+            double gx = track.rx - eye.x, gy = track.ry + living.getBbHeight() * 0.5 - eye.y, gz = track.rz - eye.z;
+            double glen = Math.sqrt(gx * gx + gy * gy + gz * gz);
+            double gdot = glen > 1e-6 ? (gx * look.x + gy * look.y + gz * look.z) / glen : 1.0;
+            double angle = Math.acos(Math.max(-1.0, Math.min(1.0, gdot)));
+            if (lastDrawnIds.contains(living.getId())) angle -= 0.08;
+            ghosts.add(new Ghost(living, track.rx, track.ry, track.rz, angle, hit, lp.lowConf));
+        }
+        ghosts.sort(Comparator.comparingDouble(g -> g.angle));
+        if (ghosts.size() > config.maxGhosts) ghosts = ghosts.subList(0, config.maxGhosts);
+
+        lastDrawnIds.clear();
+        boolean anyHit = false;
+        for (Ghost ghost : ghosts) {
+            lastDrawnIds.add(ghost.entity().getId());
+            if (ghost.hit()) anyHit = true;
+        }
+        if (anyHit) fireNowAtMs = now;
+        return ghosts;
+    }
+
+    /** 由轨迹样本算速度 → 外推 τ 的纯预测计算（渲染与 leadPointFor 共用）。 */
+    private LeadPoint computeLeadPoint(LivingEntity entity, Track track, long now, double tauS) {
+        int n = track.size();
+        int i0 = track.idx(0);
+        long tn = track.ts[i0];
+        long stale = now - tn;
+        if (stale > STALE_DROP_MS) return null;
+
+        // 相邻样本对速度（新→旧），剔除尖峰（下落永不剔）
+        int pairs = 0;
+        for (int k = 0; k + 1 < n && pairs < 8; k++) {
+            int a = track.idx(k), b = track.idx(k + 1);
+            if (tn - track.ts[b] > 1_500L) break;
+            double dt = (track.ts[a] - track.ts[b]) / 1000.0;
+            if (dt < 0.03) continue;
+            double wx = (track.xs[a] - track.xs[b]) / dt;
+            double wy = (track.ys[a] - track.ys[b]) / dt;
+            double wz = (track.zs[a] - track.zs[b]) / dt;
+            if (AimLeadRoundRules.rejectVelocityPair(wx, wy, wz)) continue;
+            pvx[pairs] = wx;
+            pvy[pairs] = wy;
+            pvz[pairs] = wz;
+            pairs++;
+        }
+
+        boolean lowConf = false;
+        double vx, vy, vz;
+        if (pairs >= 2) {
+            vx = median(pvx, 0, pairs);
+            // 垂直速度用最新短窗中位数（上抛+下落混合时全窗中位数被抹平 → vy≈0 根因）
+            vy = AimLeadRoundRules.verticalVelocity(pvy, pairs);
+            vz = median(pvz, 0, pairs);
+            track.lvx = vx;
+            track.lvy = vy;
+            track.lvz = vz;
+            track.lvAt = now;
+        } else if (now - track.lvAt < 2_500L) {
+            vx = track.lvx;
+            vy = track.lvy;
+            vz = track.lvz;   // 有效对被尖峰吃光：沿用上个可信速度，灰框
+            lowConf = true;
+        } else {
+            return null;
+        }
+
+        // 转向检测：新半窗 vs 旧半窗中位速度方向/速率
+        if (pairs >= 4) {
+            int half = pairs / 2;
+            double nx = median(pvx, 0, half), nz = median(pvz, 0, half);
+            double ox = median(pvx, half, pairs), oz = median(pvz, half, pairs);
+            double sN = Math.sqrt(nx * nx + nz * nz), sO = Math.sqrt(ox * ox + oz * oz);
+            if (sN > 0.5 && sO > 0.5) {
+                double cos = (nx * ox + nz * oz) / (sN * sO);
+                double ratio = sN / sO;
+                if (cos < 0.766 || ratio < 0.4 || ratio > 2.5) lowConf = true;
             }
         }
-        return selected;
+        // 转向响应：lowConf 时改用最新 2 对速度外推 —— 方向立即拐弯
+        if (lowConf && pairs >= 2) {
+            int m = Math.min(2, pairs);
+            vx = median(pvx, 0, m);
+            vy = median(pvy, 0, m);
+            vz = median(pvz, 0, m);
+        }
+        // 水平限幅（垂直不限：高空下落可达 60+）
+        double horizSpeed = Math.sqrt(vx * vx + vz * vz);
+        if (horizSpeed > MAX_SPEED) return null;
+
+        // 急停快路径：最近 STOP_WINDOW 内 3D 净位移 + 中位速度
+        boolean justStopped = false;
+        {
+            int newest = i0;
+            int older = -1;
+            for (int k = 1; k < n; k++) {
+                if (tn - track.ts[track.idx(k)] >= AimLeadRoundRules.STOP_WINDOW_MS) {
+                    older = track.idx(k);
+                    break;
+                }
+            }
+            if (older >= 0) {
+                double mdx = track.xs[newest] - track.xs[older];
+                double mdy = track.ys[newest] - track.ys[older];
+                double mdz = track.zs[newest] - track.zs[older];
+                double displacement = Math.sqrt(mdx * mdx + mdy * mdy + mdz * mdz);
+                double speed3d = Math.sqrt(vx * vx + vy * vy + vz * vz);
+                if (AimLeadRoundRules.isStopped(tn - track.ts[older], displacement, speed3d)) {
+                    justStopped = true;
+                }
+            }
+        }
+
+        double leadH = horizSpeed * tauS;
+        double leadV = Math.abs(vy) * tauS;
+        double speed3dNow = Math.sqrt(vx * vx + vy * vy + vz * vz);
+        boolean holdBack = AimLeadRoundRules.shouldHoldBack(
+                AimLeadRoundRules.isServerStale(stale, speed3dNow), justStopped, vy, leadH, leadV,
+                track.showing);
+
+        LeadPoint lp = new LeadPoint();
+        lp.holdBack = holdBack;
+        if (holdBack) {
+            lp.x = track.xs[i0];
+            lp.y = track.ys[i0];
+            lp.z = track.zs[i0];   // 收缩目标 = 本体
+            lp.lowConf = true;
+            return lp;
+        }
+        double leadX = vx * tauS;
+        double leadZ = vz * tauS;
+        // 碰撞夹取：结果按轨迹缓存 120ms
+        double cdx, cdz;
+        if (now - track.clampAtMs > 120L) {
+            double[] cl = clampLeadToCollision(entity,
+                    new Vec3(track.xs[i0], track.ys[i0], track.zs[i0]), leadX, leadZ);
+            track.clx = cl[0];
+            track.clz = cl[1];
+            track.clampAtMs = now;
+        }
+        cdx = track.clx;
+        cdz = track.clz;
+        lp.x = track.xs[i0] + cdx;
+        lp.z = track.zs[i0] + cdz;
+        double py = track.ys[i0] + vy * tauS;
+        // 防穿地：预测点低于脚下最近固体表面时钳制（300ms 缓存 + 方块列变化失效）
+        double footY = track.ys[i0];
+        if (AimLeadRoundRules.groundClampNeeded(py, footY)) {
+            int gx = (int) Math.floor(track.xs[i0]);
+            int gy = (int) Math.floor(footY);
+            int gz = (int) Math.floor(track.zs[i0]);
+            if (now - track.grAtMs > 300L || track.grX != gx || track.grY0 != gy || track.grZ != gz) {
+                track.grGround = groundBelow(entity, new Vec3(track.xs[i0], footY, track.zs[i0]));
+                track.grX = gx;
+                track.grY0 = gy;
+                track.grZ = gz;
+                track.grAtMs = now;
+            }
+            if (py < track.grGround) py = track.grGround;
+        }
+        lp.y = py;
+        lp.lowConf = lowConf;
+        return lp;
     }
 
-    private static boolean isCrosshairHit(Minecraft client, AABB box) {
-        Vec3 eye = client.player.getEyePosition(1.0f);
-        Vec3 end = eye.add(client.player.getViewVector(1.0f).scale(256.0));
-        return box.clip(eye, end).isPresent();
+    /** 把水平外推位移按世界碰撞截断（X/Z 逐轴 sweep 近似）。异常回退为不截断。 */
+    private static double[] clampLeadToCollision(Entity entity, Vec3 origin, double dx, double dz) {
+        try {
+            Vec3 delta = new Vec3(dx, 0, dz);
+            double w = entity.getBbWidth() * 0.5;
+            AABB box = new AABB(origin.x - w, origin.y, origin.z - w,
+                    origin.x + w, origin.y + entity.getBbHeight(), origin.z + w);
+            Vec3 allowed = Entity.collideBoundingBox(entity, delta, box, entity.level(),
+                    Entity.collectAllColliders(entity, entity.level(), box.expandTowards(delta)));
+            return new double[]{allowed.x, allowed.z};
+        } catch (RuntimeException ignored) {
+            return new double[]{dx, dz};
+        }
     }
 
-    private static boolean isTarget(LivingEntity entity) {
+    /** 预测点 y 下限：脚底向下 6 格内最近固体表面；找不到回退 -∞。 */
+    private static double groundBelow(Entity entity, Vec3 foot) {
+        try {
+            var level = entity.level();
+            int x = (int) Math.floor(foot.x);
+            int z = (int) Math.floor(foot.z);
+            int y0 = (int) Math.floor(foot.y);
+            BlockPos pos = new BlockPos(x, 0, z);
+            for (int dy = 0; dy <= 6; dy++) {
+                int y = y0 - dy;
+                if (y < level.getMinY()) break;
+                pos = pos.atY(y);
+                var state = level.getBlockState(pos);
+                if (!state.getCollisionShape(level, pos).isEmpty()) {
+                    return y + 1.0;
+                }
+            }
+            return Double.NEGATIVE_INFINITY;
+        } catch (RuntimeException ignored) {
+            return Double.NEGATIVE_INFINITY;
+        }
+    }
+
+    /** 公开预瞄点（Magnet 幽灵框重建用）：当前 τ 的预测位置或 null。 */
+    public AABB leadBoxFor(LivingEntity entity) {
+        if (!enabled || entity == null || !isTarget(entity)) return null;
+        Track track = tracks.get(entity.getId());
+        if (track == null || track.size() < 2) return null;
+        LeadPoint lp = computeLeadPoint(entity, track, System.currentTimeMillis(), tauMs() / 1000.0);
+        if (lp == null) return null;
+        double w = entity.getBbWidth() * 0.5;
+        return new AABB(lp.x - w, lp.y, lp.z - w,
+                lp.x + w, lp.y + entity.getBbHeight(), lp.z + w);
+    }
+
+    /** 与 Chams 同口径：敌对怪 + 狼 + 铁傀儡，凋零不算。 */
+    static boolean isTarget(LivingEntity entity) {
         if (entity instanceof Player || entity instanceof WitherBoss) return false;
         return entity instanceof Enemy || entity instanceof Wolf || entity instanceof IronGolem;
     }
 
-    private static AABB clampToCollision(Entity entity, AABB box, Vec3 delta) {
-        try {
-            Vec3 allowed = Entity.collideBoundingBox(entity, delta, entity.getBoundingBox(), entity.level(),
-                    Entity.collectAllColliders(entity, entity.level(), entity.getBoundingBox().expandTowards(delta)));
-            return entity.getBoundingBox().move(allowed);
-        } catch (RuntimeException ignored) {
-            return box;
+    /* ==================== 几何提交 ==================== */
+
+    private static void submitWireBox(SubmitNodeCollector collector, PoseStack pose,
+                                      double x, double y, double z, double w, double h,
+                                      float r, float g, float b, float a) {
+        double minX = x - w, maxX = x + w, minY = y, maxY = y + h, minZ = z - w, maxZ = z + w;
+        // 12 条边，每条 {x1,y1,z1,x2,y2,z2}
+        float[][] edges = {
+                {(float) minX, (float) minY, (float) minZ, (float) maxX, (float) minY, (float) minZ},
+                {(float) maxX, (float) minY, (float) minZ, (float) maxX, (float) minY, (float) maxZ},
+                {(float) maxX, (float) minY, (float) maxZ, (float) minX, (float) minY, (float) maxZ},
+                {(float) minX, (float) minY, (float) maxZ, (float) minX, (float) minY, (float) minZ},
+                {(float) minX, (float) maxY, (float) minZ, (float) maxX, (float) maxY, (float) minZ},
+                {(float) maxX, (float) maxY, (float) minZ, (float) maxX, (float) maxY, (float) maxZ},
+                {(float) maxX, (float) maxY, (float) maxZ, (float) minX, (float) maxY, (float) maxZ},
+                {(float) minX, (float) maxY, (float) maxZ, (float) minX, (float) maxY, (float) minZ},
+                {(float) minX, (float) minY, (float) minZ, (float) minX, (float) maxY, (float) minZ},
+                {(float) maxX, (float) minY, (float) minZ, (float) maxX, (float) maxY, (float) minZ},
+                {(float) maxX, (float) minY, (float) maxZ, (float) maxX, (float) maxY, (float) maxZ},
+                {(float) minX, (float) minY, (float) maxZ, (float) minX, (float) maxY, (float) maxZ}};
+        collector.submitCustomGeometry(pose, LINE_TYPE, (stackPose, consumer) -> {
+            for (float[] e : edges) {
+                line(consumer, stackPose, e[0], e[1], e[2], e[3], e[4], e[5], r, g, b, a);
+            }
+        });
+    }
+
+    private static void submitFillBox(SubmitNodeCollector collector, PoseStack pose,
+                                      double x, double y, double z, double w, double h,
+                                      float r, float g, float b, float a) {
+        double minX = x - w, maxX = x + w, minY = y, maxY = y + h, minZ = z - w, maxZ = z + w;
+        collector.submitCustomGeometry(pose, FILL_TYPE, (stackPose, consumer) -> {
+            // 4 侧面 + 顶面（各 2 三角）
+            quad(consumer, stackPose, minX, minY, minZ, maxX, minY, minZ, maxX, maxY, minZ, minX, maxY, minZ, r, g, b, a);
+            quad(consumer, stackPose, minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
+            quad(consumer, stackPose, minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
+            quad(consumer, stackPose, maxX, minY, minZ, maxX, minY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, r, g, b, a);
+            quad(consumer, stackPose, minX, maxY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
+        });
+    }
+
+    private static void submitLine(SubmitNodeCollector collector, PoseStack pose,
+                                   double x1, double y1, double z1, double x2, double y2, double z2,
+                                   float r, float g, float b, float a) {
+        collector.submitCustomGeometry(pose, LINE_TYPE, (stackPose, consumer) ->
+                line(consumer, stackPose,
+                        (float) x1, (float) y1, (float) z1, (float) x2, (float) y2, (float) z2,
+                        r, g, b, a));
+    }
+
+    private static void line(VertexConsumer consumer, PoseStack.Pose pose,
+                             float x1, float y1, float z1, float x2, float y2, float z2,
+                             float r, float g, float b, float a) {
+        consumer.addVertex(pose, x1, y1, z1).setColor(r, g, b, a)
+                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
+        consumer.addVertex(pose, x2, y2, z2).setColor(r, g, b, a)
+                .setNormal(pose, 0, 1, 0).setLineWidth(2.0f);
+    }
+
+    private static void quad(VertexConsumer consumer, PoseStack.Pose pose,
+                             double ax, double ay, double az, double bx, double by, double bz,
+                             double cx, double cy, double cz, double dx, double dy, double dz,
+                             float r, float g, float b, float a) {
+        consumer.addVertex(pose, (float) ax, (float) ay, (float) az).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) bx, (float) by, (float) bz).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) cx, (float) cy, (float) cz).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) ax, (float) ay, (float) az).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) cx, (float) cy, (float) cz).setColor(r, g, b, a);
+        consumer.addVertex(pose, (float) dx, (float) dy, (float) dz).setColor(r, g, b, a);
+    }
+
+    private static RenderType createFillType() {
+        RenderPipeline pipeline = RenderPipeline.builder(RenderPipelinesAccess.micx$debugFilledSnippet())
+                .withLocation(Identifier.fromNamespaceAndPath("micx-fabric", "pipeline/aim_lead_fill"))
+                .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+                .build();
+        RenderSetup setup = RenderSetup.builder(pipeline)
+                .setOutputTarget(OutputTarget.MAIN_TARGET)
+                .createRenderSetup();
+        return RenderTypeAccess.micx$create("micx_aim_lead_fill", setup);
+    }
+
+    /** [from, to) 区间分量中位数（复用 medScratch 排序，n≤8）。 */
+    private double median(double[] src, int from, int to) {
+        int n = to - from;
+        System.arraycopy(src, from, medScratch, 0, n);
+        java.util.Arrays.sort(medScratch, 0, n);
+        return (n & 1) == 1 ? medScratch[n / 2] : (medScratch[n / 2 - 1] + medScratch[n / 2]) * 0.5;
+    }
+
+    /* ==================== ping：game → tab → SLP → manual ==================== */
+
+    public int effectivePing() {
+        if (config.autoPing) {
+            long now = System.currentTimeMillis();
+            if (config.gameRtt && gameRtt > 0 && gameAt > 0L && now - gameAt < 45_000L) {
+                return gameRtt;
+            }
+            int tab = tabPing();
+            if (tab > 0) return tab;
+            if (slpPing > 0 && now - slpAt < 30_000L) return slpPing;
+        }
+        return config.manualPing;
+    }
+
+    public String pingSource() {
+        if (config.autoPing) {
+            long now = System.currentTimeMillis();
+            if (config.gameRtt && gameRtt > 0 && gameAt > 0L && now - gameAt < 45_000L) return "game RTT";
+            if (tabPing() > 0) return "tab";
+            if (slpPing > 0 && now - slpAt < 30_000L) return "slp";
+        }
+        return "manual";
+    }
+
+    private static int tabPing() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getConnection() == null || client.player == null) return 0;
+        net.minecraft.client.multiplayer.PlayerInfo info =
+                client.getConnection().getPlayerInfo(client.player.getUUID());
+        return info == null ? 0 : Math.max(0, info.getLatency());
+    }
+
+    public int gameRtt() {
+        return gameRtt;
+    }
+
+    public int gameJitter() {
+        return gameJitter;
+    }
+
+    public int slpPingNow() {
+        return slpPing;
+    }
+
+    public int tabPingNow() {
+        return tabPing();
+    }
+
+    public int tauMs() {
+        return (int) Math.max(50, Math.min(1_200, effectivePing() + config.extraMs));
+    }
+
+    /**
+     * Raw RTT snapshot for timing-sensitive features. game RTT 需 ≥3 样本且 45s 内
+     * 才算高置信（与 Forge 信心契约一致）；SLP/tab/manual 均低置信。
+     */
+    public synchronized LatencySnapshot latencySnapshot() {
+        long now = System.currentTimeMillis();
+        boolean freshGame = enabled && config.autoPing && config.gameRtt
+                && gameRtt > 0 && gameRecentN >= 3 && gameAt > 0L
+                && now - gameAt < 45_000L;
+        if (freshGame) {
+            return new LatencySnapshot(gameRtt, gameJitter, "game", true, gameAt);
+        }
+        return new LatencySnapshot(Math.max(0, effectivePing()), 0, pingSource(), false, 0L);
+    }
+
+    private synchronized void pushGame(int sampleMs) {
+        if (sampleMs <= 0 || sampleMs >= 5_000) return;
+        gameRecent[gameRecentN % gameRecent.length] = sampleMs;
+        gameRecentN++;
+        int n = Math.min(gameRecentN, gameRecent.length);
+        int[] sorted = new int[n];
+        System.arraycopy(gameRecent, 0, sorted, 0, n);
+        java.util.Arrays.sort(sorted);
+        gameRtt = sorted[n / 2];
+        gameJitter = n <= 1 ? 0 : sorted[n - 1] - sorted[0];
+        gameAt = System.currentTimeMillis();
+    }
+
+    private synchronized void clearLatencySamples() {
+        java.util.Arrays.fill(gameRecent, 0);
+        gameRecentN = 0;
+        gameRtt = -1;
+        gameJitter = 0;
+        gameAt = 0L;
+    }
+
+    /* ---- SLP：后台线程按服务器列表协议测当前端点 RTT ---- */
+
+    private void startSlp() {
+        if (slpRun) return;
+        slpRun = true;
+        slpThread = new Thread(this::slpLoop, "micx-aimlead-slp");
+        slpThread.setDaemon(true);
+        slpThread.start();
+    }
+
+    private void stopSlp() {
+        slpRun = false;
+        if (slpThread != null) {
+            slpThread.interrupt();
+            slpThread = null;
+        }
+        clearSlp();
+    }
+
+    private synchronized void clearSlp() {
+        java.util.Arrays.fill(slpRecent, 0);
+        slpRecentN = 0;
+        slpPing = 0;
+        slpAt = 0L;
+    }
+
+    private void slpLoop() {
+        while (slpRun) {
+            try {
+                Minecraft client = Minecraft.getInstance();
+                if (config.autoPing && client != null && client.level != null
+                        && client.player != null && client.getConnection() != null) {
+                    InetSocketAddress addr = resolveAddr(client);
+                    if (addr != null) {
+                        int p = slpPingOnce(addr);
+                        if (p > 0) pushSlp(p);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+            }
+            try {
+                Thread.sleep(5_000L);
+            } catch (InterruptedException interrupted) {
+                return;
+            }
         }
     }
 
-    private void record(int id, Vec3 position, long now, boolean absolute) {
-        if (!enabled || position == null) return;
-        Track track = tracks.computeIfAbsent(id, ignored -> new Track());
-        track.add(position, now, absolute);
+    private static InetSocketAddress resolveAddr(Minecraft client) {
+        try {
+            SocketAddress remote = client.getConnection().getConnection().getRemoteAddress();
+            if (remote instanceof InetSocketAddress address) return address;
+            var server = client.getCurrentServer();
+            if (server != null && server.ip != null) {
+                String ip = server.ip;
+                int port = 25565;
+                int colon = ip.lastIndexOf(':');
+                if (colon > 0 && ip.indexOf(':') == colon) {
+                    try {
+                        port = Integer.parseInt(ip.substring(colon + 1));
+                        ip = ip.substring(0, colon);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                return new InetSocketAddress(ip, port);
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
     }
+
+    /** 完整 SLP 序列：handshake(state=1) → status 请求/响应 → ping/pong，只计 ping→pong 段。 */
+    private static int slpPingOnce(InetSocketAddress addr) {
+        Socket sock = new Socket();
+        try {
+            sock.connect(addr, 1_500);
+            sock.setSoTimeout(2_500);
+            sock.setTcpNoDelay(true);
+            DataOutputStream out = new DataOutputStream(sock.getOutputStream());
+            DataInputStream in = new DataInputStream(sock.getInputStream());
+
+            ByteArrayOutputStream hb = new ByteArrayOutputStream();
+            DataOutputStream h = new DataOutputStream(hb);
+            h.writeByte(0x00);
+            writeVarInt(h, 47);
+            byte[] host = addr.getHostString().getBytes("UTF-8");
+            writeVarInt(h, host.length);
+            h.write(host);
+            h.writeShort(addr.getPort());
+            writeVarInt(h, 1);
+            writeVarInt(out, hb.size());
+            out.write(hb.toByteArray());
+
+            out.writeByte(0x01);   // frame len=1
+            out.writeByte(0x00);   // status request
+            out.flush();
+
+            int len = readVarInt(in);
+            if (len < 0 || len > (1 << 21)) return -1;
+            skipFully(in, len);
+
+            long t0 = System.nanoTime();
+            out.writeByte(0x09);
+            out.writeByte(0x01);
+            out.writeLong(t0);
+            out.flush();
+            int plen = readVarInt(in);
+            if (plen < 1 || plen > 64) return -1;
+            skipFully(in, plen);
+            return Math.max(1, (int) ((System.nanoTime() - t0) / 1_000_000L));
+        } catch (IOException | RuntimeException exception) {
+            return -1;
+        } finally {
+            try {
+                sock.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private synchronized void pushSlp(int p) {
+        slpRecent[slpRecentN % slpRecent.length] = p;
+        slpRecentN++;
+        int n = Math.min(slpRecentN, slpRecent.length);
+        int[] tmp = new int[n];
+        System.arraycopy(slpRecent, 0, tmp, 0, n);
+        java.util.Arrays.sort(tmp);
+        slpPing = tmp[n / 2];
+        slpAt = System.currentTimeMillis();
+    }
+
+    private static void writeVarInt(DataOutputStream out, int value) throws IOException {
+        while ((value & ~0x7F) != 0) {
+            out.writeByte((value & 0x7F) | 0x80);
+            value >>>= 7;
+        }
+        out.writeByte(value);
+    }
+
+    private static int readVarInt(DataInputStream in) throws IOException {
+        int value = 0;
+        int length = 0;
+        byte current;
+        do {
+            current = in.readByte();
+            value |= (current & 0x7F) << (length * 7);
+            length += 1;
+            if (length > 5) throw new IOException("VarInt too big");
+        } while ((current & 0x80) != 0);
+        return value;
+    }
+
+    private static void skipFully(DataInputStream in, int n) throws IOException {
+        long skipped = 0;
+        while (skipped < n) {
+            long s = in.skip(n - skipped);
+            if (s <= 0) {
+                if (in.read() < 0) throw new IOException("EOF");
+                skipped++;
+            } else {
+                skipped += s;
+            }
+        }
+    }
+
+    /* ==================== 配置/生命周期 ==================== */
 
     private void loadConfig() {
         config.load();
@@ -351,10 +1020,25 @@ public final class AimLeadModule implements Module {
         return config;
     }
 
-    public int markerOffsetX() { loadConfig(); return config.markerOffsetX; }
-    public int markerOffsetY() { loadConfig(); return config.markerOffsetY; }
-    public float markerScaleX() { loadConfig(); return config.markerScaleX; }
-    public float markerScaleY() { loadConfig(); return config.markerScaleY; }
+    public int markerOffsetX() {
+        loadConfig();
+        return config.markerOffsetX;
+    }
+
+    public int markerOffsetY() {
+        loadConfig();
+        return config.markerOffsetY;
+    }
+
+    public float markerScaleX() {
+        loadConfig();
+        return config.markerScaleX;
+    }
+
+    public float markerScaleY() {
+        loadConfig();
+        return config.markerScaleY;
+    }
 
     public void setMarkerOffset(int x, int y) {
         loadConfig();
@@ -373,68 +1057,7 @@ public final class AimLeadModule implements Module {
         config.save();
     }
 
-    public int effectivePing() {
-        if (!config.autoPing) return config.manualPing;
-        if (config.gameRtt && gameRtt > 0 && gameAt > 0L
-                && System.currentTimeMillis() - gameAt < 45_000L) {
-            return gameRtt;
-        }
-        Minecraft client = Minecraft.getInstance();
-        if (client != null && client.getConnection() != null && client.player != null) {
-            net.minecraft.client.multiplayer.PlayerInfo info = client.getConnection().getPlayerInfo(client.player.getUUID());
-            if (info != null) return Math.max(0, info.getLatency());
-        }
-        return config.manualPing;
-    }
-
-    public int gameRtt() { return gameRtt; }
-    public int gameJitter() { return gameJitter; }
-    public int tauMs() { return (int) clamp(effectivePing() + config.extraMs, 50, 1200); }
-    public String pingSource() {
-        if (config.autoPing && config.gameRtt && gameRtt > 0 && gameAt > 0L
-                && System.currentTimeMillis() - gameAt < 45_000L) {
-            return "game RTT";
-        }
-        Minecraft client = Minecraft.getInstance();
-        if (config.autoPing && client != null && client.getConnection() != null && client.player != null) {
-            net.minecraft.client.multiplayer.PlayerInfo info =
-                    client.getConnection().getPlayerInfo(client.player.getUUID());
-            if (info != null && info.getLatency() > 0) return "tab";
-        }
-        return "manual";
-    }
-
-    /**
-     * Raw RTT snapshot for timing-sensitive features.  A game RTT is trusted only
-     * after three valid samples and for 45 seconds after the newest sample, which
-     * matches the Forge AimLead confidence contract.  Manual/tab fallback remains
-     * useful for display but is deliberately marked low-confidence.
-     */
-    public synchronized LatencySnapshot latencySnapshot() {
-        long now = System.currentTimeMillis();
-        boolean freshGame = enabled && config.autoPing && config.gameRtt
-                && gameRtt > 0 && gameRecentN >= 3 && gameAt > 0L
-                && now - gameAt < 45_000L;
-        if (freshGame) {
-            return new LatencySnapshot(gameRtt, gameJitter, "game", true, gameAt);
-        }
-        int fallback = Math.max(0, effectivePing());
-        String source = pingSource();
-        return new LatencySnapshot(fallback, 0, source, false, 0L);
-    }
-
-    private synchronized void pushGame(int sampleMs) {
-        if (sampleMs <= 0 || sampleMs >= 5_000) return;
-        gameRecent[gameRecentN % gameRecent.length] = sampleMs;
-        gameRecentN++;
-        int n = Math.min(gameRecentN, gameRecent.length);
-        int[] sorted = new int[n];
-        for (int i = 0; i < n; i++) sorted[i] = gameRecent[i];
-        java.util.Arrays.sort(sorted);
-        gameRtt = sorted[n / 2];
-        gameJitter = n <= 1 ? 0 : sorted[n - 1] - sorted[0];
-        gameAt = System.currentTimeMillis();
-    }
+    /* ==================== 数据结构 ==================== */
 
     public static final class LatencySnapshot {
         public final int rttMs;
@@ -453,67 +1076,67 @@ public final class AimLeadModule implements Module {
         }
     }
 
-    private static double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
+    private record Cand(LivingEntity entity, Track track, double angle) {
     }
 
-    private record GhostTarget(LivingEntity entity, AABB serverBox, AABB box, Vec3 velocity) {
+    private record Ghost(Entity entity, double px, double py, double pz,
+                         double angle, boolean hit, boolean lowConf) {
     }
 
-    private static final class Track {
-        private final Deque<Sample> samples = new ArrayDeque<>();
-
-        synchronized void add(Vec3 position, long time, boolean absolute) {
-            if (absolute && !samples.isEmpty() && position.distanceToSqr(samples.getLast().position()) > 4096.0) {
-                samples.clear();
-            }
-            samples.addLast(new Sample(position, time));
-            while (samples.size() > SAMPLE_LIMIT) samples.removeFirst();
-            while (samples.size() > 1 && time - samples.getFirst().time() > SAMPLE_TTL_MS) samples.removeFirst();
-        }
-
-        synchronized Vec3 latest() {
-            return samples.isEmpty() ? Vec3.ZERO : samples.getLast().position();
-        }
-
-        synchronized long latestTime() {
-            return samples.isEmpty() ? 0L : samples.getLast().time();
-        }
-
-        synchronized Vec3 velocity() {
-            if (samples.size() < 2) return Vec3.ZERO;
-            List<Double> xs = new ArrayList<>();
-            List<Double> ys = new ArrayList<>();
-            List<Double> zs = new ArrayList<>();
-            Sample previous = null;
-            for (Sample sample : samples) {
-                if (previous != null) {
-                    double seconds = (sample.time() - previous.time()) / 1000.0;
-                    if (seconds > 0.001) {
-                        Vec3 delta = sample.position().subtract(previous.position());
-                        double speed = delta.length() / seconds;
-                        if (speed <= SPIKE_SPEED) {
-                            xs.add(delta.x / seconds);
-                            ys.add(delta.y / seconds);
-                            zs.add(delta.z / seconds);
-                        }
-                    }
-                }
-                previous = sample;
-            }
-            if (xs.isEmpty()) return Vec3.ZERO;
-            xs.sort(Double::compareTo);
-            ys.sort(Double::compareTo);
-            zs.sort(Double::compareTo);
-            return new Vec3(median(xs), median(ys), median(zs));
-        }
-
-        private static double median(List<Double> values) {
-            int middle = values.size() / 2;
-            return values.size() % 2 == 0 ? (values.get(middle - 1) + values.get(middle)) / 2.0 : values.get(middle);
-        }
+    private static final class LeadPoint {
+        double x, y, z;
+        boolean lowConf;
+        boolean holdBack;
     }
 
-    private record Sample(Vec3 position, long time) {
+    /** 环形样本轨迹 + 渲染状态（lv* 兜底 / rx-平滑 / showing 滞回 / 碰撞与地面缓存 / L0 影子）。 */
+    static final class Track {
+        final long[] ts = new long[SAMPLE_CAP];
+        final double[] xs = new double[SAMPLE_CAP];
+        final double[] ys = new double[SAMPLE_CAP];
+        final double[] zs = new double[SAMPLE_CAP];
+        int count;
+
+        long lastSeenMs = 0L;
+        double lsx = Double.NaN, lsy, lsz;          // L0 影子（服务器最后报的坐标）
+        double rx = Double.NaN, ry, rz;             // 渲染平滑位置
+        boolean showing = false;                     // 显示滞回
+        double lvx, lvy, lvz;                        // 上一个可信速度（尖峰吃光时兜底）
+        long lvAt = 0L;
+        double clx = 0.0, clz = 0.0;                 // 最近一次碰撞钳制增量
+        long clampAtMs = 0L;
+        int grX = Integer.MIN_VALUE, grY0 = Integer.MIN_VALUE, grZ = Integer.MIN_VALUE;
+        double grGround = Double.NEGATIVE_INFINITY;
+        long grAtMs = 0L;
+
+        void add(long t, double x, double y, double z) {
+            int i = count % SAMPLE_CAP;
+            ts[i] = t;
+            xs[i] = x;
+            ys[i] = y;
+            zs[i] = z;
+            count++;
+        }
+
+        int size() {
+            return Math.min(count, SAMPLE_CAP);
+        }
+
+        /** 第 k 新的样本下标（k=0 最新）。 */
+        int idx(int k) {
+            return ((count - 1 - k) % SAMPLE_CAP + SAMPLE_CAP) % SAMPLE_CAP;
+        }
+
+        Vec3 latest() {
+            if (size() == 0) return null;
+            int i = idx(0);
+            return new Vec3(xs[i], ys[i], zs[i]);
+        }
+
+        void setShadow(Vec3 position) {
+            lsx = position.x;
+            lsy = position.y;
+            lsz = position.z;
+        }
     }
 }

@@ -52,6 +52,11 @@ public final class ZombiesConfig {
     public int ecoClockBottom = 8;
     public int tooRushXOffset = 0;
     public int tooRushYOffset = 0;
+    public boolean tooSpawnAlert = true;
+    public int tooSpawnDistance = 15;
+    public int tooSpawnXOffset = 0;
+    public int tooSpawnYOffset = -28;
+    public float tooSpawnScale = 2.0f;
     public int blockAlertXOffset = 0;
     public int blockAlertYOffset = 14;
 
@@ -121,6 +126,11 @@ public final class ZombiesConfig {
         ecoClockBottom = integer(properties, "ecoClockBottom", 8, 0, 9_999);
         tooRushXOffset = integer(properties, "tooRushXOffset", 0, -5_000, 5_000);
         tooRushYOffset = integer(properties, "tooRushYOffset", 0, -5_000, 5_000);
+        tooSpawnAlert = bool(properties, "tooSpawnAlert", true);
+        tooSpawnDistance = integer(properties, "tooSpawnDistance", 15, 5, 30);
+        tooSpawnXOffset = integer(properties, "tooSpawnXOffset", 0, -5_000, 5_000);
+        tooSpawnYOffset = integer(properties, "tooSpawnYOffset", -28, -5_000, 5_000);
+        tooSpawnScale = decimal(properties, "tooSpawnScale", 2.0f);
         blockAlertXOffset = integer(properties, "blockAlertXOffset", 0, -5_000, 5_000);
         blockAlertYOffset = integer(properties, "blockAlertYOffset", 14, -5_000, 5_000);
 
@@ -184,6 +194,11 @@ public final class ZombiesConfig {
         putInteger(properties, "ecoClockBottom", ecoClockBottom, 0, 9_999);
         putInteger(properties, "tooRushXOffset", tooRushXOffset, -5_000, 5_000);
         putInteger(properties, "tooRushYOffset", tooRushYOffset, -5_000, 5_000);
+        putBoolean(properties, "tooSpawnAlert", tooSpawnAlert);
+        putInteger(properties, "tooSpawnDistance", tooSpawnDistance, 5, 30);
+        putInteger(properties, "tooSpawnXOffset", tooSpawnXOffset, -5_000, 5_000);
+        putInteger(properties, "tooSpawnYOffset", tooSpawnYOffset, -5_000, 5_000);
+        putDecimal(properties, "tooSpawnScale", tooSpawnScale);
         putInteger(properties, "blockAlertXOffset", blockAlertXOffset, -5_000, 5_000);
         putInteger(properties, "blockAlertYOffset", blockAlertYOffset, -5_000, 5_000);
 
@@ -196,6 +211,7 @@ public final class ZombiesConfig {
         putDecimal(properties, "puHudScale", puHudScale);
         putDecimal(properties, "ecoClockScale", ecoClockScale);
         putDecimal(properties, "tooRushScale", tooRushScale);
+        putDecimal(properties, "tooSpawnScale", tooSpawnScale);
         putDecimal(properties, "blockAlertScale", blockAlertScale);
 
         try {

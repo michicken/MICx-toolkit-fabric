@@ -9,11 +9,14 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.phys.EntityHitResult;
-import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 
 /** Crosshair health panel migrated from ToroHealth's target and health-bar behavior. */
@@ -84,13 +87,58 @@ public final class ToroHealthModule implements Module {
             clearTarget();
         }
         if (!enabled || !overlayEnabled) return;
-        Entity pointed = client.crosshairPickEntity;
-        if (pointed instanceof LivingEntity living && isTarget(living)) {
-            target = living;
+        LivingEntity pointed = findMouseOver(client);
+        if (pointed != null) {
+            target = pointed;
             targetSeenAt = System.currentTimeMillis();
         } else if (target != null && System.currentTimeMillis() - targetSeenAt > hideDelayMs) {
             clearTarget();
         }
+    }
+
+    /**
+     * 无固定距离上限的准心 raycast（Forge findMouseOver 对齐）：
+     * 射线长度延伸到最远已加载候选实体；对全体候选 AABB 求最近命中；
+     * 故意不做方块遮挡检测；排除 Player / ArmorStand / 骑乘目标。
+     */
+    private static LivingEntity findMouseOver(Minecraft client) {
+        if (client.level == null || client.player == null) return null;
+        Vec3 eye = client.player.getEyePosition(1.0f);
+        Vec3 look = client.player.getViewVector(1.0f);
+        List<LivingEntity> candidates = new ArrayList<>();
+        double rayLength = 1.0;
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!isTargetRaw(entity)) continue;
+            LivingEntity living = (LivingEntity) entity;
+            candidates.add(living);
+            double d = eye.distanceTo(living.position().add(0, living.getBbHeight() * 0.5, 0))
+                    + Math.max(living.getBbWidth(), living.getBbHeight()) + 1.0;
+            if (Double.isFinite(d)) rayLength = Math.max(rayLength, d);
+        }
+        if (candidates.isEmpty()) return null;
+        Vec3 end = eye.add(look.scale(rayLength));
+        double best = Double.POSITIVE_INFINITY;
+        LivingEntity found = null;
+        for (LivingEntity living : candidates) {
+            AABB box = living.getBoundingBox().inflate(0.3);
+            Optional<Vec3> hit = box.clip(eye, end);
+            Vec3 hitVec = box.contains(eye) ? eye : hit.orElse(null);
+            if (hitVec == null) continue;
+            double d2 = eye.distanceToSqr(hitVec);
+            if (d2 < best) {
+                best = d2;
+                found = living;
+            }
+        }
+        return found;
+    }
+
+    /** 与 isTarget 相同的存活/类型过滤，但返回原始实体（findMouseOver 两遍扫描复用）。 */
+    private static boolean isTargetRaw(Entity entity) {
+        if (!(entity instanceof LivingEntity living)) return false;
+        if (living == Minecraft.getInstance().player) return false;
+        if (living.isDeadOrDying() || living.getHealth() <= 0.0f) return false;
+        return isTarget(living);
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {

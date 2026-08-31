@@ -55,6 +55,10 @@ public final class ZombiesTracker {
     private ScoreboardFrame frame = ScoreboardFrame.empty();
     private final ZombiesEventState eventState = new ZombiesEventState();
     private final ZombiesSoundMetrics soundMetrics = new ZombiesSoundMetrics();
+    private volatile long titleRoundStartMs = 0L;
+    private volatile long waveWaveStartMs = 0L;
+    private volatile int waveWaveRound = -1;
+    private volatile int waveWaveIndex = -1;
 
     private ZombiesTracker() {
     }
@@ -104,7 +108,9 @@ public final class ZombiesTracker {
         frame = ScoreboardFrame.empty();
         eventState.reset();
         ecoRate.reset();
+        try { ZombiesExplorerModule.instance().onSessionReset(); } catch (Throwable ignored) {}
         soundMetrics.reset();
+        try { WindowSpawnCounterModule.instance().onSessionReset(); } catch (Throwable ignored) {}
         cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
     }
 
@@ -119,6 +125,24 @@ public final class ZombiesTracker {
     public long roundStartMs() {
         return roundStartMs;
     }
+
+    public long roundStartMsForWaveHud() { return roundStartMs; }
+
+    public long titleRoundStartMs() { return titleRoundStartMs; }
+    long waveWaveStartMs() { return waveWaveStartMs; }
+    int waveWaveRound() { return waveWaveRound; }
+    int waveWaveIndex() { return waveWaveIndex; }
+
+    void noteTitleRoundStart(int titleRound, long now) {
+        if (titleRound <= 0) return;
+        titleRoundStartMs = now;
+    }
+
+    public void recordWaveEntityAnchor(int waveIndex, long now) {
+        // Cal-Title: entity no longer nudges baseline; countdown is title-anchored only.
+    }
+
+    void clearWaveAnchorForRound(int r) { }
 
     public int gameTimeSeconds() {
         return gameTimeSeconds;
@@ -212,7 +236,9 @@ public final class ZombiesTracker {
     }
 
     public void onTitleText(String text, long now) {
-        acceptEvent(ZombiesEventParser.parseTitle(text), now);
+        ZombiesEventParser.Event ev = ZombiesEventParser.parseTitle(text);
+        if (ev.kind() == ZombiesEventParser.Kind.ROUND && ev.round() > 0) noteTitleRoundStart(ev.round(), now);
+        acceptEvent(ev, now);
     }
 
     public void onSubtitleText(String text, long now) {
@@ -324,7 +350,12 @@ public final class ZombiesTracker {
         }
         round = value;
         roundStartMs = now;
+        titleRoundStartMs = now;
+        clearWaveAnchorForRound(value);
         try { LrIndicatorModule.onRoundChanged(value); } catch (Throwable ignored) {}
+        try { ZombiesExplorerModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        try { WaveSpawnSoundModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        try { WindowSpawnCounterModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
     }
 
     private void updateFromSidebar(Scoreboard scoreboard, Minecraft client) {
@@ -391,9 +422,13 @@ public final class ZombiesTracker {
             eventState.mergeScoreboardStatus(entry.getKey(), entry.getValue(), now);
         }
         if (next.round() > 0 && next.round() > round) {
+            // Sidebar is fallback only — do not overwrite title-anchored roundStartMs mid-round
+            if (roundStartMs <= 0L) roundStartMs = now;
             round = next.round();
-            roundStartMs = now;
             try { LrIndicatorModule.onRoundChanged(next.round()); } catch (Throwable ignored) {}
+            try { ZombiesExplorerModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
+            try { WaveSpawnSoundModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
+            try { WindowSpawnCounterModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
         }
         if (next.zombiesLeft() >= 0) zombiesLeft = next.zombiesLeft();
         // EcoRate: sample all visible players for mate rates
@@ -423,24 +458,29 @@ public final class ZombiesTracker {
     }
 
     private void markNonZombies(long now) {
-        clearScoreboardView();
-        if (!zombiesSessionActive) return;
-        if (nonZombiesSince < 0L) nonZombiesSince = now;
-        if (!ZombiesSessionRules.shouldConfirmExit(true, nonZombiesSince, now)) return;
-
-        zombiesSessionActive = false;
-        awaitingNewZombiesSession = true;
-        nonZombiesSince = -1L;
-        if (eventState.hasGameOverPending()) {
-            // Keep the old counters until ZombiesAssist consumes Game Over on this client tick.
-            sessionResetPending = true;
+        // 侧栏瞬时缺失：保留战术视图（inZombies）直到确认退出，防 Hud 闪烁
+        if (zombiesSessionActive && nonZombiesSince < 0L) nonZombiesSince = now;
+        if (zombiesSessionActive) {
+            long since = nonZombiesSince < 0L ? now : nonZombiesSince;
+            if (!ZombiesSessionRules.shouldConfirmExit(true, since, now)) return;
+            zombiesSessionActive = false;
+            awaitingNewZombiesSession = true;
+            nonZombiesSince = -1L;
+            if (eventState.hasGameOverPending()) {
+                // Keep the old counters until ZombiesAssist consumes Game Over on this client tick.
+                inZombies = false;
+                frame = ScoreboardFrame.empty();
+                return;
+            }
+            finishOldSession();
             return;
         }
-        finishOldSession();
+        clearScoreboardView();
     }
 
     private void beginZombiesSession() {
         eventState.beginNewSession();
+        try { ZombiesExplorerModule.instance().onSessionReset(); } catch (Throwable ignored) {}
         soundMetrics.reset();
         eventGeneration++;
         zombiesSessionActive = true;

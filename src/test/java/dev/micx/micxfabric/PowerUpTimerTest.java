@@ -22,13 +22,24 @@ class PowerUpTimerTest {
     }
 
     @Test
-    void correlatedActivationDoesNotRestartTheTimer() {
+    void repeatedActivationKeepsLongestRemaining() {
         PowerUpTimer timer = new PowerUpTimer();
         timer.activate("Insta Kill", 10, 1_000L);
         timer.activate("Insta Kill", 10, 2_000L);
-
-        assertEquals(11_000L, timer.activeSnapshot().get("Insta Kill").expiresAt());
-        timer.expire(11_000L);
+        assertEquals(12_000L, timer.activeSnapshot().get("Insta Kill").expiresAt());
+        timer.expire(11_999L);
+        assertTrue(timer.activeSnapshot().containsKey("Insta Kill"));
+        timer.expire(12_000L);
         assertTrue(timer.activeSnapshot().isEmpty());
+    }
+
+    @Test
+    void dualPowerUpsBothPresent() {
+        PowerUpTimer timer = new PowerUpTimer();
+        timer.activate("Insta Kill", 10, 1_000L);
+        timer.activate("Double Gold", 30, 1_100L);
+        assertEquals(11_000L, timer.activeSnapshot().get("Insta Kill").expiresAt());
+        assertEquals(31_100L, timer.activeSnapshot().get("Double Gold").expiresAt());
+        // 顶部只读最长那条由 ZombiesAssistModule.drawActivePowerUpsTop 决定
     }
 }

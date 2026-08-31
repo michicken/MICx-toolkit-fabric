@@ -1,39 +1,47 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.ChamsModule;
-import dev.micx.micxfabric.ZombieFadeModule;
-import dev.micx.micxfabric.ChamsRenderTypes;
 import dev.micx.micxfabric.MicxRenderKeys;
 import dev.micx.micxfabric.PlayerOutlineEspModule;
 import dev.micx.micxfabric.PlayerVisibilityModule;
+import dev.micx.micxfabric.ZombieFadeModule;
+import dev.micx.micxfabric.chams.ChamsSeedTypes;
+import dev.micx.micxfabric.chams.MicxFixedOrderCollector;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.Model;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
-import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
-import com.mojang.blaze3d.vertex.PoseStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Map;
 import java.util.WeakHashMap;
 
-/** Supplies translucent player render types for PlayerVisibility opacity mode. */
+/**
+ * Chams v6 深度种子双通道：
+ * submit HEAD 时先以 order(-1) 递归提交一遍实体（期间 ACTIVE=true，
+ * 所有层经 MixinChamsRenderTypes/MixinItemFeatureRenderer 换成种子类型，
+ * 只把被墙挡住部分的深度种进缓冲），随后外层原样提交用 vanilla GEQUAL
+ * 重建正确表面——穿墙 + 自遮挡 100% 原生。
+ */
 @Mixin(LivingEntityRenderer.class)
 public abstract class MixinLivingEntityRenderer {
     private static final Map<LivingEntityRenderState, AbstractClientPlayer> MICX_PLAYERS = new WeakHashMap<>();
+
+    @Unique
+    private boolean micx$seedSubmitting;
 
     @Shadow
     protected abstract Identifier getTextureLocation(LivingEntityRenderState state);
@@ -54,10 +62,83 @@ public abstract class MixinLivingEntityRenderer {
         }
     }
 
+    @Inject(method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+            at = @At("HEAD"), cancellable = true)
+    private void micx$hideNearbyPlayerSubmit(LivingEntityRenderState state, PoseStack poseStack,
+                                             SubmitNodeCollector collector, CameraRenderState camera,
+                                             CallbackInfo ci) {
+        // PlayerVisibility hide 模式（对齐 Forge RenderPlayerEvent.Pre.setCanceled）：
+        // 整个玩家渲染（肉身/盔甲/手持/名牌）一次取消。shouldRender 侧拦截（MixinEntityRenderDispatcher）
+        // 若未命中，这里是保底。ESP 描边的玩家不隐藏。
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        if (entity instanceof AbstractClientPlayer player) {
+            Minecraft client = Minecraft.getInstance();
+            if (PlayerVisibilityModule.shouldHide(player, client)
+                    && !PlayerOutlineEspModule.shouldOutline(player, client)) {
+                PlayerVisibilityModule.diagCancel("submit", player);
+                ci.cancel();
+            }
+        }
+    }
+
+    @Inject(method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+            at = @At("HEAD"))
+    private void micx$chamsSeedSubmit(LivingEntityRenderState state, PoseStack poseStack,
+                                      SubmitNodeCollector collector, CameraRenderState camera,
+                                      CallbackInfo ci) {
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        boolean chamsTarget = entity != null
+                && ChamsModule.instance().shouldApply(entity, Minecraft.getInstance(), false);
+        if (chamsTarget && !micx$seedSubmitting) {
+            micx$seedSubmitting = true;
+            ChamsSeedTypes.ACTIVE = true;
+            try {
+                SubmitNodeCollector seedCollector =
+                        new MicxFixedOrderCollector(collector.order(-1));
+                ((LivingEntityRenderer) (Object) this).submit(state, poseStack, seedCollector, camera);
+            } finally {
+                ChamsSeedTypes.ACTIVE = false;
+                micx$seedSubmitting = false;
+            }
+        } else {
+            ChamsSeedTypes.ACTIVE = chamsTarget && micx$seedSubmitting;
+        }
+    }
+
+    @Inject(method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+            at = @At("RETURN"))
+    private void micx$chamsSubmitEnd(LivingEntityRenderState state, PoseStack poseStack,
+                                     SubmitNodeCollector collector, CameraRenderState camera,
+                                     CallbackInfo ci) {
+        ChamsSeedTypes.ACTIVE = false;
+    }
+
     @Inject(method = "getRenderType", at = @At("HEAD"), cancellable = true)
-    private void micx$useTranslucentPlayerType(LivingEntityRenderState state, boolean bodyVisible,
-                                                boolean translucent, boolean glowing,
-                                                CallbackInfoReturnable<RenderType> cir) {
+    private void micx$chamsSeedType(LivingEntityRenderState state, boolean bodyVisible,
+                                    boolean translucent, boolean glowing,
+                                    CallbackInfoReturnable<RenderType> cir) {
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        if (ChamsSeedTypes.ACTIVE && entity != null
+                && ChamsModule.instance().shouldApply(entity, Minecraft.getInstance(), false)) {
+            cir.setReturnValue(ChamsSeedTypes.seedType(getTextureLocation(state)));
+            return;
+        }
+        // 种子阶段已返回，以上不再走淡化
+        if (ChamsSeedTypes.ACTIVE) return;
+        // ZombieFade：本体必须切 translucent 才会读 alpha（与 PlayerVisibility 同路）
+        if (entity != null && ZombieFadeModule.instance().shouldFade(entity)) {
+            cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
+            return;
+        }
         AbstractClientPlayer player;
         synchronized (MICX_PLAYERS) {
             player = MICX_PLAYERS.get(state);
@@ -66,13 +147,7 @@ public abstract class MixinLivingEntityRenderer {
             int tint = PlayerVisibilityModule.modelTint(player, Minecraft.getInstance());
             if (tint != -1) {
                 cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
-                return;
             }
-        }
-        // ZombieFade：alpha 只在 translucent 管线生效；不切管线则淡化永远不可见
-        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
-        if (entity != null && ZombieFadeModule.instance().shouldFade(entity)) {
-            cir.setReturnValue(RenderTypes.entityTranslucent(getTextureLocation(state)));
         }
     }
 
@@ -96,32 +171,33 @@ public abstract class MixinLivingEntityRenderer {
         cir.setReturnValue(ZombieFadeModule.fadedTint(orig));
     }
 
-    /** Replaces only the vanilla body submit; layers keep their own textures and render types. */
-    @Redirect(
-            method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
-                    + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-                    + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
-                    + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitModel("
-                    + "Lnet/minecraft/client/model/Model;Ljava/lang/Object;"
-                    + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-                    + "Lnet/minecraft/client/renderer/rendertype/RenderType;"
-                    + "IIILnet/minecraft/client/renderer/texture/TextureAtlasSprite;"
-                    + "ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"))
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void micx$submitBodyModel(SubmitNodeCollector collector, Model model, Object renderState,
-                                      PoseStack poseStack, RenderType vanillaType, int light, int overlay,
-                                      int tintedColor, TextureAtlasSprite sprite, int outlineColor,
-                                      ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
-        RenderType type = vanillaType;
-        if (renderState instanceof LivingEntityRenderState state) {
-            LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
-            if (ChamsModule.instance().shouldApply(entity, Minecraft.getInstance(), false)) {
-                RenderType chamsType = ChamsRenderTypes.entity(getTextureLocation(state));
-                if (chamsType != null) type = chamsType;
-            }
-        }
-        collector.submitModel(model, renderState, poseStack, type, light, overlay, tintedColor, sprite,
-                outlineColor, crumblingOverlay);
+    /* ---- ZombieFade hurtTime 屏蔽（FR-3：受击红片段级烘焙，须临时置 0） ---- */
+
+    @Inject(method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+            at = @At("HEAD"))
+    private void micx$fadeSuppressHurtHead(LivingEntityRenderState state,
+                                           PoseStack poseStack,
+                                           SubmitNodeCollector collector,
+                                           CameraRenderState camera,
+                                           CallbackInfo ci) {
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        if (entity != null) ZombieFadeModule.instance().suppressHurt(entity);
+    }
+
+    @Inject(method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+            at = @At("RETURN"))
+    private void micx$fadeRestoreHurtReturn(LivingEntityRenderState state,
+                                            PoseStack poseStack,
+                                            SubmitNodeCollector collector,
+                                            CameraRenderState camera,
+                                            CallbackInfo ci) {
+        LivingEntity entity = state.getData(MicxRenderKeys.ENTITY);
+        if (entity != null) ZombieFadeModule.instance().restoreHurt(entity);
     }
 }

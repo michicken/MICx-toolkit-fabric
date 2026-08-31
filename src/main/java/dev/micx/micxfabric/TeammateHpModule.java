@@ -521,13 +521,14 @@ public final class TeammateHpModule implements Module {
 
         // Name — 自己加星标；有图标时预留更多空间
         ItemStack held = player.getMainHandItem();
-        boolean isBlocking = player.isBlocking();
         boolean isSneaking = player.isCrouching();
         boolean isFiring = tracker.isFiring(name, now);
-        // 近战剑语义化：拿刀不格挡 = 木剑；格挡中 = 钻石剑（isBlocking 服务端同步）
+        // 近战剑语义化（v0.2.11 统一谓词，FR-5）：格挡中 = 钻石剑，拿刀不格挡 = 木剑。
+        // 格挡判定三层：① 26.2 use 态 + 副手/主手剑（本地经 MixinItemStack 进 BLOCK，
+        // 远程 1.8 blocking flag 经 Via 映射为 using item）② 原生 isBlocking（持盾）兜底。
         ItemStack iconStack = held;
         if (held != null && !held.isEmpty() && held.getItem().builtInRegistryHolder().is(ItemTags.SWORDS)) {
-            iconStack = new ItemStack(isBlocking ? Items.DIAMOND_SWORD : Items.WOODEN_SWORD);
+            iconStack = new ItemStack(isBlockingLike(player) ? Items.DIAMOND_SWORD : Items.WOODEN_SWORD);
         }
         boolean hasIcons = (iconStack != null && !iconStack.isEmpty()) || isSneaking;
         int contentW = cardWidth - ACCENT_W - PAD - RIGHT_PAD;
@@ -735,6 +736,21 @@ public final class TeammateHpModule implements Module {
         if (hp >= 12f) return 0xFF55DD55;
         if (hp >= 8f) return 0xFFEEEE55;
         return 0xFFFF5555;
+    }
+
+    /**
+     * 格挡统一谓词（FR-5，spec AC-9）：
+     * use 态且使用中物品为剑（1.8 剑格挡经 Via/本地 mixin 表现为 using-item）
+     * 或 26.2 原生持盾 isBlocking()。
+     */
+    static boolean isBlockingLike(net.minecraft.world.entity.LivingEntity player) {
+        if (player.isBlocking()) return true;
+        if (player.isUsingItem()) {
+            ItemStack useItem = player.getUseItem();
+            return useItem != null && !useItem.isEmpty()
+                    && useItem.getItem().builtInRegistryHolder().is(ItemTags.SWORDS);
+        }
+        return false;
     }
 
     private void loadConfig() {

@@ -25,6 +25,7 @@ public final class DpsCounterModule implements Module {
     private float hudScaleX = 1.0f;
     private float hudScaleY = 1.0f;
     private boolean configLoaded;
+    private boolean drawLogged;
     private Object activeLevel;
     private float cachedDamage;
 
@@ -159,13 +160,18 @@ public final class DpsCounterModule implements Module {
             // RC: RC active toggle (mouse middle), not enabled() — else always ON
             boolean rcOn = RightClickerModule.isActive();
             String rcLine = "§eRC§0:§r " + (rcOn ? "§a" : "§c") + (rcOn ? "ON" : "OFF");
+            // 渲染走 drawRightAligned 逐段 literal+color 路径（方法内统一补 FF alpha）。
+            // 真根因（javap 实证）：26.2 GuiGraphicsExtractor.text 在 ARGB.alpha(color)==0
+            // 时直接 return 不绘制——此前 0xFFFFFF 基色无 alpha 位，整段被丢弃。
             net.minecraft.network.chat.Component rcComp = LegacyText.of(rcLine);
             int rw = client.font.width(rcComp);
-            graphics.text(client.font, rcComp, right - rw, yOff, 0xFFFFFF, true);
+            ZombiesAssistModule.drawRightAligned(graphics, client, rcLine, right, yOff);
 
             // GS: always show mode number (23/234/24/34), green when active red when not — never "OFF"
+            // 对齐 Forge kbc.isActive()：连点 toggle 开关状态。modeIndex==0=未激活（关闭时
+            // modeName() 返回的是预选模式名，不能用来判红绿，否则恒绿）
             KeyboardClickerModule kbc = KeyboardClickerModule.instance();
-            boolean gsOn = !"OFF".equals(kbc.modeName());
+            boolean gsOn = kbc.modeIndex() != 0;
             String gsVal = kbc.modeName();
             if (gsVal == null || "OFF".equals(gsVal)) {
                 gsVal = kbc.isMode23() ? "23" : kbc.isMode234() ? "234" : kbc.isMode24() ? "24" : kbc.isMode34() ? "34" : "23";
@@ -173,7 +179,13 @@ public final class DpsCounterModule implements Module {
             String gsLine = "§eGS§0:§r " + (gsOn ? "§a" : "§c") + gsVal;
             net.minecraft.network.chat.Component gsComp = LegacyText.of(gsLine);
             int gw = client.font.width(gsComp);
-            graphics.text(client.font, gsComp, right - gw, yOff + 10, 0xFFFFFF, true);
+            ZombiesAssistModule.drawRightAligned(graphics, client, gsLine, right, yOff + 10);
+            if (!drawLogged) {
+                drawLogged = true;
+                MicxFabric.LOGGER.info(
+                        "[micx-dps] draw: guiW={} sx={} sy={} yOff={} right={} dpsW={} rcW={} gsW={} rcOn={} gsOn={} gsVal={}",
+                        graphics.guiWidth(), sx, sy, yOff, right, w, rw, gw, rcOn, gsOn, gsVal);
+            }
         } finally {
             graphics.pose().popMatrix();
         }

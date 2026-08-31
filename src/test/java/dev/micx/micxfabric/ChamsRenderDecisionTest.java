@@ -6,13 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ChamsRenderDecisionTest {
     @Test
-    void appliesOnlyToBlockedTargetsInsideInclusiveRange() {
+    void appliesToAllTargetsInsideInclusiveRangeRegardlessOfOcclusion() {
+        // v4：遮挡状态不参与决策，范围内目标一律应用（合成对可见实体无感）
         assertEquals(ChamsRenderDecision.Result.APPLY,
                 decide(48 * 48, 48, true));
+        assertEquals(ChamsRenderDecision.Result.APPLY,
+                decide(10, 48, false));
         assertEquals(ChamsRenderDecision.Result.VANILLA,
                 decide(48 * 48 + 0.01, 48, true));
-        assertEquals(ChamsRenderDecision.Result.VANILLA,
-                decide(10, 48, false));
     }
 
     @Test

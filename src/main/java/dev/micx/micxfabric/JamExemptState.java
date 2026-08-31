@@ -10,7 +10,7 @@ package dev.micx.micxfabric;
  */
 public final class JamExemptState {
 
-    /** 威胁感知豁免回合集合：回合命中且威胁在场才豁免，威胁消失即恢复。 */
+    /** 威胁感知豁免回合集合（兼容保留）：现全局准星豁免不再按回合判断。 */
     public static final int[] EXEMPT_ROUNDS = {59, 70, 80, 90, 100, 101};
 
     public enum Event {
@@ -26,6 +26,21 @@ public final class JamExemptState {
     /** 纯判定：回合命中豁免集合且威胁在场 → 应豁免。 */
     public static boolean shouldExempt(int round, boolean threatNearby) {
         return threatNearby && isExemptRound(round);
+    }
+
+    public static boolean shouldExemptGlobal(boolean crosshairOnToo) {
+        return crosshairOnToo;
+    }
+
+    public Event observeGlobal(boolean crosshairOnToo) {
+        boolean nowExempt = shouldExemptGlobal(crosshairOnToo);
+        if (nowExempt == exempt) return Event.NONE;
+        exempt = nowExempt;
+        if (nowExempt) {
+            lastExemptRound = 1;
+            return Event.ENTERED;
+        }
+        return Event.EXITED;
     }
 
     /** 输入当前回合与威胁在场状态，返回状态切换事件（无变化返回 NONE）。 */

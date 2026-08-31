@@ -18,10 +18,22 @@
     "MixinLightmapRenderStateExtractor",
     "RenderTypeAccess",
     "RenderPipelinesAccess",
+    "MixinChamsRenderTypes",
+    "MixinCustomHeadLayer",
+    "MixinItemFeatureRenderer",
     "MixinChatComponent",
     "MixinClientPacketListener",
     "MixinClientEntityPackets",
-    "MixinGameRendererViewHold"
+    "MixinGameRendererViewHold",
+    "MixinCapeLayer",
+    "MixinCameraLegacySneak",
+    "MixinAvatarLegacySneakOffset",
+    "MixinItemInHandZombieFade",
+    "MixinSkullBlockRenderer",
+    "MixinParticleEngine",
+    "MixinEntityRendererExtractNameTag",
+    "MixinMouseHandlerZoom",
+    "MixinCameraZoom"
   ],
   "injectors": {
     "defaultRequire": 1

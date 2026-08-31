@@ -8,9 +8,6 @@ import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -23,7 +20,6 @@ public final class ChamsModule implements Module {
     static final int MIN_RANGE = 8;
     static final int MAX_RANGE = 128;
 
-    private final ChamsOcclusionCache occlusionCache = new ChamsOcclusionCache();
     private volatile boolean enabled;
     private volatile int range = DEFAULT_RANGE;
     private volatile boolean configLoaded;
@@ -77,22 +73,10 @@ public final class ChamsModule implements Module {
             return false;
         }
         boolean target = isTarget(entity);
-        boolean blocked = target && isOccluded(client, entity);
         double distanceSq = client.player.distanceToSqr(entity);
         return ChamsRenderDecision.decide(enabled, client.level != null, client.player != null,
-                target, distanceSq, range(), blocked, activeRender)
+                target, distanceSq, range(), false, activeRender)
                 == ChamsRenderDecision.Result.APPLY;
-    }
-
-    private boolean isOccluded(Minecraft client, LivingEntity entity) {
-        Vec3 eye = client.player.getEyePosition(1.0f);
-        Vec3 center = new Vec3(entity.getX(), entity.getY() + entity.getBbHeight() * 0.5D, entity.getZ());
-        return occlusionCache.getOrCompute(client.level, client.level.getGameTime(), entity.getId(),
-                () -> {
-                    HitResult hit = client.level.clip(new ClipContext(
-                            eye, center, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
-                    return hit != null && hit.getType() == HitResult.Type.BLOCK;
-                });
     }
 
     static boolean isTarget(LivingEntity entity) {
@@ -109,8 +93,6 @@ public final class ChamsModule implements Module {
 
     @Override
     public void resetState() {
-        occlusionCache.clear();
-        ChamsRenderTypes.clear();
     }
 
     private synchronized void loadConfig() {

@@ -90,8 +90,17 @@ public abstract class MixinClientPacketListener {
     }
 
     @Inject(method = "handleAddEntity", at = @At("RETURN"))
+    private void micx$windowSpawn(ClientboundAddEntityPacket packet, CallbackInfo ci2) {
+        try { var mc2 = Minecraft.getInstance(); if (mc2 != null && mc2.level != null) {
+            dev.micx.micxfabric.WindowSpawnCounterModule.instance().recordBirthPos(packet.getId(), packet.getX(), packet.getY(), packet.getZ());
+            var e2 = mc2.level.getEntity(packet.getId());
+            if (e2 != null) dev.micx.micxfabric.WindowSpawnCounterModule.instance().onEntitySpawn(e2);
+        }} catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "handleAddEntity", at = @At("RETURN"))
     private void micx$golemJoin(ClientboundAddEntityPacket packet, CallbackInfo ci) {
-        String id = packet.getType().toString();
+        String id = String.valueOf(packet.getType());
         if (id.contains("iron_golem") || id.contains("giant")) {
             try { LrIndicatorModule.instance().onGolemJoin(System.currentTimeMillis(), packet.getX(), packet.getY(), packet.getZ()); } catch (Throwable ignored) {}
         }
@@ -99,6 +108,14 @@ public abstract class MixinClientPacketListener {
         if (id.contains("slime") || id.contains("magma_cube")) {
             try { SlimeForecastModule.instance().onSlimeJoined(System.currentTimeMillis()); } catch (Throwable ignored) {}
         }
+        // ZombiesExplorer: spawn order (ZE SpawnPatternNotice.java parity) — entity already added by vanilla before RETURN
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.level != null) {
+                Entity zeEnt = mc.level.getEntity(packet.getId());
+                if (zeEnt != null) dev.micx.micxfabric.ZombiesExplorerModule.instance().onEntityJoin(zeEnt);
+            }
+        } catch (Throwable ignored) {}
     }
 
     @Inject(method = "handleMovePlayer", at = @At("HEAD"))

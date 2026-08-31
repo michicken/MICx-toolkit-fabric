@@ -306,7 +306,7 @@ public final class MicxPanelScreen extends Screen {
                                     && mouseY >= y + 2 && mouseY < y + 18);
                     y += 34;
                     if (submodule.hasConfigScreen()) {
-                        drawAction(graphics, x, y, right - x, 18, "Configure  ›",
+                        drawAction(graphics, x, y, right - x, 18, "Configure >",
                                 mouseX >= x && mouseX < right && mouseY >= y && mouseY < y + 18);
                     }
                 }
@@ -356,7 +356,7 @@ public final class MicxPanelScreen extends Screen {
         }
 
         if (descriptor.hasConfigScreen()) {
-            drawAction(graphics, x, y, right - x, 18, "Configure  ›",
+            drawAction(graphics, x, y, right - x, 18, "Configure >",
                     mouseX >= x && mouseX < right && mouseY >= y && mouseY < y + 18);
         } else {
             graphics.text(font, Component.literal("No extra settings"), x, y + 3, TEXT_DIM);
@@ -618,9 +618,11 @@ public final class MicxPanelScreen extends Screen {
                 listening ? AMBER : TEXT_FAINT);
     }
 
-    /** 捕获一个组合键；重复键忽略，满 3 个自动提交。 */
+    /** 捕获一个组合键；重复键忽略，满 3 个自动提交。1–3 键均合法，不丢弃。 */
     private void captureChordKey(ModuleKeybind keybind, int code) {
         if (code == 0 || keybind == null) return;
+        // ESC 不应被捕获为组合键的一部分（它已在 keyPressed 上层被拦截为确认/取消）
+        if (code == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) return;
         for (int i = 0; i < capturedCount; i++) {
             if (capturedKeys[i] == code) return;
         }
@@ -633,13 +635,10 @@ public final class MicxPanelScreen extends Screen {
     }
 
     private void finishChordCapture(ModuleKeybind keybind) {
-        if (capturedCount == 0) {
-            keybind.clear();
-        } else {
-            int[] codes = new int[KeyChord.MAX_KEYS];
-            System.arraycopy(capturedKeys, 0, codes, 0, capturedCount);
-            keybind.setChordCodes(codes);
-        }
+        if (capturedCount == 0) return;
+        int[] codes = new int[KeyChord.MAX_KEYS];
+        System.arraycopy(capturedKeys, 0, codes, 0, capturedCount);
+        keybind.setChordCodes(codes);
         java.util.Arrays.fill(capturedKeys, 0);
         capturedCount = 0;
     }
@@ -688,10 +687,18 @@ public final class MicxPanelScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (listeningKeybindId != null) {
             if (event.isEscape()) {
-                // Forge 语义：ESC = 提交已捕获（未捕获任何键则解除绑定）
                 ModulePanelDescriptor escapeDescriptor = ModulePanelRegistry.get(listeningKeybindId);
                 if (escapeDescriptor != null && escapeDescriptor.hasKeybind()
                         && escapeDescriptor.keybind().supportsChord()) {
+                    if (capturedCount == 0) {
+                        // 未捕获任何键：ESC 仅退出监听，不改绑定（符合用户预期：C(2/3)→ESC 应保留 C）
+                        listeningKeybindId = null;
+                        java.util.Arrays.fill(capturedKeys, 0);
+                        capturedCount = 0;
+                        errorMessage = null;
+                        return true;
+                    }
+                    // 已有 1–2 键：ESC 提交当前捕获（1–3 键均合法，不丢弃）
                     finishChordCapture(escapeDescriptor.keybind());
                 }
                 listeningKeybindId = null;
@@ -702,7 +709,17 @@ public final class MicxPanelScreen extends Screen {
             if (descriptor != null && descriptor.hasKeybind()) {
                 ModuleKeybind keybind = descriptor.keybind();
                 if (keybind.supportsChord()) {
-                    captureChordKey(keybind, event.key());
+                    int code = event.key();
+                    if (code == 0) return true;
+                    // Enter 确认提交（与 ESC 等效但更直观）
+                    if (code == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER
+                            || code == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+                        finishChordCapture(keybind);
+                        listeningKeybindId = null;
+                        errorMessage = null;
+                        return true;
+                    }
+                    captureChordKey(keybind, code);
                 } else {
                     keybind.setKeyCode(event.key());
                     listeningKeybindId = null;

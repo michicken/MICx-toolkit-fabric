@@ -44,6 +44,7 @@ public final class ModulePanelRegistry {
         meta("sword_block", GROUP_CORE, 10);
         meta("round_timer", GROUP_CORE, 11);
         meta("eco_rate", GROUP_CORE, 12);
+        meta("window_spawn_counter", GROUP_CORE, 13);
         meta("esp", GROUP_VISION, 0);
         meta("spawn_marker", GROUP_VISION, 1);
         meta("golem_marker", GROUP_VISION, 2);
@@ -69,12 +70,14 @@ public final class ModulePanelRegistry {
         meta("chat_copy", GROUP_CHAT, 3);
         meta("auto_text", GROUP_CHAT, 4);
         meta("welcome", GROUP_CHAT, 5);
+        meta("zoom_scope", GROUP_MISC, 0);
         meta("view_hold", GROUP_MISC, 1);
         meta("toggle_sprint", GROUP_MISC, 2);
         meta("player_visibility", GROUP_MISC, 3);
         meta("auto_hide_visuals", GROUP_MISC, 4);
         meta("asr", GROUP_MISC, 6);
         meta("anti_reshift", GROUP_MISC, 7);
+        meta("legacy_sneak_visuals", GROUP_MISC, 5);
 
         GROUPS.put(GROUP_CORE, new GroupMetadata("CORE", "Zombies 核心"));
         GROUPS.put(GROUP_VISION, new GroupMetadata("VISION", "战斗 · 视觉"));
@@ -121,7 +124,14 @@ public final class ModulePanelRegistry {
                                 SimpleModuleScreen.Row.decimal("Radius 半径",
                                         ZombieFadeModule.instance()::getRadius,
                                         ZombieFadeModule.instance()::setRadius, 1, 10,
-                                        "玩家周围该半径（格）内的敌对生物淡化为半透明。"))));
+                                        "玩家周围该半径（格）内的敌对生物淡化为半透明。"),
+                                SimpleModuleScreen.Row.decimal("Alpha 不透明度",
+                                        ZombieFadeModule.instance()::getAlpha,
+                                        ZombieFadeModule.instance()::setAlpha, 0.05, 1,
+                                        "淡化后的不透明度，越小越透明（0.05~1）。"))));
+        real("particle_free", "NoParticles", "粒子屏蔽", GROUP_MISC,
+                "屏蔽所有粒子效果（爆炸/破坏等一切），匹配 1.8.9 的完全关闭语义。",
+                ParticleFreeModule.instance(), null);
         real("revive_aura", "ReviveAura", "自动救人", GROUP_CORE,
                 "队友倒地睡在附近时自动发送救援交互包（纯发包，范围/间隔可配）。",
                 ReviveAuraModule.instance(), parent -> new SimpleModuleScreen(parent,
@@ -179,6 +189,9 @@ public final class ModulePanelRegistry {
                                         GolemMarkerModule.instance()::getAlpha,
                                         v -> GolemMarkerModule.instance().setAlpha((float) v), 0.05, 1,
                                         "X 标记透明度。"))));
+        real("zoom_scope", "ZoomScope", "放大镜", GROUP_MISC,
+                "按住放大镜键在屏幕中央 16:9 放大 2~8x，滚轮调倍率，松开恢复，灵敏度按 k/zoom 缩放。",
+                ZoomScopeModule.instance(), parent -> new ZoomScopePanelScreen(parent, ZoomScopeModule.instance()));
         real("view_hold", "ViewHold", "快捷视角", GROUP_MISC,
                 "按住绑定键切到背后/正面视角，松开恢复第一人称；正面视角支持俯仰镜像（需先绑定按键）。",
                 ViewHoldModule.instance(), ViewHoldConfigScreen::new);
@@ -250,6 +263,23 @@ public final class ModulePanelRegistry {
         real("zombies_assist", "ZombiesAssist", "僵尸助手", GROUP_CORE,
                 "波次、僵尸剩余、Power-up、警报、自动行为和 Alien Arcadium 状态 HUD。",
                 ZombiesAssistModule.instance(), ZombiesAssistConfigScreen::new);
+        real("window_spawn_counter", "WindowSpawns", "刷怪窗口", GROUP_CORE,
+                "11 窗按出生点统计的刷怪量（P1/P2/P3/P4/P5/ULT/ALT/CL/CR/BL/BR），波次内累积、跨波次清，HUD 可拖动。TOO 生成时该窗显示 T 全红，顶部 TOO IN 持续 3 波。",
+                WindowSpawnCounterModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        WindowSpawnCounterModule.instance(), "WindowSpawns", "刷怪窗口 · TOO 警报",
+                        List.of(
+                                SimpleModuleScreen.Row.toggle("TOO 窗口警报",
+                                        WindowSpawnCounterModule.instance()::tooWindowAlert,
+                                        WindowSpawnCounterModule.instance()::setTooWindowAlert,
+                                        "TOO 出生窗标红 T / TOO IN 列表 / 中央提示补窗名与米数。"),
+                                SimpleModuleScreen.Row.toggle("  /pc 队内播报",
+                                        WindowSpawnCounterModule.instance()::tooWindowPc,
+                                        WindowSpawnCounterModule.instance()::setTooWindowPc,
+                                        "按 r58/r59/r101 规则自动 /pc，最近玩家判定，每条均可单独关。"),
+                                SimpleModuleScreen.Row.toggle("  本地叮声",
+                                        WindowSpawnCounterModule.instance()::tooWindowSound,
+                                        WindowSpawnCounterModule.instance()::setTooWindowSound,
+                                        "每条紫字本地提示附 note.pling 叮声。"))));
         real("anti_axe", "AntiAXE", "防误领 Puncher", GROUP_CORE,
                 "抽到 The Puncher 时锁定 Lucky Chest 领取区右键 10.5 秒，防误领；领到其他物品自动解除。",
                 AntiAxeModule.instance(), parent -> new SimpleModuleScreen(parent,
@@ -324,6 +354,8 @@ public final class ModulePanelRegistry {
 
         real("player_visibility", "PlayerVisibility", "玩家隐身", GROUP_MISC,
                 "隐藏或淡化其他玩家，视野更清爽", PlayerVisibilityModule.instance(), PlayerVisibilityConfigScreen::new);
+        real("legacy_sneak_visuals", "LegacySneak", "潜行高度 1.8", GROUP_MISC,
+                "潜行视觉抬回 1.8 高度（仅视觉，1.5 格缝照样能钻）。", LegacySneakVisualsModule.instance(), null);
         real("toggle_sprint", "ToggleSprint", "疾跑切换", GROUP_MISC,
                 "一键锁定 Sprint，无需长按前进键", ToggleSprintModule.instance(), ToggleSprintConfigScreen::new);
         real("chat_cleaner", "ChatCleaner", "聊天清理", GROUP_MISC,
@@ -339,6 +371,48 @@ public final class ModulePanelRegistry {
                 "绑定快捷键立即发送预设消息到聊天", AutoTextModule.instance(), AutoTextConfigScreen::new);
         real("asr", "ASR", "语音输入", GROUP_MISC,
                 "按住 PTT 录音并将识别结果发送到聊天。", AsrModule.instance(), AsrConfigScreen::new);
+        real("zombies_explorer", "ZombiesExplorer", "僵尸标记", GROUP_CORE,
+                "Powerup/BadHeadshot 标记：必出红/预测粉/最后怪绿/线上黄，线框盒+头顶标签。",
+                ZombiesExplorerModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        ZombiesExplorerModule.instance(), "ZombiesExplorer", "僵尸标记 · ZE 移植",
+                        List.of(
+                                SimpleModuleScreen.Row.toggle("Powerup Detector",
+                                        ZombiesExplorerModule.instance()::getPowerupDetector,
+                                        ZombiesExplorerModule.instance()::setPowerupDetector,
+                                        "按波次识别 Powerup 归属怪，必出暗红/预测亮红。"),
+                                SimpleModuleScreen.Row.toggle("BadHeadshot Detector",
+                                        ZombiesExplorerModule.instance()::getBadHeadShotDetector,
+                                        ZombiesExplorerModule.instance()::setBadHeadShotDetector,
+                                        "标记本回合特殊怪（绿）。"),
+                                SimpleModuleScreen.Row.toggle("OnLine 黄线",
+                                        ZombiesExplorerModule.instance()::getBadHeadShotOnLine,
+                                        ZombiesExplorerModule.instance()::setBadHeadShotOnLine,
+                                        "准心穿过最后怪时沿线怪标黄。"),
+                                SimpleModuleScreen.Row.toggle("NameTag 标签",
+                                        ZombiesExplorerModule.instance()::getNameTag,
+                                        ZombiesExplorerModule.instance()::setNameTag,
+                                        "头顶文字标签（Powerup / Bad Headshot）。"),
+                                SimpleModuleScreen.Row.integer("Predictor 预测数",
+                                        ZombiesExplorerModule.instance()::getPowerupPredictor,
+                                        v -> ZombiesExplorerModule.instance().setPowerupPredictor(v), 0, 3,
+                                        "未知波次时额外预测几只（0-3，ZE 原版滑条）。"))));
+        real("wave_spawn_sound", "WaveSpawnSound", "波次音效", GROUP_CORE,
+                "每波刷怪 pling 提示、最终波 orb、DE/BB 终波前 3-2-1 倒计时（SST 移植）。",
+                WaveSpawnSoundModule.instance(), parent -> new SimpleModuleScreen(parent,
+                        WaveSpawnSoundModule.instance(), "WaveSpawnSound", "波次音效 · SST 移植",
+                        List.of(
+                                SimpleModuleScreen.Row.toggle("AA 波次音",
+                                        WaveSpawnSoundModule.instance()::getAaSound,
+                                        WaveSpawnSoundModule.instance()::setAaSound,
+                                        "Alien Arcadium 每波提示音。"),
+                                SimpleModuleScreen.Row.toggle("DE/BB 波次音",
+                                        WaveSpawnSoundModule.instance()::getDebbSound,
+                                        WaveSpawnSoundModule.instance()::setDebbSound,
+                                        "Dead End / Bad Blood / Lab / Prison 每波提示音。"),
+                                SimpleModuleScreen.Row.toggle("3-2-1 倒计时",
+                                        WaveSpawnSoundModule.instance()::getDebbCountdown,
+                                        WaveSpawnSoundModule.instance()::setDebbCountdown,
+                                        "终波前 3-2-1 秒倒计时 pling（默认关）。"))));
         blocked("swing_chat", "SwingChat", "SwingChat", GROUP_MISC,
                 "26.2/GLFW 原生支持系统输入法，Forge 的 Swing 外部输入框（LWJGL2 IME 变通）不再需要。");
         blocked("auto_reshift", "AutoReShift", "自动 Re-Shift", GROUP_MISC,
@@ -392,11 +466,11 @@ public final class ModulePanelRegistry {
         if (chord != null) {
             return new ModuleChordAdapter(id, desc, module::primaryChord, codes -> setPrimaryChord(module, codes));
         }
+        // zoom_scope MUST use single-key adapter; other single-binding modules also use single-key adapter
         InputBinding single = module.primaryBinding();
         if (single != null) {
-            return new ModuleChordAdapter(id, desc,
-                    () -> KeyChord.single(module.primaryBinding().code()),
-                    codes -> setPrimarySingle(module, KeyChord.primary(codes)));
+            String singleDesc = "主快捷键（单键，空为未绑定）";
+            return new ModuleKeybindAdapter(id, singleDesc, module::primaryBinding, code -> setPrimarySingle(module, code));
         }
         // 无自带绑定的模块：组合键存面板侧（micx-panel-bindings.properties），HotkeyRuntime 统一触发开关
         return new ModuleChordAdapter(id, desc,
@@ -458,6 +532,7 @@ public final class ModulePanelRegistry {
         else if (module instanceof ToggleSprintModule m) m.setKeyCode(code);
         else if (module instanceof RightClickerModule m) m.setKeyCode(code);
         else if (module instanceof ViewHoldModule m) m.setKeyCode(code);
+        else if (module instanceof ZoomScopeModule m) m.setKeyCode(code);
         else if (module instanceof SkillCastModule m) m.setKeyCode(code);
         else if (module instanceof KeyboardClickerModule m) m.setToggleKey(code);
         else if (module instanceof TeamSyncModule m) { m.config().toggleKeyCode = code; m.saveConfig(); }

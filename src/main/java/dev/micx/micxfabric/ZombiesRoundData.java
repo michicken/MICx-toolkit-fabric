@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** Forge AAData round text and fixed wave tables used by the automatic /pc announcement. */
-final class ZombiesRoundData {
+public final class ZombiesRoundData {
     private static final int[] EMPTY = new int[0];
     private static final long MOB_CLEAR_MS = 300_000L;
     private static final Map<Integer, int[]> TOO_WAVES = new HashMap<>();
@@ -184,20 +184,38 @@ final class ZombiesRoundData {
         return advice == null ? null : "ECO " + advice;
     }
 
+    /**
+     * Forge AAData.roundTypeHint 逐字符对齐（七类 § 色码）。
+     * 优先级：LS > SLIME_BOSS > SLIME_GIANT > SLIME > MONEY > TOO > ULT_SQUAT。
+     * 注意 SLIME_BOSS(25/35) 只在 Fabric 映射 25/35（Forge 的 56/57 走 MONEY）。
+     */
     static String roundTypeHint(int round) {
-        round = normalize(round);
-        if (round == 70) return "LS ROUND: block + LR, 3+1";
-        if (round == 39 || round == 43 || round == 47 || round == 52) {
-            return "SLIME + GIANT: block until giant";
+        if (isLsRound(round)) return "\u00a7c\u00a7lLS ROUND \u00a7r\u00a77block + LR, 3+1";
+        int n = normalize(round);
+        if (n == 25 || n == 35) return "\u00a76\u00a7lMEGA SLIME \u00a7r\u00a77reward round, free gold";
+        if (n == 39 || n == 43 || n == 47 || n == 52) {
+            return "\u00a7e\u00a7lSLIME+GIANT \u00a7r\u00a77block until giant";
         }
-        if (round == 25 || round == 35 || round == 56 || round == 57) {
-            return "REWARD ROUND: free gold";
+        if (n == 18 || n == 23 || n == 29 || n == 31 || n == 33 || n == 34) {
+            return "\u00a7a\u00a7lSLIME \u00a7r\u00a77grow! no insta kill";
         }
-        if (round == 40 || round == 45 || round == 48 || round == 59
-                || round == 64 || round == 68 || round == 69) {
-            return "TOO: watch The Old One";
+        if (n == 46 || n == 51 || n == 56 || n == 57) return "\u00a76FREE GOLD \u00a77squat cc";
+        if (n == 40 || n == 44 || n == 59) return "\u00a7d\u00a7lTOO \u00a7r\u00a77watch for The Old One";
+        if (n == 45 || n == 48 || n == 50 || n == 53 || n == 54 || n == 55
+                || n == 58 || n == 60) {
+            return "\u00a7bULT/ALT \u00a77squat + 3rd+LR";
         }
         return null;
+    }
+
+    /** 波次数组转逗号串（Forge join 语义）。 */
+    static String join(int[] waves) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < waves.length; i++) {
+            if (i > 0) b.append(',');
+            b.append(waves[i]);
+        }
+        return b.toString();
     }
 
     static boolean isLsRound(int round) {
@@ -290,7 +308,7 @@ final class ZombiesRoundData {
     }
 
     /** Returns the complete Forge wave schedule without applying text-table normalization. */
-    static int[] waveTimes(int round) {
+    public static int[] waveTimes(int round) {
         return ZombiesWaveSchedule.waveTimes(round);
     }
 

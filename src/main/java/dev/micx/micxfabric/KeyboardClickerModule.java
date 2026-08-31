@@ -40,12 +40,6 @@ public final class KeyboardClickerModule implements Module {
     private static final long MODE_B_LEFT_CLICK_MS = 40L;
     /** 待执行左键最长等待（ms），超时放弃防悬挂。 */
     private static final long MODE_B_PENDING_MAX_DELAY_MS = 500L;
-    /* ---- 威胁感知豁免 ---- */
-    private static final float THREAT_RANGE_MIN = 1.0f;
-    private static final float THREAT_RANGE_MAX = 8.0f;
-    private static final float DEFAULT_THREAT_RANGE = 4.0f;
-    /** 豁免回合内威胁扫描间隔（tick）：每 5 tick(~250ms) 扫一次，中间用缓存。 */
-    private static final int THREAT_SCAN_INTERVAL_TICKS = 5;
     private static final long EXEMPT_NOTICE_INTERVAL_MS = 10_000L;
     private static final int DOWN_NORMAL = 0;
     private static final int DOWN_DOWNED = 1;
@@ -57,19 +51,18 @@ public final class KeyboardClickerModule implements Module {
     private int sequenceIndex;
     private long lastClick;
     private long lastNewGameRoundStartMs;
+    /** 1.8.9 对齐：按 1 立即停连点（paused），按 2/3/4 恢复；避免“按一次只停、再按才切”的两步操作。 */
+    private boolean paused;
+    private final boolean[] hotbarPrevDown = new boolean[4];
     private int toggleKey = DEFAULT_TOGGLE_KEY;
     private int modeKey = DEFAULT_MODE_KEY;
     private int clickInterval = 50;
     private boolean rightClickTrigger;
     /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补左键。 */
     private boolean jamProtectModeB;
-    /** 智能豁免总开关：r59/70/80/90/100/101 威胁贴身时停用防卡弹链路。 */
+    /** 智能豁免总开关：准星指向 TOO 时全局停用防卡弹。 */
     private boolean jamExemptEnabled = true;
-    /** 威胁扫描距离（格）。 */
-    private float threatRange = DEFAULT_THREAT_RANGE;
     private final JamExemptState jamExempt = new JamExemptState();
-    private boolean threatNearby;
-    private int threatScanCounter;
     private long lastExemptNoticeAt;
     /* ---- 模式 B 待执行左键状态 ---- */
     private int pendingLeftClickSlot = -1;
@@ -141,6 +134,7 @@ public final class KeyboardClickerModule implements Module {
 
     @Override
     public void onPrimaryPressed(Minecraft client, boolean newlyEnabled) {
+        if (paused) paused = false;
         if (modeIndex == 0) modeIndex = pendingMode;
         else modeIndex = 0;
         sequenceIndex = 0;
@@ -183,13 +177,15 @@ public final class KeyboardClickerModule implements Module {
         advanceProtectionSequence(client, now);
         advanceDownJamProtection(client, now);
         resetClickerModesOnNewGame();
+        if (enabled) adaptForGoldenShovel(client);
         updateJamExempt(client, now);
         checkJamDetection(client, now);
         checkDownedJamDetection(client, now);
 
+        pollHotbarPause(client);
         if (pendingProtection != null || downJamState == DOWN_PROTECTING) return;
         if (now < stuckPauseUntil) return;
-        if (modeIndex == 0 || (rightClickTrigger && !client.options.keyUse.isDown())) return;
+        if (modeIndex == 0 || paused || (rightClickTrigger && !client.options.keyUse.isDown())) return;
         // 模式 B 触发前兆后的 90ms 快速切走窗口
         if (now - lastClick < (modeBSwitch90 ? MODE_B_SWITCH_MS : clickInterval)) return;
 
@@ -243,80 +239,101 @@ public final class KeyboardClickerModule implements Module {
         pendingLeftClickSetAt = 0L;
     }
 
-    /**
-     * 威胁感知豁免（r59/70/80/90/100/101）：进入/离开豁免时各发一次聊天提醒（10s 节流）。
-     * 豁免期间 checkJamDetection / 保护序列 / 模式 B 左键均直接跳过。
-     */
     private void updateJamExempt(Minecraft client, long now) {
         advancePendingLeftClick(client, now);
         if (!jamExemptEnabled) {
             if (jamExempt.isExempt()) jamExempt.reset();
-            threatNearby = false;
-            threatScanCounter = 0;
             return;
         }
-        int round = ZombiesTracker.instance().round();
-
-        // 性能：非豁免回合零扫描；豁免回合内每 THREAT_SCAN_INTERVAL_TICKS tick 扫一次，
-        // 中间 tick 复用缓存结果，避免状态机因"非扫描 tick 无结果"误判威胁消失。
-        boolean threat = false;
-        if (JamExemptState.isExemptRound(round)) {
-            if (threatScanCounter++ % THREAT_SCAN_INTERVAL_TICKS == 0) {
-                threatNearby = hasThreatInRange(client);
-            }
-            threat = threatNearby;
-        } else {
-            threatScanCounter = 0;
-            threatNearby = false;
-        }
-
-        JamExemptState.Event event = jamExempt.observe(round, threat);
+        boolean crosshairOnToo = isCrosshairOnToo(client);
+        JamExemptState.Event event = jamExempt.observeGlobal(crosshairOnToo);
         if (event == JamExemptState.Event.ENTERED) {
-            // 取消进行中的保护序列并恢复原槽，避免豁免期间残留一次切槽
             if (pendingProtection != null) {
                 JamProtectionSequence sequence = pendingProtection;
                 int previous = sequence.previousSlot();
                 if (previous >= 0 && previous <= 8) queueHotbarSlot(previous);
                 pendingProtection = null;
             }
-            // 清空耐久跟踪，恢复时重新建立 150ms 观察窗口
             slotVeryLowSince.clear();
             slotLastDamage.clear();
-            // 模式 B：取消悬挂的待执行左键与 90ms 覆盖（豁免期间不左键）
             pendingLeftClickSlot = -1;
             pendingLeftClickAt = 0L;
             pendingLeftClickSetAt = 0L;
             modeBSwitch90 = false;
-            sendJamExemptNotice(client, "§e[KeyboardClicker] §c防卡弹已停用（第"
-                    + jamExempt.exemptRound() + "回合，怪物贴身）");
+            sendJamExemptNotice(client, "§e[KeyboardClicker] §c防卡弹已停用（准星指向 TOO）");
         } else if (event == JamExemptState.Event.EXITED) {
             sendJamExemptNotice(client, "§e[KeyboardClicker] §a防卡弹已恢复");
         }
     }
 
-    /**
-     * 攻击范围内是否存在怪物（仅豁免回合内被调用，节流后每 ~250ms 一次）。
-     * 敌对判定与 ESP 同口径：Monster（僵尸/史莱姆/岩浆/巨人…）+ 铁傀儡 + 狼。
-     */
-    private boolean hasThreatInRange(Minecraft client) {
+    private boolean isCrosshairOnToo(Minecraft client) {
         if (client == null || client.level == null || client.player == null) return false;
-        double rangeSq = (double) threatRange * threatRange;
         try {
-            for (net.minecraft.world.entity.Entity entity : client.level.entitiesForRendering()) {
-                if (!(entity instanceof net.minecraft.world.entity.LivingEntity living)) continue;
-                if (!(living instanceof net.minecraft.world.entity.monster.Monster)
-                        && !(living instanceof net.minecraft.world.entity.animal.golem.IronGolem)
-                        && !(living instanceof net.minecraft.world.entity.animal.wolf.Wolf)) {
-                    continue;
-                }
-                double dx = living.getX() - client.player.getX();
-                double dy = living.getY() - client.player.getY();
-                double dz = living.getZ() - client.player.getZ();
-                if (dx * dx + dy * dy + dz * dz <= rangeSq) return true;
+            net.minecraft.world.phys.Vec3 eye = client.player.getEyePosition(1.0f);
+            net.minecraft.world.phys.Vec3 look = client.player.getViewVector(1.0f);
+            java.util.List<net.minecraft.world.entity.Entity> entities = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
+            for (net.minecraft.world.entity.Entity e : client.level.entitiesForRendering()) entities.add(e);
+            double rayLen = 1.0;
+            for (net.minecraft.world.entity.Entity ent : entities) {
+                if (!(ent instanceof net.minecraft.world.entity.monster.zombie.Zombie zombie)) continue;
+                if (zombie.isDeadOrDying() || zombie.getHealth() <= 0f || !zombie.isBaby()) continue;
+                net.minecraft.world.phys.Vec3 c = new net.minecraft.world.phys.Vec3(ent.getX(), ent.getY() + ent.getBbHeight() * 0.5, ent.getZ());
+                double d = eye.distanceTo(c) + Math.max(ent.getBbWidth(), ent.getBbHeight()) + 1.0;
+                if (!Double.isNaN(d) && !Double.isInfinite(d)) rayLen = Math.max(rayLen, d);
             }
+            net.minecraft.world.phys.Vec3 reach = eye.add(look.x * rayLen, look.y * rayLen, look.z * rayLen);
+            double best = Double.POSITIVE_INFINITY;
+            net.minecraft.world.entity.monster.zombie.Zombie bestToo = null;
+            net.minecraft.world.phys.Vec3 bestHit = null;
+            for (net.minecraft.world.entity.Entity ent : entities) {
+                if (!(ent instanceof net.minecraft.world.entity.monster.zombie.Zombie zombie)) continue;
+                if (zombie.isDeadOrDying() || zombie.getHealth() <= 0f) continue;
+                if (ent.hasPassenger(client.player) || client.player.hasPassenger(ent)) continue;
+                net.minecraft.world.phys.AABB bb = ent.getBoundingBox().inflate(0.3, 0.3, 0.3);
+                java.util.Optional<net.minecraft.world.phys.Vec3> hit = bb.clip(eye, reach);
+                net.minecraft.world.phys.Vec3 hitVec = bb.contains(eye) ? eye : hit.orElse(null);
+                if (hitVec == null) continue;
+                double d2 = eye.distanceToSqr(hitVec);
+                if (d2 >= best) continue;
+                boolean isToo = isFabricToo(zombie);
+                if (!isToo) continue;
+                best = d2;
+                bestToo = zombie;
+                bestHit = hitVec;
+            }
+            if (bestToo == null || bestHit == null) return false;
+            net.minecraft.world.phys.HitResult wall = client.level.clip(
+                    new net.minecraft.world.level.ClipContext(eye, bestHit,
+                            net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                            net.minecraft.world.level.ClipContext.Fluid.NONE, client.player));
+            if (wall != null && wall.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                    && wall.getLocation() != null && eye.distanceToSqr(wall.getLocation()) < best - 1e-6) return false;
+            return true;
         } catch (RuntimeException ignored) {
+            return false;
         }
-        return false;
+    }
+
+    private boolean isFabricToo(net.minecraft.world.entity.monster.zombie.Zombie zombie) {
+        if (zombie == null || !zombie.isBaby()) return false;
+        net.minecraft.world.item.ItemStack chest = zombie.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
+        if (chest == null || chest.isEmpty()) return false;
+        Integer color = dyedColorForToo(chest);
+        if (color == null) return false;
+        int col = color;
+        int target = 43570;
+        int tol = 500;
+        int slime = 14381203;
+        if (Math.abs(col - slime) < 500) return false;
+        if (Math.abs(col - target) < tol) return true;
+        int r = (col >> 16) & 0xFF, g = (col >> 8) & 0xFF, b = col & 0xFF;
+        return g > 50 && g * 100 > r * 115 && g * 100 > b * 115;
+    }
+
+    private static Integer dyedColorForToo(net.minecraft.world.item.ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        net.minecraft.world.item.component.DyedItemColor dyed = stack.get(net.minecraft.core.component.DataComponents.DYED_COLOR);
+        return dyed == null ? null : dyed.rgb();
     }
 
     private void sendJamExemptNotice(Minecraft client, String text) {
@@ -473,11 +490,85 @@ public final class KeyboardClickerModule implements Module {
                 || tracker.roundStartMs() == lastNewGameRoundStartMs) return;
         lastNewGameRoundStartMs = tracker.roundStartMs();
         loadConfig();
-        pendingMode = enabledModes().stream().findFirst().orElse(1);
+        // 1.8.9 对齐：新开局强制恢复 23+234，其余关；modeIndex 清 OFF 不自动开
+        config.setProperty("mode23", Boolean.toString(true));
+        config.setProperty("mode234", Boolean.toString(true));
+        config.setProperty("mode24", Boolean.toString(false));
+        config.setProperty("mode34", Boolean.toString(false));
+        saveConfig();
+        pendingMode = 1;
         modeIndex = 0;
+        paused = false;
         sequenceIndex = 0;
         lastClick = 0L;
+        java.util.Arrays.fill(hotbarPrevDown, false);
+        goldAdaptDone = false;
         resetProtectionState();
+    }
+
+    private boolean goldAdaptDone;
+    private long nextGoldAdaptAt;
+
+    private void adaptForGoldenShovel(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) return;
+        long now = System.currentTimeMillis();
+        if (now < nextGoldAdaptAt) return;
+        nextGoldAdaptAt = now + 400L;
+        // 扫 1~3 槽的金铲子（hotbar 索引 1/2/3，对应 2/3/4 键）
+        int shovelSlot = -1;
+        for (int i = 1; i <= 3; i++) {
+            ItemStack s = client.player.getInventory().getItem(i);
+            if (s != null && !s.isEmpty() && isGoldenShovel(s)) { shovelSlot = i; break; }
+        }
+        if (shovelSlot < 0) { goldAdaptDone = false; return; }
+        if (goldAdaptDone) return;
+        // 金铲子存在：三键仍 234；双键关掉命中金铲子的那条，换成另一条非金铲子组合
+        // 例如金铲子在 2 → 双键切成 34；命中 3 → 24；命中 4 → 23
+        int targetDual;
+        if (shovelSlot == 1) targetDual = 4;       // 34
+        else if (shovelSlot == 2) targetDual = 3;  // 24
+        else targetDual = 1;                       // 23
+        boolean needSave = false;
+        loadConfig();
+        boolean want23 = targetDual == 1;
+        boolean want24 = targetDual == 3;
+        boolean want34 = targetDual == 4;
+        if (want23 != ConfigProperties.bool(config, "mode23", true) ||
+                !ConfigProperties.bool(config, "mode234", true) ||
+                want24 != ConfigProperties.bool(config, "mode24", false) ||
+                want34 != ConfigProperties.bool(config, "mode34", false)) {
+            config.setProperty("mode23", Boolean.toString(want23));
+            config.setProperty("mode234", Boolean.toString(true));
+            config.setProperty("mode24", Boolean.toString(want24));
+            config.setProperty("mode34", Boolean.toString(want34));
+            needSave = true;
+        }
+        if (needSave) saveConfig();
+        // pending/running 指向也要对齐
+        if (modeIndex != 0) {
+            // 运行中：若当前双键恰是命中金铲子的那条，立刻切走
+            if ((shovelSlot == 1 && modeIndex == 1) ||
+                    (shovelSlot == 2 && modeIndex == 3) ||
+                    (shovelSlot == 3 && modeIndex == 1 && targetDual != 1)) {
+                // 1.8.9 语义：金铲子在 4(索引3) 且当前是 23 → 换 34
+                modeIndex = targetDual;
+                pendingMode = targetDual;
+                sequenceIndex = 0;
+                lastClick = 0L;
+            }
+        } else {
+            pendingMode = targetDual;
+        }
+        goldAdaptDone = true;
+    }
+
+    private static boolean isGoldenShovel(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        // 26.2 未混淆：直接比注册名最稳（避免 Items 导入跨版本漂移）
+        String id = stack.getItem().toString();
+        // Fallback 2：读翻译键里含 golden_shovel 也算
+        String k = stack.getItem().getDescriptionId();
+        return k != null && k.contains("golden_shovel") || "golden_shovel".equals(id);
     }
 
     private void emitSkipDiagnostic(int slot, ItemStack item, long now) {
@@ -522,6 +613,41 @@ public final class KeyboardClickerModule implements Module {
         for (int i = 0; i < preDownStackSize.length; i++) preDownStackSize[i] = 0;
     }
 
+    /** 1.8.9 对齐：按 1 立即停；按 2/3/4 仅当 paused 时恢复，避免干扰正常手操。 */
+    private void pollHotbarPause(Minecraft client) {
+        if (!enabled || client == null || client.getWindow() == null) return;
+        long handle = client.getWindow().handle();
+        boolean[] cur = new boolean[4];
+        for (int i = 0; i < 4; i++) {
+            cur[i] = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_1 + i) == GLFW.GLFW_PRESS;
+        }
+        // 按 1：上升沿立即暂停并飞到槽位 1（同帧完成，GUI/暂停时不触发）
+        if (cur[0] && !hotbarPrevDown[0] && modeIndex > 0 && client.gui.screen() == null && !client.isPaused()) {
+            paused = true;
+            modeIndex = 0;
+            sequenceIndex = 0;
+            lastClick = System.currentTimeMillis() + 1000L;
+            pendingLeftClickSlot = -1;
+            pendingLeftClickAt = 0L;
+            pendingLeftClickSetAt = 0L;
+            modeBSwitch90 = false;
+            queueHotbarSlot(0);
+        } else if (!cur[0] && hotbarPrevDown[0]) {
+            // 松 1 不做事；下一段处理按 2/3/4 恢复
+        }
+        // 按 2/3/4：仅当 paused 时恢复待命模式，上升沿生效
+        for (int i = 1; i < 4; i++) {
+            if (cur[i] && !hotbarPrevDown[i] && paused) {
+                paused = false;
+                modeIndex = pendingMode;
+                sequenceIndex = 0;
+                lastClick = 0L;
+                break;
+            }
+        }
+        System.arraycopy(cur, 0, hotbarPrevDown, 0, 4);
+    }
+
     private int selectedSlot(Minecraft client) {
         return client.player.getInventory().getSelectedSlot();
     }
@@ -540,6 +666,10 @@ public final class KeyboardClickerModule implements Module {
         modeIndex = 0;
         sequenceIndex = 0;
         lastClick = 0L;
+        paused = false;
+        java.util.Arrays.fill(hotbarPrevDown, false);
+        goldAdaptDone = false;
+        nextGoldAdaptAt = 0L;
         resetProtectionState();
     }
 
@@ -653,16 +783,6 @@ public final class KeyboardClickerModule implements Module {
         saveConfig();
     }
 
-    public float getThreatRange() {
-        loadConfig();
-        return threatRange;
-    }
-
-    public void setThreatRange(float value) {
-        threatRange = Math.max(THREAT_RANGE_MIN, Math.min(THREAT_RANGE_MAX, value));
-        saveConfig();
-    }
-
     private void clearJamSlotAll() {
         slotVeryLowSince.clear();
         slotLastDamage.clear();
@@ -689,8 +809,6 @@ public final class KeyboardClickerModule implements Module {
         rightClickTrigger = ConfigProperties.bool(config, "rightClickTrigger", false);
         jamProtectModeB = ConfigProperties.bool(config, "jamProtectModeB", false);
         jamExemptEnabled = ConfigProperties.bool(config, "jamExemptEnabled", true);
-        threatRange = (float) ConfigProperties.real(config, "threatRange",
-                DEFAULT_THREAT_RANGE, THREAT_RANGE_MIN, THREAT_RANGE_MAX);
         pendingMode = enabledModesFromConfig().stream().findFirst().orElse(1);
     }
 
@@ -711,7 +829,6 @@ public final class KeyboardClickerModule implements Module {
         properties.setProperty("rightClickTrigger", Boolean.toString(rightClickTrigger));
         properties.setProperty("jamProtectModeB", Boolean.toString(jamProtectModeB));
         properties.setProperty("jamExemptEnabled", Boolean.toString(jamExemptEnabled));
-        properties.setProperty("threatRange", Float.toString(threatRange));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("keyboard-clicker.properties"), properties,
                     "MICx KeyboardClicker configuration");

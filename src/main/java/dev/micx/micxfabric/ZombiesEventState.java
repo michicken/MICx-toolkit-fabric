@@ -88,7 +88,10 @@ public final class ZombiesEventState {
                     if (!"dead".equals(previous)) totalDeaths++;
                 }
             }
-            case POWERUP_ACTIVATED -> powerUps.activate(event.powerup(), event.durationSeconds(), now);
+            case POWERUP_ACTIVATED -> {
+                powerUps.activate(event.powerup(), event.durationSeconds(), now);
+                try { dev.micx.micxfabric.ZombiesPuRoundsLatch.onPowerup(event.powerup(), now); } catch (Throwable ignored) {}
+            }
             case FAST_REVIVE -> updateLocalRescue(event, now);
             case GAME_OVER -> gameOverPending = true;
             default -> {

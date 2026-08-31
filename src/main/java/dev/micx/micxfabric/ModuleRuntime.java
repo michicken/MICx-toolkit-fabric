@@ -52,10 +52,16 @@ public final class ModuleRuntime {
         register(MagnetModule.instance());
         register(AntiReshiftModule.instance());
         register(AntiAxeModule.instance());
+        register(LegacySneakVisualsModule.instance());
+        register(ParticleFreeModule.instance());
         register(RoundTimerModule.instance());
         register(EcoRateModule.instance());
         register(RightClickerModule.instance());
         register(NoReloadModule.instance());
+        register(ZombiesExplorerModule.instance());
+        register(WindowSpawnCounterModule.instance());
+        register(WaveSpawnSoundModule.instance());
+        register(ZoomScopeModule.instance());
         registerMutex("noreload", "keyboard_clicker");
         for (Module module : MODULES.values()) {
             boolean want = ModuleStateStore.get(module.id(), module.defaultEnabled());
@@ -114,10 +120,13 @@ public final class ModuleRuntime {
         }
     }
 
+    // [micx-tickprof] 诊断已移除
+
     public static void tick(Minecraft client) {
         HotkeyRuntime.tick(client);
         for (Module module : MODULES.values()) {
-            if (module.enabled()) module.tick(client);
+            if (!module.enabled()) continue;
+            module.tick(client);
         }
     }
 

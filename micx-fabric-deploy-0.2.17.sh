@@ -2,8 +2,8 @@
 set -euo pipefail
 
 INST="/Users/micx/Library/Application Support/PrismLauncher/instances/26.2"
-JAR="/Users/micx/MICx-toolkit/fabric/build/libs/micx-fabric-0.2.0.jar"
-BACKUP_ROOT="/Users/micx/MICx-toolkit/.zcode/backups/fabric-deploy-0.2.0-$(date +%Y%m%d-%H%M%S)"
+JAR="/Users/micx/MICx-toolkit/fabric/build/libs/micx-fabric-0.2.17.jar"
+BACKUP_ROOT="/Users/micx/MICx-toolkit/.zcode/backups/fabric-deploy-0.2.17-$(date +%Y%m%d-%H%M%S)"
 
 printf '%s\n' '== 检查游戏是否运行...'
 if pgrep -f '[P]ris[m]Launcher|[M]inecraft' >/dev/null 2>&1; then
@@ -12,13 +12,13 @@ if pgrep -f '[P]ris[m]Launcher|[M]inecraft' >/dev/null 2>&1; then
 fi
 printf '%s\n' 'OK: 游戏未运行'
 
-printf '%s\n' '== 检查 0.2.0 Fabric JAR...'
+printf '%s\n' '== 检查 0.2.17 Fabric JAR...'
 if [[ ! -f "$JAR" ]]; then
     printf '错误: %s 不存在\n' "$JAR"
     exit 1
 fi
-if ! unzip -p "$JAR" fabric.mod.json 2>/dev/null | grep -q '"version"[[:space:]]*:[[:space:]]*"0.2.0"'; then
-    printf '%s\n' '错误: JAR 内 fabric.mod.json 不是 0.2.0'
+if ! unzip -p "$JAR" fabric.mod.json 2>/dev/null | grep -q '"version"[[:space:]]*:[[:space:]]*"0.2.17"'; then
+    printf '%s\n' '错误: JAR 内 fabric.mod.json 不是 0.2.17'
     exit 1
 fi
 SHA=$(shasum -a 256 "$JAR" | awk '{print $1}')
@@ -33,11 +33,11 @@ mkdir -p "$MODS_DIR"
 while IFS= read -r -d '' old; do
     mv "$old" "$BACKUP_ROOT/$(basename "$old")"
 done < <(find "$MODS_DIR" -maxdepth 1 -type f \( -name 'micx-fabric-*.jar*' -o -name 'MICx-toolkit-*.jar*' \) -print0)
-cp -p "$JAR" "$MODS_DIR/micx-fabric-0.2.0.jar"
-cp -p "$JAR" "$HOME/Desktop/micx-fabric-0.2.0.jar"
+cp -p "$JAR" "$MODS_DIR/micx-fabric-0.2.17.jar"
+cp -p "$JAR" "$HOME/Desktop/micx-fabric-0.2.17.jar"
 
 printf '%s\n' '== 部署完成 =='
-printf 'mods: %s/micx-fabric-0.2.0.jar\n' "$MODS_DIR"
-printf 'Desktop: %s\n' "$HOME/Desktop/micx-fabric-0.2.0.jar"
+printf 'mods: %s/micx-fabric-0.2.17.jar\n' "$MODS_DIR"
+printf 'Desktop: %s\n' "$HOME/Desktop/micx-fabric-0.2.17.jar"
 printf '旧文件备份: %s\n' "$BACKUP_ROOT"
 printf 'SHA-256: %s\n' "$SHA"

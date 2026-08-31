@@ -33,17 +33,23 @@ public final class PowerUpTimer {
         drops.remove(entityId);
     }
 
+    /**
+     * 1.8.9 自计时对齐：同一 kind 刷新/续时不做“相关去重”。
+     * 外部若在双 PowerUp 叠加时重补同一 kind 的 activate，本地计时以“最长剩余”为准，
+     * 因此不管同 kind 多次信号，只保留到期最晚的那一把（max），绝不丢时长更长那条。
+     */
     public void activate(String kind, int durationSeconds, long now) {
         if (kind == null || kind.isBlank() || durationSeconds < 1 || durationSeconds > 120 || now < 0) return;
-        Active previous = active.get(kind);
+        String key = kind.trim();
         long expiresAt = now + durationSeconds * 1000L;
-        if (previous != null && now - previous.activatedAt() <= CORRELATION_WINDOW_MS) {
-            expiresAt = previous.expiresAt();
-        } else {
-            active.put(kind, new Active(kind, now, expiresAt));
+        Active previous = active.get(key);
+        if (previous != null) {
+            long keep = Math.max(previous.expiresAt(), expiresAt);
+            long keepStart = keep == previous.expiresAt() ? previous.activatedAt() : now;
+            active.put(key, new Active(key, keepStart, keep));
             return;
         }
-        active.put(kind, new Active(kind, previous.activatedAt(), expiresAt));
+        active.put(key, new Active(key, now, expiresAt));
     }
 
     public void expire(long now) {

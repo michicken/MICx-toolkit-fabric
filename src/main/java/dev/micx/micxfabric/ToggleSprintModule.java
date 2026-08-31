@@ -133,8 +133,9 @@ public final class ToggleSprintModule implements Module {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.options == null) return;
         String text = active ? "\u00a77[\u00a7aSprint\u00a77]" : "\u00a77[\u00a78Sprint OFF\u00a77]";
+        // 26.2 text() 对 alpha==0 颜色直接丢弃，基色必须带 FF alpha
         graphics.text(client.font, LegacyText.of(text), hudX,
-                graphics.guiHeight() - hudBottom, 0xFFFFFF, true);
+                graphics.guiHeight() - hudBottom, 0xFFFFFFFF, true);
     }
 
     public boolean hudEnabled() {

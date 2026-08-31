@@ -28,6 +28,20 @@ import java.util.Set;
 /** ZombiesAssist runtime facade backed by the complete Forge-compatible configuration. */
 public final class ZombiesAssistModule implements Module {
     private static final ZombiesAssistModule INSTANCE = new ZombiesAssistModule();
+
+    /** 诊断限流：最多打 40 次、每 3s 一次，避免刷屏。定位 HUD 消失用，定位后移除。 */
+    private static long micxDiagLastMs;
+    private static int micxDiagCount;
+
+    private static boolean micxDiagTick() {
+        if (micxDiagCount >= 40) return false;
+        long now = System.currentTimeMillis();
+        if (now - micxDiagLastMs < 3_000L) return false;
+        micxDiagLastMs = now;
+        micxDiagCount++;
+        return true;
+    }
+
     private final ZombiesConfig config = new ZombiesConfig();
     private final ZombiesPowerUpTracker powerUpTracker = ZombiesPowerUpTracker.instance();
     private final WaveTempoEstimator waveTempo = new WaveTempoEstimator();
@@ -46,12 +60,17 @@ public final class ZombiesAssistModule implements Module {
     private long lastTooRushNoticeAt;
     private long tooRushUntil;
     private double tooRushDistance;
+    private long tooSpawnUntil;
+    private double tooSpawnDistanceVal;
+    private final Set<Integer> seenTooIds = new HashSet<>();
     private long blockUntil;
     private long blockDistanceMs;
     private long frAllReadySince;
     private String frDownDigest = "";
     private String lastTooCommand;
     private final ZombiesLsState lsState = new ZombiesLsState();
+    private int lastTacticalRound = -1;
+    private long lastTacticalElapsedMs = 0L;
     private final Map<Integer, TooSample> tooSamples = new HashMap<>();
 
     private ZombiesAssistModule() {
@@ -203,7 +222,7 @@ public final class ZombiesAssistModule implements Module {
         }
         if (now - lastExpertUpdateMs < 250L) return;
         lastExpertUpdateMs = now;
-        long elapsed = Math.max(0L, now - tracker.roundStartMs());
+        long elapsed = Math.max(0L, now - tracker.roundStartMsForWaveHud());
         if (config.waveTempo) {
             int[] times = ZombiesRoundData.waveTimes(tracker.round());
             int wave = ZombiesRoundData.waveAt(tracker.round(), elapsed);
@@ -322,9 +341,11 @@ public final class ZombiesAssistModule implements Module {
         Entity nearest = null;
         double nearestDistance = Double.MAX_VALUE;
         Map<Integer, Double> current = new HashMap<>();
+        Set<Integer> activeIds = new HashSet<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof Zombie zombie) || !zombie.isAlive()
                     || !isTooSignature(zombie, config.tooStrictGreen)) continue;
+            activeIds.add(zombie.getId());
             double distance = client.player.distanceTo(zombie);
             current.put(zombie.getId(), distance);
             if (distance < nearestDistance) {
@@ -333,6 +354,36 @@ public final class ZombiesAssistModule implements Module {
             }
         }
         tooSamples.keySet().retainAll(current.keySet());
+        // 仅生成位置警报：每只 TOO 仅在首次出现时判定，走进范围不补报
+        if (config.tooSpawnAlert) {
+            double threshold = Math.max(5, Math.min(30, config.tooSpawnDistance));
+            double thresholdSq = threshold * threshold;
+            double px = client.player.getX(), py = client.player.getY(), pz = client.player.getZ();
+            boolean triggered = false;
+            double triggeredDist = 0;
+            Set<Integer> newVisible = new HashSet<>();
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (!(entity instanceof Zombie zombie) || !zombie.isAlive()
+                        || !isTooSignature(zombie, config.tooStrictGreen)) continue;
+                int id = zombie.getId();
+                if (seenTooIds.contains(id)) continue;
+                newVisible.add(id);
+                double dx = zombie.getX() - px, dy = zombie.getY() - py, dz = zombie.getZ() - pz;
+                if (dx * dx + dy * dy + dz * dz >= thresholdSq) continue;
+                double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (!triggered || d < triggeredDist) { triggered = true; triggeredDist = d; }
+            }
+            seenTooIds.addAll(newVisible);
+            seenTooIds.retainAll(activeIds);
+            if (triggered) {
+                long now = System.currentTimeMillis();
+                tooSpawnUntil = now + 3_000L;
+                tooSpawnDistanceVal = triggeredDist;
+            }
+        } else {
+            seenTooIds.clear();
+            tooSpawnUntil = 0L;
+        }
         long now = System.currentTimeMillis();
         if (nearest == null) {
             lastTooCommand = null;
@@ -417,11 +468,16 @@ public final class ZombiesAssistModule implements Module {
     private void resetBehavior() {
         behaviorLevel = null;
         lastAnnouncedRound = 0;
+        lastTacticalRound = -1;
+        lastTacticalElapsedMs = 0L;
         lastTooNoticeAt = 0L;
         lastTooCommandAt = 0L;
         lastTooRushNoticeAt = 0L;
         tooRushUntil = 0L;
         tooRushDistance = 0.0;
+        tooSpawnUntil = 0L;
+        tooSpawnDistanceVal = 0.0;
+        seenTooIds.clear();
         blockUntil = 0L;
         blockDistanceMs = 0L;
         frAllReadySince = 0L;
@@ -437,6 +493,16 @@ public final class ZombiesAssistModule implements Module {
         if (!enabled || !overlayEnabled()) return;
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) return;
+
+        // [micx-hud] 周期诊断已静音（0.2.34 排障使命完成；0.2.42 起 -Dmicx.diag=true 才输出）
+        if (Boolean.getBoolean("micx.diag") && micxDiagTick()) {
+            ZombiesTracker dbg = ZombiesTracker.instance();
+            MicxFabric.LOGGER.info("[micx-hud] drawHud enabled={} overlay={} inZb={} round={} goldRows={} "
+                            + "showEco={} origSb={} pu={} wave={}",
+                    enabled, overlayEnabled(), dbg.isInZombies(), dbg.round(),
+                    dbg.frame() == null ? -1 : dbg.frame().playerGolds().size(),
+                    config().showEconomy, config().originalScoreboard, config().showPowerups, config().waveTableHud);
+        }
 
         ZombiesConfig cfg = config();
         ZombiesTracker tracker = ZombiesTracker.instance();
@@ -474,71 +540,138 @@ public final class ZombiesAssistModule implements Module {
     private static void drawActivePowerUpsTop(GuiGraphicsExtractor graphics, Minecraft client,
                                                ZombiesTracker tracker, ZombiesConfig cfg) {
         long now = System.currentTimeMillis();
-        List<String> active = new ArrayList<>();
-        int color = ChatMessageStyles.INFO;
-        for (Map.Entry<String, PowerUpTimer.Active> entry
-                : tracker.eventState().powerUps().activeSnapshot().entrySet()) {
-            long remaining = entry.getValue().expiresAt() - now;
-            if (remaining <= 0L) continue;
-            active.add(powerUpLabel(entry.getKey()) + " " + formatSeconds(remaining));
-            if (active.size() == 1) color = powerUpColor(entry.getKey());
+        Map<String, PowerUpTimer.Active> snap = tracker.eventState().powerUps().activeSnapshot();
+        // Hypixel 读秒口径：多 PU 同时生效时只显示最长剩余那个，其它不抢行
+        Map.Entry<String, PowerUpTimer.Active> best = null;
+        long bestRem = -1L;
+        for (Map.Entry<String, PowerUpTimer.Active> e : snap.entrySet()) {
+            long rem = e.getValue().expiresAt() - now;
+            if (rem <= 0L) continue;
+            if (rem > bestRem) { bestRem = rem; best = e; }
         }
-        String text = active.isEmpty() ? "——" : String.join(" | ", active);
-        drawCentered(graphics, client, "zombies.top", text, cfg.topHudXOffset,
-                cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale, color, false);
+        if (best == null) {
+            drawCentered(graphics, client, "zombies.top", "——", cfg.topHudXOffset,
+                    cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale,
+                    ChatMessageStyles.INFO, false);
+            return;
+        }
+        drawCentered(graphics, client, "zombies.top",
+                powerUpLabel(best.getKey()) + " " + formatSeconds(bestRem),
+                cfg.topHudXOffset, cfg.topHudY + Math.round(12 * cfg.topHudScale),
+                cfg.topHudScale, powerUpColor(best.getKey()), false);
     }
 
-    private static int drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
-                                         ZombiesTracker tracker, ZombiesConfig cfg) {
-        List<String> lines = new ArrayList<>();
-        if (tracker.isInAlienArcadium()) lines.add("§bAlien Arcadium");
-        else if (!tracker.sidebarTitle().isBlank()) lines.add("§f" + tracker.sidebarTitle());
+    /**
+     * 右侧战术区 —— Forge 块1(roundLines)/块2(combatLines)/extra 三组 renderBlock 流水。
+     * v0.2.11 重构：移除地图名/Down/Dead 行；块1 六行 + 块2 战斗行全部带 § 段色。
+     */
+    private int drawTacticalHud(GuiGraphicsExtractor graphics, Minecraft client,
+                                  ZombiesTracker tracker, ZombiesConfig cfg) {
+        int round = tracker.round();
+        long now = System.currentTimeMillis();
+        // Cal-Title(SST): single authoritative baseline = Round N title (roundStartMs). No entity nudge.
+        long titleBase = tracker.roundStartMs();
+        long rawElapsed = titleBase <= 0L ? 0L : Math.max(0L, now - titleBase);
+        // Monotonic guard per round: elapsed never goes backward (title reset is the only valid jump)
+        long elapsed = rawElapsed;
+        if (lastTacticalRound == round) elapsed = Math.max(lastTacticalElapsedMs, rawElapsed);
+        lastTacticalRound = round;
+        lastTacticalElapsedMs = elapsed;
+        int[] times = ZombiesRoundData.waveTimes(round);
+        int wave = ZombiesRoundData.waveAt(round, elapsed);
+        int[] too = ZombiesRoundData.tooWaves(round);
+        int[] giant = ZombiesRoundData.giantWaves(round);
+        int[] tooGiant = ZombiesRoundData.tooGiantWaves(round);
 
-        ThreatCounts threats = scanThreats(client, cfg.tooStrictGreen);
-        boolean threatNearCrosshair = cfg.specialThreatHud && specialThreatRound(tracker.round());
+        // === 块 1：回合（Forge roundLines 逐行）===
+        List<String> roundLines = new ArrayList<>();
+        roundLines.add(buildRoundLine(round, wave, times.length,
+                cfg.showMobs ? ZombiesRoundData.roundMobs(round) : null));
+
+        long snapshotAge = expertSnapshotAt <= 0L ? 0L : Math.max(0L, now - expertSnapshotAt);
+        String tempoLine = cfg.waveTempo ? waveTempoLine(waveTempo.snapshot(), snapshotAge) : null;
+        if (tempoLine != null) {
+            roundLines.add(tempoLine);
+        } else if (times.length > 0 && wave < times.length) {
+            long nextMs = times[wave] * 1_000L - elapsed;
+            roundLines.add(nextMs > 0
+                    ? "§7下波倒计时 §f" + formatSeconds(nextMs)
+                    : "§8最后一波");
+        } else if (times.length > 0) {
+            roundLines.add("§8最后一波");
+        }
+
+        if (cfg.showMobs) {
+            String nextMobs = ZombiesRoundData.roundMobs(round + 1);
+            if (nextMobs != null) roundLines.add("§7下回合 §f" + nextMobs);
+        }
+
+        if (times.length > 0 && wave >= times.length && tracker.zombiesLeft() != 0) {
+            String clearLine = buildClearMobLine(ZombiesRoundData.mobClearRemainingMs(round, elapsed));
+            if (clearLine != null) roundLines.add(clearLine);
+        }
+
+        String forecast = buildWaveForecastLine(too, giant, tooGiant);
+        if (forecast != null) roundLines.add(forecast);
+
+        if (round == 101) {
+            roundLines.add("§4§lFINAL BOSS");
+        } else if (cfg.showPowerups) {
+            String hint = ZombiesRoundData.roundTypeHint(round);
+            if (hint != null) roundLines.add(hint);
+        }
+
+        // === 块 2：战斗（Forge combatLines）===
+        List<String> combatLines = new ArrayList<>();
+        boolean threatNearCrosshair = cfg.specialThreatHud && specialThreatRound(round);
+        ThreatSnapshot threats = scanThreats(client, cfg.tooStrictGreen);
         if (cfg.specialThreatHud && !threatNearCrosshair && !threats.empty()) {
-            if (threats.too > 0) lines.add("§fTOO §c" + threats.too);
-            if (threats.giant > 0) lines.add("§fGiant §c" + threats.giant);
-            if (threats.clown > 0) lines.add("§fClown §c" + threats.clown);
+            String threat = threatLine(client, threats);
+            if (threat != null) combatLines.add(threat);
+        }
+        String nextAlert = buildNextWaveAlert(too, giant, tooGiant, wave, times.length);
+        if (nextAlert != null) combatLines.add(nextAlert);
+        combatLines.addAll(puDropLines(client, now));
+
+        // === extra：史莱姆成长（保持 Forge extraLines 语义）===
+        List<String> extraLines = new ArrayList<>();
+        if (cfg.slimeGrowth) {
+            String growth = slimeGrowthLine(slimeGrowth.snapshot(), snapshotAge);
+            if (growth != null) extraLines.add(growth);
         }
 
-        ZombiesEventState state = tracker.eventState();
-        int down = 0;
-        int dead = 0;
-        for (String status : state.statuses().values()) {
-            if ("down".equals(status)) down++;
-            if ("dead".equals(status) || "quit".equals(status)) dead++;
-        }
-        if (down > 0) lines.add("§fDown players §d" + down);
-        if (dead > 0) lines.add("§fDead / quit §7" + dead);
-
-        if (lines.isEmpty()) return 0;
+        int blockLines = roundLines.size() + combatLines.size() + extraLines.size();
         float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
         float scaleY = HudLayoutRegistry.scaleY("zombies.tactical", cfg.tacticalHudScale);
         int right = Math.max(4, graphics.guiWidth() - Math.max(0, cfg.tacticalHudRight));
         int y = Math.max(0, cfg.tacticalHudY);
+        if (micxDiagTick()) {
+            MicxFabric.LOGGER.info("[micx-hud] tactical blockLines={} rl={} cl={} el={} round={} "
+                            + "right={} y={} sx={} sy={} first={}",
+                    blockLines, roundLines.size(), combatLines.size(), extraLines.size(), round,
+                    right, y, scaleX, scaleY,
+                    roundLines.isEmpty() ? "<empty>" : roundLines.get(0));
+        }
+        if (blockLines == 0) return 0;
         graphics.pose().pushMatrix();
         graphics.pose().scale(scaleX, scaleY);
         try {
             int logicalRight = Math.round(right / scaleX);
             int logicalY = Math.round(y / scaleY);
-            for (String line : lines) {
-                Component component = LegacyText.of(line);
-                graphics.text(client.font, component,
-                        logicalRight - client.font.width(component), logicalY,
-                        0xFFD8DDE3, true);
-                logicalY += client.font.lineHeight + 2;
-            }
+            logicalY = renderBlock(graphics, client, roundLines, logicalRight, logicalY);
+            logicalY = renderBlock(graphics, client, combatLines, logicalRight, logicalY);
+            renderBlock(graphics, client, extraLines, logicalRight, logicalY);
         } finally {
             graphics.pose().popMatrix();
         }
-        return lines.size();
+        return blockLines;
     }
 
     private void updateBlockAlert(Minecraft client, ZombiesTracker tracker) {
         int round = tracker.round();
-        long elapsed = tracker.roundStartMs() <= 0L
-                ? -1L : Math.max(0L, System.currentTimeMillis() - tracker.roundStartMs());
+        long waveStart = tracker.roundStartMs();
+        long elapsed = waveStart <= 0L
+                ? -1L : Math.max(0L, System.currentTimeMillis() - waveStart);
         long remaining = elapsed < 0L ? -1L : ZombiesRoundData.blockCountdownMs(round, elapsed);
         if (remaining >= 0L && remaining <= 3_000L) {
             blockDistanceMs = remaining;
@@ -552,51 +685,38 @@ public final class ZombiesAssistModule implements Module {
                                   ZombiesTracker tracker, ZombiesConfig cfg, int tacticalRenderedLines) {
         long now = System.currentTimeMillis();
         int round = tracker.round();
-        long elapsed = tracker.roundStartMs() <= 0L
-                ? 0L : Math.max(0L, now - tracker.roundStartMs());
+        long waveStart = tracker.roundStartMs();
+        long elapsed = waveStart <= 0L
+                ? 0L : Math.max(0L, now - waveStart);
 
         ZombiesEventState state = tracker.eventState();
         if (cfg.showEconomy && !cfg.originalScoreboard && tracker.isInZombies() && cfg.overlayEnabled) {
             drawEconomyPanel(graphics, client, tracker, cfg);
         }
 
-        List<String> rightLines = new ArrayList<>();
-        long snapshotAge = expertSnapshotAt <= 0L ? 0L : Math.max(0L, now - expertSnapshotAt);
-        if (cfg.showMobs && tracker.isInAlienArcadium()) {
-            String currentMobs = ZombiesRoundData.roundMobs(round);
-            if (currentMobs != null) rightLines.add("Mobs " + currentMobs);
-            if (round < 105) {
-                String nextMobs = ZombiesRoundData.roundMobs(round + 1);
-                if (nextMobs != null) rightLines.add("Next R" + (round + 1) + " " + nextMobs);
-            }
-        }
-        if (tracker.isInAlienArcadium()) {
-            String special = specialWaveLine(round, elapsed);
-            if (special != null) rightLines.add(special);
-            long clearRemaining = ZombiesRoundData.mobClearRemainingMs(round, elapsed);
-            if (clearRemaining >= 0L && tracker.zombiesLeft() != 0) {
-                rightLines.add("Mob clear " + formatSeconds(clearRemaining));
-            }
-        }
-        if (cfg.waveTempo) {
-            String tempo = waveTempoLine(waveTempo.snapshot(), snapshotAge);
-            if (tempo == null) tempo = ZombiesRoundData.waveTempo(round, elapsed);
-            if (tempo != null) rightLines.add(tempo);
-        }
-        if (cfg.slimeGrowth) {
-            String growth = slimeGrowthLine(slimeGrowth.snapshot(), snapshotAge);
-            if (growth != null) rightLines.add(growth);
-        }
-        int rightYGap = tacticalRenderedLines == 0 ? 2 : tacticalRenderedLines * (client.font.lineHeight + 2) + 2;
-        drawRightLines(graphics, client, rightLines, cfg, rightYGap);
+        // Mobs/下回合/下波倒计时/清怪/tempo/特殊波预警/史莱姆成长已并入 drawTacticalHud 块1/块2/extra（v0.2.11）。
 
         if (cfg.frCoach) drawCooldownHud(graphics, client, tracker, cfg, now);
         if (cfg.lsAssist && lsState.shouldShow()) {
             drawLsHud(graphics, client, tracker, cfg, round, elapsed);
         }
         if (cfg.specialThreatHud && specialThreatRound(round)) {
-            ThreatCounts threats = scanThreats(client, cfg.tooStrictGreen);
+            ThreatSnapshot threats = scanThreats(client, cfg.tooStrictGreen);
             drawThreatHud(graphics, client, threats, cfg);
+        }
+        if (cfg.tooSpawnAlert && now < tooSpawnUntil) {
+            String tooSpawnText = String.format(Locale.ROOT, "TOO 生成于 %.1fm!", tooSpawnDistanceVal);
+            try {
+                String wid = WindowSpawnCounterModule.instance().lastTooWindowId();
+                if (wid != null) {
+                    String full = WindowSpawnCounterModule.fullNameOf(wid);
+                    tooSpawnText = String.format(Locale.ROOT, "TOO 生成于 %s %.1fm!", full, tooSpawnDistanceVal);
+                }
+            } catch (Throwable ignored) {}
+            drawCentered(graphics, client, "zombies.too_spawn",
+                    tooSpawnText,
+                    cfg.tooSpawnXOffset, graphics.guiHeight() / 4 + cfg.tooSpawnYOffset,
+                    cfg.tooSpawnScale, 0xFFFF5964, true);
         }
         if (cfg.tooRushAlert && now < tooRushUntil) {
             drawCentered(graphics, client, "zombies.too_rush",
@@ -618,30 +738,25 @@ public final class ZombiesAssistModule implements Module {
         }
     }
 
-    private static void drawRightLines(GuiGraphicsExtractor graphics, Minecraft client,
-                                       List<String> lines, ZombiesConfig cfg, int yOffset) {
-        if (lines.isEmpty()) return;
-        float scaleX = HudLayoutRegistry.scaleX("zombies.tactical", cfg.tacticalHudScale);
-        float scaleY = HudLayoutRegistry.scaleY("zombies.tactical", cfg.tacticalHudScale);
-        graphics.pose().pushMatrix();
-        graphics.pose().scale(scaleX, scaleY);
-        try {
-            int right = Math.round((graphics.guiWidth() - cfg.tacticalHudRight) / scaleX);
-            int y = Math.round((cfg.tacticalHudY + yOffset) / scaleY);
-            for (String line : lines) {
-                Component component = LegacyText.of(line);
-                graphics.text(client.font, component,
-                        right - client.font.width(component), y, 0xFFD8DDE3, true);
-                y += client.font.lineHeight + 2;
-            }
-        } finally {
-            graphics.pose().popMatrix();
-        }
-    }
-
+    /**
+     * 玩家经济表（Forge renderEcoPanel 对齐）：名字白 / 金币 §e(flash §a) / §7| / 击杀 §c
+     * 三列按各行最大像素宽对齐，gap=6，行高 11，≤4 行，自己置顶、金币降序。
+     */
     private static void drawEconomyPanel(GuiGraphicsExtractor graphics, Minecraft client,
                                          ZombiesTracker tracker, ZombiesConfig cfg) {
         Map<String, Integer> gold = tracker.frame().playerGolds();
+        if (micxDiagTick()) {
+            MicxFabric.LOGGER.info("[micx-hud] economy gold={} self={} inGold={} showEco={} origSb={} "
+                            + "right={} y={} sx={} sy={}",
+                    gold.size(),
+                    client.player == null ? "<no-player>" : client.player.getName().getString(),
+                    client.player == null ? "-" : gold.containsKey(client.player.getName().getString()),
+                    cfg.showEconomy, cfg.originalScoreboard,
+                    Math.max(4, graphics.guiWidth() - Math.max(0, cfg.ecoHudRight)),
+                    Math.round(graphics.guiHeight() / 2.0f + cfg.ecoHudCenterYOffset),
+                    HudLayoutRegistry.scaleX("zombies.economy", cfg.ecoHudScale),
+                    HudLayoutRegistry.scaleY("zombies.economy", cfg.ecoHudScale));
+        }
         if (gold.isEmpty()) return;
         List<String> names = new ArrayList<>(gold.keySet());
         String self = client.player == null ? "" : client.player.getName().getString();
@@ -659,6 +774,27 @@ public final class ZombiesAssistModule implements Module {
             EcoRateConfig rc = EcoRateModule.cfg();
             flash = EcoRateModule.flashActive(System.currentTimeMillis(), rc.flashIntervalSec, rc.flashDurationSec);
         }
+
+        // 预计算三列最大宽（Forge nameW/goldW/killW 语义）
+        int nameW = 0, goldW = 0, killW = 0;
+        List<String[]> rows = new ArrayList<>();
+        for (String name : names) {
+            int gv = gold.getOrDefault(name, 0);
+            String gs;
+            if (flash) {
+                long rate = name.equals(self) ? eco.selfRate() : eco.rate(name);
+                gs = rate < 0 ? "--" : ZombiesTracker.fmtEco2min(rate) + "/2min";
+            } else {
+                gs = String.format(Locale.ROOT, "%,d", gv);
+            }
+            int kills = playerKills(client, name);
+            String ks = kills < 0 ? "\u2014" : String.valueOf(kills);
+            rows.add(new String[]{name, gs, ks});
+            nameW = Math.max(nameW, client.font.width(name));
+            goldW = Math.max(goldW, client.font.width(gs));
+            killW = Math.max(killW, client.font.width(ks));
+        }
+
         float scaleX = HudLayoutRegistry.scaleX("zombies.economy", cfg.ecoHudScale);
         float scaleY = HudLayoutRegistry.scaleY("zombies.economy", cfg.ecoHudScale);
         graphics.pose().pushMatrix();
@@ -666,26 +802,21 @@ public final class ZombiesAssistModule implements Module {
         try {
             int right = Math.round((graphics.guiWidth() - cfg.ecoHudRight) / scaleX);
             int y = Math.round((graphics.guiHeight() / 2.0f + cfg.ecoHudCenterYOffset) / scaleY);
-            for (String name : names) {
-                int gv = gold.getOrDefault(name, 0);
-                String gs;
-                if (flash) {
-                    long rate = name.equals(self) ? eco.selfRate() : eco.rate(name);
-                    gs = rate < 0 ? "--" : ZombiesTracker.fmtEco2min(rate) + "/2min";
-                } else {
-                    gs = String.format(Locale.ROOT, "%,d", gv);
-                }
-                int baseColor = flash ? 0xFF55FF55 : 0xFFE8A73E;
-                // 击杀列：tab 计分板 LIST 目标，最右红字（对齐 Forge col4）
-                int kills = playerKills(client, name);
-                String ks = kills >= 0 ? Integer.toString(kills) : "--";
-                int kx = right - client.font.width(ks);
-                graphics.text(client.font, Component.literal(ks), kx, y,
-                        flash ? 0xFF55FF55 : 0xFFFF5555, true);
-                Component main = LegacyText.of(name + " " + gs);
-                graphics.text(client.font, main, kx - 8 - client.font.width(main),
-                        y, baseColor, true);
-                y += client.font.lineHeight + 2;
+            int gap = 6;
+            int pipeW = client.font.width("|");
+            int tableW = nameW + gap + goldW + gap + pipeW + gap + killW;
+            int leftX = right - tableW;
+            int col2 = leftX + nameW + gap;
+            int pipeX = col2 + goldW + gap;
+            int col4 = pipeX + pipeW + gap;
+            for (String[] row : rows) {
+                // 26.2 text() 对 alpha==0 颜色直接丢弃，名字列必须带 FF alpha
+                graphics.text(client.font, Component.literal(row[0]), leftX, y, 0xFFFFFFFF, true);
+                graphics.text(client.font, Component.literal(row[1]), col2, y,
+                        flash ? 0xFF55FF55 : 0xFFE8A73E, true);
+                graphics.text(client.font, Component.literal("|"), pipeX, y, 0xFF8A8A8A, true);
+                graphics.text(client.font, Component.literal(row[2]), col4, y, 0xFFFF5555, true);
+                y += 11;
             }
         } finally {
             graphics.pose().popMatrix();
@@ -886,9 +1017,10 @@ public final class ZombiesAssistModule implements Module {
     }
 
     private static void drawThreatHud(GuiGraphicsExtractor graphics, Minecraft client,
-                                      ThreatCounts threats, ZombiesConfig cfg) {
-        List<String> lines = List.of("TOO: " + threats.too,
-                "Giant: " + threats.giant, "Clown: " + threats.clown);
+                                      ThreatSnapshot threats, ZombiesConfig cfg) {
+        List<String> lines = List.of("\u00a7d\u00a7lTOO: \u00a7f" + threats.tooCount,
+                "\u00a72\u00a7lGiant: \u00a7f" + threats.giantCount,
+                "\u00a7c\u00a7lClown: \u00a7f" + threats.clownCount);
         drawCenteredBlock(graphics, client, "zombies.threat", lines, cfg.threatHudXOffset,
                 graphics.guiHeight() / 2 + cfg.threatHudYOffset, cfg.threatHudScale, 0xFFD8DDE3);
     }
@@ -926,10 +1058,11 @@ public final class ZombiesAssistModule implements Module {
         long clearEtaMs = Math.max(0L, snapshot.clearEtaMs - age);
         long overlapMs = clearEtaMs - nextWaveMs;
         String relation = overlapMs > 0L
-                ? "OVERLAP +" + formatSeconds(overlapMs)
-                : "MARGIN " + formatSeconds(-overlapMs);
-        return "W" + snapshot.nextWave + " " + formatSeconds(nextWaveMs)
-                + " | CLEAR ETA " + formatSeconds(clearEtaMs) + " | " + relation;
+                ? "\u00a7cOVERLAP +" + formatSeconds(overlapMs)
+                : "\u00a7aMARGIN " + formatSeconds(-overlapMs);
+        return "\u00a7bW" + snapshot.nextWave + " \u00a7f" + formatSeconds(nextWaveMs)
+                + " \u00a77| CLEAR ETA \u00a7f" + formatSeconds(clearEtaMs)
+                + " \u00a77| " + relation;
     }
 
     static String slimeGrowthLine(SlimeGrowthTracker.Snapshot snapshot) {
@@ -938,51 +1071,167 @@ public final class ZombiesAssistModule implements Module {
 
     static String slimeGrowthLine(SlimeGrowthTracker.Snapshot snapshot, long snapshotAgeMs) {
         if (snapshot == null || !snapshot.present) return null;
-        StringBuilder line = new StringBuilder(snapshot.smallestKind)
-                .append(" min ").append(snapshot.smallestStage).append('/')
+        StringBuilder line = new StringBuilder("\u00a7d").append(snapshot.smallestKind)
+                .append(" \u00a77\u6700\u5c0f \u00a7f").append(snapshot.smallestStage).append('/')
                 .append(snapshot.totalStages);
-        if (snapshot.allMax) return line.append(" | ALL MAX").toString();
+        if (snapshot.allMax) return line.append(" \u00a77| \u00a7a\u00a7lALL MAX").toString();
         long nextGrowthMs = Math.max(0L, snapshot.nextGrowthMs - Math.max(0L, snapshotAgeMs));
-        line.append(" | NEXT ").append(formatSeconds(nextGrowthMs));
-        if (snapshot.attackReady) line.append(" | READY");
-        else line.append(" | grow ").append(snapshot.remainingStages);
+        line.append(" \u00a77| NEXT \u00a7f").append(formatSeconds(nextGrowthMs));
+        if (snapshot.attackReady) line.append(" \u00a77| \u00a7a\u00a7l\u53ef\u5f00\u6253");
+        else line.append(" \u00a77| \u00a7e\u518d\u957f ").append(snapshot.remainingStages).append(" \u6863");
         return line.toString();
     }
 
-    private static String specialWaveLine(int round, long elapsed) {
-        int[] times = ZombiesRoundData.waveTimes(round);
-        if (times.length == 0) return null;
-        int wave = ZombiesRoundData.waveAt(round, elapsed);
-        int nextWave = wave + 1;
-        if (wave > 0) {
-            if (containsWave(ZombiesRoundData.tooGiantWaves(round), wave)) {
-                return "NOW TOO+GIANT W" + wave;
-            }
-            if (containsWave(ZombiesRoundData.tooWaves(round), wave)) {
-                return "NOW TOO W" + wave;
-            }
-            if (containsWave(ZombiesRoundData.giantWaves(round), wave)) {
-                return "NOW GIANT W" + wave;
-            }
+    /* ==================== 块1/块2 纯构建器（Forge roundLines/combatLines 逐行对齐，可单测） ==================== */
+
+    /** 块1 第1行：§6Round:§fN §7| §bwi/t[§8(last)][ §f<mobs>] */
+    static String buildRoundLine(int round, int wave, int waveTotal, String mobs) {
+        StringBuilder l1 = new StringBuilder("\u00a76Round:\u00a7f").append(round);
+        if (waveTotal > 0) {
+            l1.append(" \u00a77| \u00a7bw").append(wave).append('/').append(waveTotal);
+            if (wave >= waveTotal) l1.append("\u00a78(last)");
         }
-        if (nextWave <= times.length) {
-            if (containsWave(ZombiesRoundData.tooGiantWaves(round), nextWave)) {
-                return "NEXT TOO+GIANT W" + nextWave;
-            }
-            if (containsWave(ZombiesRoundData.tooWaves(round), nextWave)) {
-                return "NEXT TOO W" + nextWave;
-            }
-            if (containsWave(ZombiesRoundData.giantWaves(round), nextWave)) {
-                return "NEXT GIANT W" + nextWave;
-            }
-        }
+        if (mobs != null && !mobs.isBlank()) l1.append(" \u00a7f").append(mobs);
+        return l1.toString();
+    }
+
+    /** 块1 清怪行：§7清怪 §c|§e M:SS §7后怪物消失；非末段（<=0）返回 null。 */
+    static String buildClearMobLine(long clearInMs) {
+        if (clearInMs <= 0L) return null;
+        String color = clearInMs <= 60_000L ? "\u00a7c" : "\u00a7e";
+        long seconds = clearInMs / 1000L;
+        return String.format(Locale.ROOT, "\u00a77\u6e05\u602a %s%d:%02d \u00a77\u540e\u602a\u7269\u6d88\u5931",
+                color, seconds / 60L, seconds % 60L);
+    }
+
+    /** 块1 波次预告行：§d§lTOO§r §7w2,3  §2§lGiant§r §7w4  §5§lTOO+Giant§r §7w5,6；全空返回 null。 */
+    static String buildWaveForecastLine(int[] too, int[] giant, int[] tooGiant) {
+        if (too.length + giant.length + tooGiant.length == 0) return null;
+        StringBuilder sp = new StringBuilder();
+        if (too.length > 0) sp.append("\u00a7d\u00a7lTOO\u00a7r \u00a7w")
+                .append(ZombiesRoundData.join(too)).append("  ");
+        if (giant.length > 0) sp.append("\u00a72\u00a7lGiant\u00a7r \u00a7w")
+                .append(ZombiesRoundData.join(giant)).append("  ");
+        if (tooGiant.length > 0) sp.append("\u00a75\u00a7lTOO+Giant\u00a7r \u00a7w")
+                .append(ZombiesRoundData.join(tooGiant));
+        return sp.toString().trim();
+    }
+
+    /** 块2 下一波预警：! TOO NEXT WAVE ! / ! GIANT NEXT WAVE !（无预警返回 null）。 */
+    static String buildNextWaveAlert(int[] too, int[] giant, int[] tooGiant, int wave, int waveTotal) {
+        if (waveTotal <= 0 || wave >= waveTotal) return null;
+        int next = wave + 1;
+        if (contains(too, next) || contains(tooGiant, next)) return "\u00a7c\u00a7l! TOO NEXT WAVE !";
+        if (contains(giant, next)) return "\u00a72\u00a7l! GIANT NEXT WAVE !";
         return null;
     }
 
-    private static boolean containsWave(int[] waves, int wave) {
+    /** 8 方位箭头（Forge directionTo 纯函数版）。 */
+    static String directionTo(double dx, double dz, float yaw) {
+        double bearing = Math.toDegrees(Math.atan2(-dx, dz));
+        float rel = (float) (bearing - yaw);
+        rel = ((rel % 360f) + 540f) % 360f - 180f;
+        String[] arrows = {"\u2191", "\u2197", "\u2192", "\u2198", "\u2193", "\u2199", "\u2190", "\u2196"};
+        return arrows[(Math.round(rel / 45f) + 8) % 8];
+    }
+
+    private static boolean contains(int[] waves, int wave) {
         for (int value : waves) if (value == wave) return true;
         return false;
     }
+
+    /** 块2 PU 掉落行（≤2 行，Forge puPriority 优先级 + 60s 存在倒计时，≤15s 红催捡）。 */
+    private List<String> puDropLines(Minecraft client, long now) {
+        Map<Integer, ZombiesPowerUpTracker.DropVisual> drops = powerUpTracker.dropsSnapshot();
+        if (drops.isEmpty() || client.player == null) return List.of();
+        List<ZombiesPowerUpTracker.DropVisual> sorted = new ArrayList<>(drops.values());
+        sorted.sort((a, b) -> Integer.compare(puPriority(canonicalPowerUpKind(b.kind())),
+                puPriority(canonicalPowerUpKind(a.kind()))));
+        List<String> lines = new ArrayList<>();
+        for (ZombiesPowerUpTracker.DropVisual drop : sorted) {
+            if (lines.size() >= 2) break;
+            double dx = drop.x() - client.player.getX();
+            double dy = drop.y() - client.player.getY();
+            double dz = drop.z() - client.player.getZ();
+            int dist = (int) Math.sqrt(dx * dx + dy * dy + dz * dz);
+            String dir = directionTo(dx, dz, client.player.getYRot());
+            long left = Math.max(0L, drop.expiresAt() - now);
+            String life = (left <= 15_000L ? " \u00a7c" : " \u00a77") + formatSeconds(left);
+            lines.add(powerUpLabel(drop.kind())
+                    + " \u00a7f" + dist + "m " + dir + life);
+        }
+        return lines;
+    }
+
+    /** Forge puPriority 语义：dg > shopping > max > 其他。 */
+    private static int puPriority(String kind) {
+        return switch (kind) {
+            case "dg" -> 100;
+            case "shopping" -> 90;
+            case "max" -> 80;
+            default -> 0;
+        };
+    }
+
+    /** Forge renderBlock 语义：右对齐逐行 +11px，块尾 +2px 间隙；返回下一块可用 y。 */
+    private static int renderBlock(GuiGraphicsExtractor graphics, Minecraft client,
+                                   List<String> lines, int rightX, int y) {
+        if (lines == null || lines.isEmpty()) return y;
+        int cy = y;
+        for (String line : lines) {
+            drawRightAligned(graphics, client, line, rightX, cy);
+            cy += 11;
+        }
+        return y + lines.size() * 11 + 2;
+    }
+
+    /** 右对齐绘制带 § 段色的行。纯文本量宽定位 + 逐段 literal+color 渲染。
+     *  ⚠ 26.2 硬约束（javap 实证）：GuiGraphicsExtractor.text 在 ARGB.alpha(color)==0 时
+     *  直接 return 不绘制，且 26.2 已无 Font.adjustColor 自动补 alpha——
+     *  所有传给 text 的颜色必须带 0xFF alpha 位（0xFFFFFF 这类 24 位色=全透明）。
+     *  故在此统一 |0xFF000000 兜底；LEGACY_COLORS 为 24 位 RGB 由本方法补 alpha。
+     *  包内可见：DpsCounterModule 的 RC/GS 行复用本方法。 */
+    static void drawRightAligned(GuiGraphicsExtractor graphics, Minecraft client,
+                                         String line, int rightX, int y) {
+        if (line == null || line.isEmpty()) return;
+        String plain = line.replaceAll("\u00a7.", "");
+        int x = rightX - client.font.width(plain);
+        int color = 0xFFFFFF;
+        boolean bold = false;
+        int i = 0;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (c == '\u00a7' && i + 1 < line.length()) {
+                char code = Character.toLowerCase(line.charAt(i + 1));
+                int nc = legacyColor(code);
+                if (nc >= 0) color = nc;
+                else if (code == 'l') bold = true;
+                else if (code == 'r') { color = 0xFFFFFF; bold = false; }
+                i += 2;
+                continue;
+            }
+            int start = i;
+            while (i < line.length() && line.charAt(i) != '\u00a7') i++;
+            String seg = line.substring(start, i);
+            if (seg.isEmpty()) continue;
+            net.minecraft.network.chat.MutableComponent comp = Component.literal(seg);
+            if (bold) comp = comp.withStyle(net.minecraft.ChatFormatting.BOLD);
+            graphics.text(client.font, comp, x, y, color | 0xFF000000, true);
+            x += client.font.width(seg);
+        }
+    }
+
+    private static int legacyColor(char code) {
+        int idx = "0123456789abcdef".indexOf(Character.toLowerCase(code));
+        if (idx < 0) return -1;
+        return LEGACY_COLORS[idx];
+    }
+
+    private static final int[] LEGACY_COLORS = {
+            0xFFFFFF, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA,
+            0xFFAA00, 0xAAAAAA, 0x555555, 0x5555FF, 0x55FF55, 0x55FFFF,
+            0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
+    };
 
     private static boolean specialThreatRound(int round) {
         return round == 53 || round == 55 || round == 58 || round == 70
@@ -1051,7 +1300,8 @@ public final class ZombiesAssistModule implements Module {
             times = zbMap == null ? new int[0] : WaveTable.waveTimes(zbMap, round);
         }
         if (times.length == 0) return;
-        long elapsed = tracker.roundStartMs() <= 0L ? 0L : Math.max(0L, System.currentTimeMillis() - tracker.roundStartMs());
+        long waveStart = tracker.roundStartMs();
+        long elapsed = waveStart <= 0L ? 0L : Math.max(0L, System.currentTimeMillis() - waveStart);
         int wave = aa ? ZombiesWaveSchedule.waveAt(round, elapsed) : WaveTable.waveAt(times, elapsed);
         int nextWave = wave < times.length ? wave + 1 : 0;
         int baseX = 4 + cfg.waveTableHudDx;
@@ -1127,15 +1377,16 @@ public final class ZombiesAssistModule implements Module {
         }
     }
 
+    /** Forge puLabel 对齐：带 § 段色，Max §9蓝 / SS §5紫 / DG §6金 / Insta §c红 等。 */
     private static String powerUpLabel(String kind) {
         return switch (canonicalPowerUpKind(kind)) {
-            case "max" -> "Max Ammo";
-            case "insta" -> "Insta Kill";
-            case "shopping" -> "Shopping Spree";
-            case "dg" -> "Double Gold";
-            case "bg" -> "Bonus Gold";
-            case "carp" -> "Carpenter";
-            default -> kind == null || kind.isBlank() ? "Power-up" : kind;
+            case "max" -> "§9Max Ammo";
+            case "insta" -> "§cInsta Kill";
+            case "shopping" -> "§5Shopping Spree";
+            case "dg" -> "§6Double Gold";
+            case "bg" -> "§6Bonus Gold";
+            case "carp" -> "§eCarpenter";
+            default -> kind == null || kind.isBlank() ? "§7Power-up" : "§7" + kind;
         };
     }
 
@@ -1185,20 +1436,67 @@ public final class ZombiesAssistModule implements Module {
         return Float.isFinite(value) ? Math.max(0.5f, Math.min(2.0f, value)) : 1.0f;
     }
 
-    private static ThreatCounts scanThreats(Minecraft client, boolean tooStrictGreen) {
-        ThreatCounts counts = new ThreatCounts();
-        if (client.level == null) return counts;
+    private static ThreatSnapshot scanThreats(Minecraft client, boolean tooStrictGreen) {
+        ThreatSnapshot snapshot = new ThreatSnapshot();
+        if (client.level == null || client.player == null) return snapshot;
         for (Entity entity : client.level.entitiesForRendering()) {
             if (entity == null || !entity.isAlive()) continue;
+            double distance = client.player.distanceTo(entity);
             if (isExplicitGiantEntity(entity)) {
-                counts.giant++;
+                snapshot.giantCount++;
+                if (distance < snapshot.giantDistance) {
+                    snapshot.giantDistance = distance;
+                    snapshot.giantNear = entity;
+                }
                 continue;
             }
             if (!(entity instanceof Zombie zombie)) continue;
-            if (isTooSignature(zombie, tooStrictGreen)) counts.too++;
-            else if (isClownSignature(zombie)) counts.clown++;
+            if (isTooSignature(zombie, tooStrictGreen)) {
+                snapshot.tooCount++;
+                if (distance < snapshot.tooDistance) {
+                    snapshot.tooDistance = distance;
+                    snapshot.tooNear = entity;
+                }
+            } else if (isClownSignature(zombie)) {
+                snapshot.clownCount++;
+                if (distance < snapshot.clownDistance) {
+                    snapshot.clownDistance = distance;
+                    snapshot.clownNear = entity;
+                }
+            }
         }
-        return counts;
+        return snapshot;
+    }
+
+    /** 威胁行：TOO/Giant/Clown 数量 + 最近距离 + 方向（Forge threatLine 对齐）。null=无威胁。 */
+    private static String threatLine(Minecraft client, ThreatSnapshot snapshot) {
+        if (snapshot == null || snapshot.empty()) return null;
+        StringBuilder b = new StringBuilder();
+        if (snapshot.tooCount > 0) {
+            b.append("\u00a7d\u00a7lTOO \u00a7r\u00a7f").append((int) snapshot.tooDistance).append("m ")
+                    .append(directionOf(client, snapshot.tooNear)).append(" \u00a77")
+                    .append(snapshot.tooCount).append("\u4e2a");
+        }
+        if (snapshot.giantCount > 0) {
+            if (b.length() > 0) b.append(" \u00a78| ");
+            b.append("\u00a72\u00a7lGiant \u00a7r\u00a7f").append((int) snapshot.giantDistance).append("m ")
+                    .append(directionOf(client, snapshot.giantNear)).append(" \u00a77")
+                    .append(snapshot.giantCount).append("\u4e2a");
+        }
+        if (snapshot.clownCount > 0) {
+            if (b.length() > 0) b.append(" \u00a78| ");
+            b.append("\u00a7c\u00a7lClown \u00a7r\u00a7f").append((int) snapshot.clownDistance).append("m ")
+                    .append(directionOf(client, snapshot.clownNear)).append(" \u00a77")
+                    .append(snapshot.clownCount).append("\u4e2a");
+        }
+        return b.length() == 0 ? null : b.toString();
+    }
+
+    /** 8 方位箭头（Forge directionTo 语义）。 */
+    private static String directionOf(Minecraft client, Entity target) {
+        if (client.player == null || target == null) return "";
+        return directionTo(target.getX() - client.player.getX(),
+                target.getZ() - client.player.getZ(), client.player.getYRot());
     }
 
     private static boolean isExplicitGiantEntity(Entity entity) {
@@ -1211,13 +1509,14 @@ public final class ZombiesAssistModule implements Module {
     private record HudLine(String text, int color) {
     }
 
-    private static final class ThreatCounts {
-        int too;
-        int giant;
-        int clown;
+    /** 威胁快照（Forge ThreatSnapshot 对齐）：计数 + 最近距离 + 最近实体。 */
+    static final class ThreatSnapshot {
+        int tooCount, giantCount, clownCount;
+        Entity tooNear, giantNear, clownNear;
+        double tooDistance = 1e9, giantDistance = 1e9, clownDistance = 1e9;
 
         boolean empty() {
-            return too == 0 && giant == 0 && clown == 0;
+            return tooCount == 0 && giantCount == 0 && clownCount == 0;
         }
     }
 

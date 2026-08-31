@@ -20,9 +20,10 @@ class WaveTempoEstimatorTest {
         assertEquals(2.0, result.killsPerSecond, 0.001);
         assertEquals(6_000L, result.clearEtaMs);
         assertEquals(1_900L, result.overlapMs);
-        assertEquals("W3 4.1s | CLEAR ETA 6.0s | OVERLAP +1.9s",
+        // Forge 色码版：§bW §f秒 §7| CLEAR ETA §f秒 §7| §cOVERLAP
+        assertEquals("\u00a7bW3 \u00a7f4.1s \u00a77| CLEAR ETA \u00a7f6.0s \u00a77| \u00a7cOVERLAP +1.9s",
                 ZombiesAssistModule.waveTempoLine(result));
-        assertEquals("W3 4.0s | CLEAR ETA 5.9s | OVERLAP +1.9s",
+        assertEquals("\u00a7bW3 \u00a7f4.0s \u00a77| CLEAR ETA \u00a7f5.9s \u00a77| \u00a7cOVERLAP +1.9s",
                 ZombiesAssistModule.waveTempoLine(result, 125L));
     }
 

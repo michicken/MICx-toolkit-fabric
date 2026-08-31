@@ -152,12 +152,31 @@ public final class HudLayoutRegistry {
                         () -> cfg.tooRushYOffset, value -> cfg.tooRushYOffset = value,
                         () -> cfg.tooRushScale, () -> cfg.tooRushScale = 1.0f,
                         () -> { cfg.tooRushXOffset = 0; cfg.tooRushYOffset = 0; }, mod::saveConfig)));
+        BLOCKS.add(new HudLayoutBlock("zombies.too_spawn", "TOO Spawn Alert", "TOO 生成于 12.3m!", 480, 44,
+                centeredOffsetAdapter(
+                        () -> cfg.tooSpawnXOffset, value -> cfg.tooSpawnXOffset = value,
+                        () -> cfg.tooSpawnYOffset, value -> cfg.tooSpawnYOffset = value,
+                        () -> cfg.tooSpawnScale, () -> cfg.tooSpawnScale = 2.0f,
+                        () -> { cfg.tooSpawnXOffset = 0; cfg.tooSpawnYOffset = -28; }, mod::saveConfig)));
         BLOCKS.add(new HudLayoutBlock("zombies.block_alert", "BLOCK Alert", "BLOCK NOW 1.2s", 220, 24,
                 centeredThirdAdapter(
                         () -> cfg.blockAlertXOffset, value -> cfg.blockAlertXOffset = value,
                         () -> cfg.blockAlertYOffset, value -> cfg.blockAlertYOffset = value,
                         () -> cfg.blockAlertScale, () -> cfg.blockAlertScale = 1.0f,
                         () -> { cfg.blockAlertXOffset = 0; cfg.blockAlertYOffset = 14; }, mod::saveConfig)));
+        // 某某窗口刷怪量 — 独立块（可拖动，MID 四口不显示）
+        WindowSpawnCounterModule wsm = WindowSpawnCounterModule.instance();
+        BLOCKS.add(new HudLayoutBlock("zombies.window_spawn", "Window Spawns", "Spawn by Window", 220, 160,
+                new HudLayoutBlock.Adapter() {
+                    public int x(int sw, int sh, int rw, int rh) { return sw - 8 - wsm.hudDx - rw; }
+                    public int y(int sw, int sh, int rw, int rh) { return 96 + wsm.hudDy; }
+                    public void setPosition(int x, int y, int sw, int sh, int rw, int rh) { wsm.setHudOffsets(Math.max(0, sw - x - rw - 8), y - 96); }
+                    public void resetPosition() { wsm.setHudOffsets(0, 0); }
+                    public void save() { }
+                    public float moduleScaleX() { return wsm.hudScale; }
+                    public float moduleScaleY() { return wsm.hudScale; }
+                    public void resetScale() { wsm.setHudScale(1.0f); }
+                }));
     }
 
     private static void addTeammateBlock() {

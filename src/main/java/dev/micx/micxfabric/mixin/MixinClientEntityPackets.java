@@ -20,5 +20,12 @@ public abstract class MixinClientEntityPackets {
     @Inject(method = "handleRemoveEntities", at = @At("RETURN"))
     private void micx$removeTracks(ClientboundRemoveEntitiesPacket packet, CallbackInfo callbackInfo) {
         packet.getEntityIds().forEach(AimLeadModule::remove);
+        try {
+            var idList = packet.getEntityIds();
+            int[] ids = new int[idList.size()];
+            for (int i = 0; i < idList.size(); i++) ids[i] = idList.getInt(i);
+            dev.micx.micxfabric.ZombiesExplorerModule.instance().onEntitiesRemoved(ids);
+            dev.micx.micxfabric.WindowSpawnCounterModule.instance().onEntitiesRemoved(ids);
+        } catch (Throwable ignored) {}
     }
 }

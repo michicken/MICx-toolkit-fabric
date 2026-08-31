@@ -23,6 +23,7 @@ public abstract class MixinEntityRenderDispatcher {
         if (entity instanceof AbstractClientPlayer player
                 && PlayerVisibilityModule.shouldHide(player, client)
                 && !PlayerOutlineEspModule.shouldOutline(player, client)) {
+            PlayerVisibilityModule.diagCancel("dispatcher", player);
             cir.setReturnValue(false);
         }
     }
