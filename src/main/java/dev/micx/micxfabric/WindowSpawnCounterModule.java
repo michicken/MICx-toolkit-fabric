@@ -39,8 +39,9 @@ import java.util.Properties;
  * 即按 XZ 平面最近窗归档一次（出生点），不再追踪移动。仅 AA 且回合进行中才计数；
  * 对局重置/切世界时清零。非 Enemy/Wolf/Golem 的装饰实体（armor_stand 等）不计。
  *
- * <p>渲染：独立可拖动 HUD 块 {@code zombies.window_spawn}，默认右上，2 列网格
- * 展示 11 窗当前计数（实时为本回合内该窗归档数）。用 HudLayoutRegistry 托管位移与缩放。
+ * <p>渲染：独立可拖动 HUD 块 {@code zombies.window_spawn}，默认右上，4 列网格
+ * 展示 11 窗当前波归档数；切段由怪出生驱动（表时刻只作闸门，RTT/卡顿免疫），
+ * 最后一波起不再清零，保留到下一回合开始。用 HudLayoutRegistry 托管位移与缩放。
  */
 public final class WindowSpawnCounterModule implements Module {
     /**
@@ -237,6 +238,14 @@ public final class WindowSpawnCounterModule implements Module {
      */
     private static final double INT_Y_TOL = 0.1;
 
+    /**
+     * 出生驱动切段参数（RTT/服务器卡顿免疫）：表时刻只当闸门，真正切段在「闸门已过后的第一只怪」
+     * 归档时执行——先清上一段，再把这只怪计入新段（同帧原子）。怪没来就永不清零，来多晚都不丢已计数。
+     */
+    private static final long WAVE_GATE_EARLY_MS = 1500L;
+    /** 静默兜底：超过下一波 nominal 该毫秒数仍无任何怪出生（全 UFO 波等）则切段但不清零，残留并入新段。 */
+    private static final long WAVE_FORCE_ADVANCE_MS = 6000L;
+
     public void recordBirthPos(int id, double x, double y, double z) {
         birthPosById.put(id, new Vec3(x, y, z));
     }
@@ -282,6 +291,34 @@ public final class WindowSpawnCounterModule implements Module {
         return best;
     }
 
+    /**
+     * 出生归档驱动的切段：先清上一段，再把这只怪计入新段（同一调用内先后执行，不存在把怪自己清掉）。
+     * currentWave 为 1 基波号，封顶总波数——进入最后一波后此方法永不再清，数量保留到下一回合开始。
+     */
+    private void flipWaveOnBirth(int round, long elapsedMs) {
+        if (round != currentRound || currentWave < 1) return;
+        int target = flipTargetOnBirth(currentWave, elapsedMs, ZombiesRoundData.waveTimes(round));
+        if (target > currentWave) {
+            Arrays.fill(counts, 0);
+            Arrays.fill(hasToo, false);
+            currentWave = target;
+        }
+    }
+
+    /** 纯函数：该出生时刻应归属的波（1 基）。闸门 = 下一波 nominal − WAVE_GATE_EARLY_MS，封顶总波数。 */
+    static int flipTargetOnBirth(int currentWave, long elapsedMs, int[] times) {
+        int target = currentWave;
+        while (target < times.length && elapsedMs >= times[target] * 1000L - WAVE_GATE_EARLY_MS) target++;
+        return target;
+    }
+
+    /** 纯函数：静默兜底切段。闸门 = 下一波 nominal + WAVE_FORCE_ADVANCE_MS；不清零由调用方保证。 */
+    static int forceTarget(int currentWave, long elapsedMs, int[] times) {
+        int target = currentWave;
+        while (target < times.length && elapsedMs >= times[target] * 1000L + WAVE_FORCE_ADVANCE_MS) target++;
+        return target;
+    }
+
     /** 由 Mixin handleAddEntity 调用：每个实体出生点归档一次。 */
     public void onEntitySpawn(Entity entity) {
         if (!enabled) return;
@@ -295,6 +332,10 @@ public final class WindowSpawnCounterModule implements Module {
         ZombiesTracker z = ZombiesTracker.instance();
         if (z == null || !z.isInAlienArcadium()) return;
         if (z.round() <= 0) return;
+        if (z.roundStartMs() > 0) {
+            long elapsed = Math.max(0L, System.currentTimeMillis() - z.roundStartMs());
+            flipWaveOnBirth(z.round(), elapsed);
+        }
         int idx = windowIndexForBirth(bx, by, bz);
         if (Boolean.getBoolean("micx.diag")) logBirth(le, bx, by, bz, idx);
         // 窗外出生不归此 HUD；TOO 判定也只对在窗出生的僵尸做（handleTooSpawn 本就要求在窗内）
@@ -331,9 +372,8 @@ public final class WindowSpawnCounterModule implements Module {
         String wfull = fullName(wid);
         int round = ZombiesTracker.instance().round();
         long now = System.currentTimeMillis();
-        int wave = 0;
-        // 与 currentWave 同刻度（显示段 ≈ 波号-1），否则 TOO IN 的 3 波 TTL 会多留一整波
-        try { wave = Math.max(0, ZombiesRoundData.waveAt(round, Math.max(0L, now - ZombiesTracker.instance().roundStartMs())) - 1); } catch (Throwable ignored) {}
+        // TOO IN 的 3 波 TTL 与 currentWave 同刻度（1 基波号），切段后判定天然正确
+        int wave = currentWave > 0 ? currentWave : 1;
         // 标记红字 T
         hasToo[idx] = true;
         // TOO IN 去重：同回合同窗只留一条，TTL 3 波在 tick 中清理
@@ -384,12 +424,7 @@ public final class WindowSpawnCounterModule implements Module {
         knownTooSessionIds.clear();
         pendingToos.clear();
         currentRound = round;
-        currentWave = -1;
-    }
-
-    void onWaveChanged(int round, int wave) {
-        if (round != currentRound) { Arrays.fill(counts, 0); Arrays.fill(hasToo, false); tooInEntries.clear(); currentRound = round; }
-        if (wave != currentWave) { Arrays.fill(counts, 0); Arrays.fill(hasToo, false); currentWave = wave; }
+        currentWave = 1;
     }
 
     public void onSessionReset() {
@@ -402,12 +437,13 @@ public final class WindowSpawnCounterModule implements Module {
         pendingToos.clear();
         birthPosById.clear();
         totalSpawns = 0;
+        // 连 currentRound/currentWave 一起复位：重进同回合时 tick 的回合分支会重新初始化
+        currentRound = -1;
+        currentWave = -1;
     }
 
     @Override public void resetState() { onSessionReset(); }
 
-    // 上一波的 nominal 时间，用于 ±1s 容差判定
-    private long lastWaveNominalMs = -1L;
     // HUD 位置诊断节流（3s 一条）
     private long lastHudDiagMs = 0L;
 
@@ -424,35 +460,14 @@ public final class WindowSpawnCounterModule implements Module {
         if (z == null || !z.isInAlienArcadium() || z.round() <= 0 || z.roundStartMs() <= 0) return;
         long now = System.currentTimeMillis();
         long elapsed = Math.max(0L, now - z.roundStartMs());
-        int rawWave = ZombiesRoundData.waveAt(z.round(), elapsed);
         int round = z.round();
-        int wave = rawWave;
-        int[] wtimes = ZombiesRoundData.waveTimes(round);
-        if (currentWave >= 0 && currentWave < wtimes.length) {
-            if (rawWave == currentWave + 1 && lastWaveNominalMs >= 0 && rawWave < wtimes.length) {
-                long nextNominal = wtimes[rawWave] * 1000L;
-                long sinceNominal = elapsed - nextNominal;
-                if (sinceNominal < -1000L || (sinceNominal < 1000L && elapsed - lastWaveNominalMs < 1000L)) {
-                    wave = currentWave;
-                }
-            }
-            if (rawWave < currentWave) wave = currentWave;
-        }
-        boolean waveAdvanced = false;
         if (round != currentRound) {
             Arrays.fill(counts, 0); Arrays.fill(hasToo, false); tooInEntries.clear();
             tooSessions.clear(); knownTooSessionIds.clear();
-            currentRound = round; currentWave = wave;
-            int[] wt2 = ZombiesRoundData.waveTimes(round);
-            lastWaveNominalMs = (wave >= 0 && wave < wt2.length) ? wt2[wave] * 1000L : -1L;
-            waveAdvanced = true;
-        } else if (wave != currentWave && wave > currentWave) {
-            int[] wt2 = ZombiesRoundData.waveTimes(round);
-            // 最后一波（waveAt 为 1 基，wave == 总波数）不清零：保留此前记录继续累加，显示到回合结束
-            if (wave != wt2.length) { Arrays.fill(counts, 0); Arrays.fill(hasToo, false); }
-            currentWave = wave;
-            lastWaveNominalMs = (wave >= 0 && wave < wt2.length) ? wt2[wave] * 1000L : -1L;
-            waveAdvanced = true;
+            currentRound = round; currentWave = 1;
+        } else {
+            // 静默兜底：下一波 nominal +6s 仍无怪出生（全 UFO 波等）则切段但不清零，残留并入新段
+            currentWave = forceTarget(currentWave, elapsed, ZombiesRoundData.waveTimes(round));
         }
         // pending TOO 复核：出生时数据/装备未同步，每 tick 重判，3s 内转正
         if (!pendingToos.isEmpty() && client != null && client.level != null) {
@@ -599,11 +614,10 @@ public final class WindowSpawnCounterModule implements Module {
         try {
             int[] wtimes = ZombiesRoundData.waveTimes(z.round());
             int total = wtimes.length;
-            if (total > 0 && currentWave >= 0) {
-                // 显示段语义：currentWave=k 区间为 [times[k]-1s, times[k+1]-1s)，收集第 k+1 波的怪；
-                // 倒数第二波期间 currentWave==total-2（黄）；最后一波含提前 1s 窗（total-1）与本体（total）均橙
-                if (currentWave >= total - 1) waveColor = 0xFFFF9800;
-                else if (currentWave == total - 2) waveColor = 0xFFFFC107;
+            if (total > 0 && currentWave >= 1) {
+                // currentWave 为 1 基波号：最后一波（== total）橙，倒数第二波黄
+                if (currentWave >= total) waveColor = 0xFFFF9800;
+                else if (currentWave == total - 1) waveColor = 0xFFFFC107;
             }
         } catch (Throwable ignored) {}
 

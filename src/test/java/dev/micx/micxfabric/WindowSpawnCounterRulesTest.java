@@ -156,4 +156,35 @@ class WindowSpawnCounterRulesTest {
         assertTrue(1.5 * 2 < minSpacing,
                 "3x3 box width must stay below the closest window spacing");
     }
+
+    // ——— 怪驱动切段（0.2.64）：表时刻只作闸门，怪没来不清零 ———
+
+    /** 出生切段闸门：下一波 nominal −1.5s 之前出生的怪仍归当前波，越过后归下一波。 */
+    @Test
+    void birthFlipWaitsForGate() {
+        int[] times = {10, 22, 34};
+        assertEquals(1, WindowSpawnCounterModule.flipTargetOnBirth(1, 8500, times));
+        assertEquals(2, WindowSpawnCounterModule.flipTargetOnBirth(1, 20600, times));
+        assertEquals(2, WindowSpawnCounterModule.flipTargetOnBirth(1, 32499, times));
+        assertEquals(3, WindowSpawnCounterModule.flipTargetOnBirth(1, 32500, times));
+    }
+
+    /** 切段封顶总波数：进入最后一波后 flip 不再推进（数量保留到回合结束的核心保障）。 */
+    @Test
+    void birthFlipNeverPassesLastWave() {
+        int[] times = {10, 22, 34};
+        assertEquals(3, WindowSpawnCounterModule.flipTargetOnBirth(3, 999999, times));
+        // 单波回合（r101-105 = {5}）
+        assertEquals(1, WindowSpawnCounterModule.flipTargetOnBirth(1, 999999, new int[]{5}));
+    }
+
+    /** 静默兜底：下一波 nominal +6s 仍无怪才推进；同样封顶最后一波。 */
+    @Test
+    void forceAdvanceIsNominalPlusGrace() {
+        int[] times = {10, 22, 34};
+        assertEquals(1, WindowSpawnCounterModule.forceTarget(1, 27999, times));
+        assertEquals(2, WindowSpawnCounterModule.forceTarget(1, 28000, times));
+        assertEquals(3, WindowSpawnCounterModule.forceTarget(2, 40000, times));
+        assertEquals(3, WindowSpawnCounterModule.forceTarget(3, 999999, times));
+    }
 }

@@ -8,9 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ZombiesSessionRulesTest {
     @Test
     void transientSidebarLossDoesNotConfirmExitImmediately() {
-        assertFalse(ZombiesSessionRules.shouldConfirmExit(true, 10_000L, 10_999L));
-        assertTrue(ZombiesSessionRules.shouldConfirmExit(true, 10_000L, 11_000L));
-        assertFalse(ZombiesSessionRules.shouldConfirmExit(false, 10_000L, 11_000L));
+        // 宽限 3s：Hypixel 重建侧栏/瞬时判定失败不应误判退出（误判会在重检出后清空回合计数）
+        assertFalse(ZombiesSessionRules.shouldConfirmExit(true, 10_000L, 12_999L));
+        assertTrue(ZombiesSessionRules.shouldConfirmExit(true, 10_000L, 13_000L));
+        assertFalse(ZombiesSessionRules.shouldConfirmExit(false, 10_000L, 13_000L));
     }
 
     @Test

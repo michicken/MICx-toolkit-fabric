@@ -2,7 +2,8 @@ package dev.micx.micxfabric;
 
 /** Pure timing and transition rules for the Zombies sidebar session lifecycle. */
 final class ZombiesSessionRules {
-    static final long NON_ZOMBIES_CONFIRM_MS = 1_000L;
+    /** 侧栏缺失确认宽限。1s 太短：Hypixel 重建侧栏/瞬时判定失败会误判退出，导致重检出后清空回合计数。 */
+    static final long NON_ZOMBIES_CONFIRM_MS = 3_000L;
 
     private ZombiesSessionRules() {
     }

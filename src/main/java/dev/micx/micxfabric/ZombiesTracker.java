@@ -56,6 +56,9 @@ public final class ZombiesTracker {
     private final ZombiesEventState eventState = new ZombiesEventState();
     private final ZombiesSoundMetrics soundMetrics = new ZombiesSoundMetrics();
     private volatile long titleRoundStartMs = 0L;
+    // 回合通知去重：侧栏闪断（finishOldSession→重检出）回到同一回合时，不得对模块二次 onRoundChanged 清零
+    private int lastNotifiedRound = -1;
+    private long lastNotifiedRoundMs = 0L;
     private volatile long waveWaveStartMs = 0L;
     private volatile int waveWaveRound = -1;
     private volatile int waveWaveIndex = -1;
@@ -105,6 +108,9 @@ public final class ZombiesTracker {
         eventLevel = null;
         eventGeneration++;
         tickCounter = 0;
+        // 断线/换世界属真会话终结，去重锚一并清掉（下次连接首回合必须通知）
+        lastNotifiedRound = -1;
+        lastNotifiedRoundMs = 0L;
         frame = ScoreboardFrame.empty();
         eventState.reset();
         ecoRate.reset();
@@ -312,10 +318,23 @@ public final class ZombiesTracker {
         soundMetrics.observe(soundId, pitch, x, y, z, now, inAlienArcadium, players);
     }
 
+    /** 回合变化只通知一次：闪断重检出同一回合时不再触发模块清零（断线 reset 会清去重锚）。 */
+    private void notifyRoundChanged(int value) {
+        if (value == lastNotifiedRound) return;
+        lastNotifiedRound = value;
+        lastNotifiedRoundMs = System.currentTimeMillis();
+        try { LrIndicatorModule.onRoundChanged(value); } catch (Throwable ignored) {}
+        try { ZombiesExplorerModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        try { WaveSpawnSoundModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        try { WindowSpawnCounterModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+    }
+
     private void updateRound(int value, long now) {
         if (value <= 0 || value > 105) return;
         if (round > 0 && value < round && value == 1) {
-            round = value; roundStartMs = now; cumulativeActualMs = 0L; lastSplitRound = 0; return;
+            round = value; roundStartMs = now; cumulativeActualMs = 0L; lastSplitRound = 0;
+            notifyRoundChanged(value);
+            return;
         }
         if (value <= round) return;
         int prevRound = round; long prevStart = roundStartMs; long durationMs = prevRound >=1 && prevStart>0 ? now - prevStart : -1;
@@ -352,10 +371,7 @@ public final class ZombiesTracker {
         roundStartMs = now;
         titleRoundStartMs = now;
         clearWaveAnchorForRound(value);
-        try { LrIndicatorModule.onRoundChanged(value); } catch (Throwable ignored) {}
-        try { ZombiesExplorerModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
-        try { WaveSpawnSoundModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
-        try { WindowSpawnCounterModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        notifyRoundChanged(value);
     }
 
     private void updateFromSidebar(Scoreboard scoreboard, Minecraft client) {
@@ -392,8 +408,13 @@ public final class ZombiesTracker {
             return;
         }
 
-        if (awaitingNewZombiesSession
-                || ZombiesSessionRules.isRoundRestart(round, next.round())) {
+        // 陈旧侧栏守卫：标题事件刚推进回合（≤5s）、侧栏行尚未跟上时，不得把旧行当成「回合回退重开」
+        boolean staleSidebarRound = round > 1 && next.round() > 0 && next.round() < round
+                && lastNotifiedRound == round
+                && now - lastNotifiedRoundMs < 5000L;
+        if (!staleSidebarRound
+                && (awaitingNewZombiesSession
+                || ZombiesSessionRules.isRoundRestart(round, next.round()))) {
             if (eventState.hasGameOverPending()) {
                 // Do not replace the old counters before the post-game consumer has read them.
                 clearScoreboardView();
@@ -425,10 +446,7 @@ public final class ZombiesTracker {
             // Sidebar is fallback only — do not overwrite title-anchored roundStartMs mid-round
             if (roundStartMs <= 0L) roundStartMs = now;
             round = next.round();
-            try { LrIndicatorModule.onRoundChanged(next.round()); } catch (Throwable ignored) {}
-            try { ZombiesExplorerModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
-            try { WaveSpawnSoundModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
-            try { WindowSpawnCounterModule.instance().onRoundChanged(next.round()); } catch (Throwable ignored) {}
+            notifyRoundChanged(next.round());
         }
         if (next.zombiesLeft() >= 0) zombiesLeft = next.zombiesLeft();
         // EcoRate: sample all visible players for mate rates
