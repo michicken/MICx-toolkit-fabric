@@ -10,8 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 窗口刷怪量出生点归档规则。
  *
- * <p>背景：0.2.58 起 HUD 用「正方形 3×3（±1.5 格）」严格命中判定，与类文档的
- * 「最近窗归档」口径不符，实测刷怪散布远超 ±1.5 格导致漏计。现改为最近窗 + 归档半径。
+ * <p>现行口径（用户定版）：有效刷怪 = 3×3 方块（中心 ±1.5 格，含边界），
+ * y = 该窗地面层 ±3.0，且 y 必须落在<b>精确整数层</b>（容差 0.1）。
+ *
+ * <p>三条防污染规则各自有回归锁：
+ * <ul>
+ *   <li>{@link #practiceYLayerIsRejected()} —— 练习区刷在 72.8/73.8/74.8，靠整数层闸门拦；</li>
+ *   <li>{@link #perWindowGroundYIsHonored()} —— BR/BL 地面在 y=73，逐窗配置；</li>
+ *   <li>{@link #p4TrueSpawnPointIsArchived()} —— P4 真刷怪点 (-10.5,-5.5,72.0)。</li>
+ * </ul>
  */
 class WindowSpawnCounterRulesTest {
 
@@ -31,57 +38,110 @@ class WindowSpawnCounterRulesTest {
         assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, Y, 32.0));
         // ULT = (28, 32)
         assertEquals(indexOf("ULT"), WindowSpawnCounterModule.windowIndexForBirth(28.0, Y, 32.0));
-        // BL = (34, -2)
-        assertEquals(indexOf("BL"), WindowSpawnCounterModule.windowIndexForBirth(34.0, Y, -2.0));
+        // BL = (34, -2)，地面 y=73
+        assertEquals(indexOf("BL"), WindowSpawnCounterModule.windowIndexForBirth(34.0, 73.0, -2.0));
     }
 
     @Test
-    void spawnOffsetBeyondOldThreeByThreeBoxIsStillArchived() {
-        // 旧逻辑要求 |dx|<=1.5 && |dz|<=1.5，对角偏移 1.6 即漏计；新逻辑按最近窗半径 4.0 归档
-        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(7.6, Y, 33.6));
-        // 单轴偏移 3.0：旧逻辑完全漏计
-        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(9.0, Y, 32.0));
-        // 半径内的对角极限：偏移 (2.8, 2.8) 距离约 3.96
-        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(8.8, Y, 34.8));
+    void spawnInsideThreeByThreeBoxIsArchived() {
+        // 3×3 边界含 ±1.5：对角极限 (1.5, 1.5)
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(7.5, Y, 33.5));
+        // 单轴偏移 1.5
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(7.5, Y, 32.0));
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, Y, 33.5));
+        // 真实散布点（刷怪点通常落在半格上）
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.5, Y, 31.5));
     }
 
     @Test
-    void spawnOutsideArchiveRadiusIsNotCounted() {
-        // P1 外 5 格，且远离其它窗
+    void spawnOutsideThreeByThreeBoxIsNotCounted() {
+        // 单轴刚出框：1.5 + 0.05
+        assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(7.55, Y, 32.0));
+        // 对角出框
+        assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(7.6, Y, 33.6));
+        // 远离所有窗
         assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(11.0, Y, 32.0));
-        // 半径边界外一点点
-        assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(10.1, Y, 32.0));
     }
 
     @Test
     void spawnBeyondVerticalToleranceIsNotCounted() {
+        // y 容差 ±3.0（P1 地面 72）
         assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(6.0, Y + 5.0, 32.0));
         assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(6.0, Y - 5.0, 32.0));
-        // 容差内仍归档
-        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, Y + 3.5, 32.0));
+        // 容差边界内仍归档（整数层）
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, Y + 3.0, 32.0));
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, Y - 3.0, 32.0));
+        // P1 实测第二刷怪点 y=69（1,488 只真怪），必须能归档
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.5, 69.0, 31.5));
     }
 
     @Test
     void ambiguousPointBetweenTwoWindowsGoesToNearest() {
-        // P2 = (-22, 16) 与 P3 = (-22, 10)，相距 6.0，中点为 (-22, 13)
-        assertEquals(indexOf("P2"), WindowSpawnCounterModule.windowIndexForBirth(-22.0, Y, 13.5));
-        assertEquals(indexOf("P3"), WindowSpawnCounterModule.windowIndexForBirth(-22.0, Y, 12.5));
+        // P2 = (-22, 16) 与 P3 = (-22, 10)，相距 6.0，中点为 (-22, 13)。
+        // 3×3 只覆盖 z∈[14.5,17.5] 与 z∈[8.5,11.5]，故取框内靠中间的点验证最近窗归属。
+        assertEquals(indexOf("P2"), WindowSpawnCounterModule.windowIndexForBirth(-22.0, Y, 14.6));
+        assertEquals(indexOf("P3"), WindowSpawnCounterModule.windowIndexForBirth(-22.0, Y, 11.4));
+        // 中点附近（两框之间的真空带）不归档
+        assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(-22.0, Y, 13.0));
     }
 
     @Test
     void nearestWindowIndexAgreesWithArchiveRule() {
         List<WindowSpawnCounterModule.WindowDef> windows = WindowSpawnCounterModule.WINDOWS;
         for (WindowSpawnCounterModule.WindowDef w : windows) {
-            // 每个窗中心偏移 2 格，最近窗必须是自己
-            assertEquals(indexOf(w.id), WindowSpawnCounterModule.windowIndexForBirth(w.x + 2.0, Y, w.z),
-                    "window " + w.id + " must claim a spawn 2 blocks away");
+            // 每个窗中心偏移 1 格（3×3 内），最近窗必须是自己
+            assertEquals(indexOf(w.id), WindowSpawnCounterModule.windowIndexForBirth(w.x + 1.0, w.y, w.z),
+                    "window " + w.id + " must claim a spawn 1 block away");
         }
     }
 
+    /**
+     * 练习区防污染核心锁：练习区刷在 y=72.8 / 73.8 / 74.8（974 局共 183,754 只，
+     * 配比恒定 鸡:狼:牛 = 2:1:1，其中 46,220 只是狼，isCountable 拦不住）。
+     * 整数层闸门容差必须取 0.1 —— 72.8 距最近整数仅 0.2，用 0.5 会被判成「接近整数」放行。
+     */
     @Test
-    void archiveRadiusStaysBelowClosestWindowSpacing() {
-        // 11 窗最近间距 6.00 格（P2↔P3）。半径 4.0 严格小于该间距，
-        // 保证任一窗的归档邻域不会吞掉邻近窗的中心，归属始终由最近距离决定。
+    void practiceYLayerIsRejected() {
+        double[] practiceY = {72.8, 73.8, 74.8};
+        // 练习区 9 个 XZ 点：横排 z=-0.5 (x -16.5..-12.5)，竖列 x=-16.5 (z 0.5..3.5)
+        double[][] practiceXZ = {
+                {-16.5, -0.5}, {-15.5, -0.5}, {-14.5, -0.5}, {-13.5, -0.5}, {-12.5, -0.5},
+                {-16.5, 0.5}, {-16.5, 1.5}, {-16.5, 2.5}, {-16.5, 3.5},
+        };
+        for (double y : practiceY) {
+            for (double[] p : practiceXZ) {
+                assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(p[0], y, p[1]),
+                        "practice spawn at (" + p[0] + ", " + y + ", " + p[1] + ") must not be archived");
+            }
+        }
+    }
+
+    /** BR / BL 的地面在 y=73.0，不是 72.0 —— 逐窗 y 配置，收紧容差时不会归零。 */
+    @Test
+    void perWindowGroundYIsHonored() {
+        assertEquals(indexOf("BR"), WindowSpawnCounterModule.windowIndexForBirth(22.0, 73.0, -14.0));
+        assertEquals(indexOf("BL"), WindowSpawnCounterModule.windowIndexForBirth(34.0, 73.0, -2.0));
+        // 主区 9 窗仍在 72.0
+        assertEquals(indexOf("P1"), WindowSpawnCounterModule.windowIndexForBirth(6.0, 72.0, 32.0));
+        assertEquals(indexOf("P4"), WindowSpawnCounterModule.windowIndexForBirth(-10.0, 72.0, -6.0));
+    }
+
+    /**
+     * P4 真刷怪点回归锁。974 局全量实测：唯一刷怪点 (-10.5,-5.5,72.0)，49,568 只，
+     * 100% 落在 y=72.0，练习区污染 0 只。此前误改到 (-14,-0.5) 时，20,444 只里
+     * 20,440 只是练习区的狼，真怪只剩 4 只。
+     */
+    @Test
+    void p4TrueSpawnPointIsArchived() {
+        assertEquals(indexOf("P4"), WindowSpawnCounterModule.windowIndexForBirth(-10.5, 72.0, -5.5));
+        // 练习区最近点 (-12.5,-0.5) 到 P4 中心 6.04 格，不得被 P4 认领
+        assertEquals(-1, WindowSpawnCounterModule.windowIndexForBirth(-12.5, 72.0, -0.5));
+    }
+
+    @Test
+    void boxHalfStaysBelowClosestWindowSpacing() {
+        // 11 窗最近间距 6.00 格（P2↔P3）。3×3 半宽 1.5 远小于该间距的一半，
+        // 保证任一窗的归档邻域不会吞掉邻近窗，归属始终由最近距离决定。
         List<WindowSpawnCounterModule.WindowDef> windows = WindowSpawnCounterModule.WINDOWS;
         assertEquals(11, windows.size(), "expected 11 ground windows");
         double minSpacing = Double.MAX_VALUE;
@@ -93,7 +153,7 @@ class WindowSpawnCounterRulesTest {
             }
         }
         assertEquals(6.0, minSpacing, 0.001, "closest window spacing (P2<->P3)");
-        assertTrue(4.0 < minSpacing,
-                "archive radius must stay below the closest window spacing");
+        assertTrue(1.5 * 2 < minSpacing,
+                "3x3 box width must stay below the closest window spacing");
     }
 }

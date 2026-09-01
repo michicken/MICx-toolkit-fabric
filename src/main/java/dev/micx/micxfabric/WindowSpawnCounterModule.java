@@ -43,26 +43,34 @@ import java.util.Properties;
  * 展示 11 窗当前计数（实时为本回合内该窗归档数）。用 HudLayoutRegistry 托管位移与缩放。
  */
 public final class WindowSpawnCounterModule implements Module {
-    /** 11 窗定义：id 展示名, x, z（y 均为 72，比较只用 XZ）。顺序 = 渲染行优先。 */
+    /**
+     * 11 窗定义：id 展示名, x, z, y（y = 该窗所在地面层）。顺序 = 渲染行优先。
+     *
+     * <p>y 逐窗配置而非统一 72：974 局全量复核显示 BR/BL 两个角的地面在 <b>y=73.0</b>
+     * （各 19,266 / 19,264 只，100%），其余 9 窗在 y=72.0。若统一按 72 判定，
+     * 收紧容差时 BR/BL 会直接归零。
+     */
     public static final class WindowDef {
         public final String id;  // HUD 上显示的窗名
-        public final double x, z;
-        WindowDef(String id, double x, double z) { this.id = id; this.x = x; this.z = z; }
+        public final double x, z, y;
+        WindowDef(String id, double x, double z, double y) { this.id = id; this.x = x; this.z = z; this.y = y; }
     }
 
     /** 与 SpawnMarkerModule.PRESET_SPAWNS 一一对应（去掉 4 个 UFO y=105），按用户标定更名 CL/CR/BL/BR。 */
     public static final List<WindowDef> WINDOWS = Collections.unmodifiableList(Arrays.asList(
-            new WindowDef("P1",   6.0,  32.0),  // A
-            new WindowDef("P2", -22.0,  16.0),  // B
-            new WindowDef("P5",  22.0,  14.0),  // C
-            new WindowDef("P3", -22.0,  10.0),  // D
-            new WindowDef("P4", -10.0,  -6.0),  // E
-            new WindowDef("ULT", 28.0,  32.0),  // F
-            new WindowDef("CL", -28.0,  28.0),  // G  原 RC
-            new WindowDef("ALT", 18.0,  44.0),  // H
-            new WindowDef("CR", -12.0,  40.0),  // I  原 LC/cc
-            new WindowDef("BR",  22.0, -14.0),  // J  原 perk
-            new WindowDef("BL",  34.0,  -2.0)   // K  原 bc_ent
+            new WindowDef("P1",   6.0,  32.0, 72.0),  // A  另有第二刷怪点 (6.5,31.5,y=69) 1,488 只，故 Y_TOL 须 ≥3
+            new WindowDef("P2", -22.0,  16.0, 72.0),  // B
+            new WindowDef("P5",  22.0,  14.0, 72.0),  // C
+            new WindowDef("P3", -22.0,  10.0, 72.0),  // D
+            new WindowDef("P4", -10.0,  -6.0, 72.0),  // E  真刷怪点 (-10.5,-5.5,72.0)，974 局全量 49,568 只、100% y=72。
+                                                      //    此前改到 (-14,-0.5) 属误判：该点 3×3 整框压在练习区上，
+                                                      //    20,444 只里 20,440 只是练习区的狼，真怪只剩 4 只。
+            new WindowDef("ULT", 28.0,  32.0, 72.0),  // F
+            new WindowDef("CL", -28.0,  28.0, 72.0),  // G  原 RC
+            new WindowDef("ALT", 18.0,  44.0, 72.0),  // H
+            new WindowDef("CR", -12.0,  40.0, 72.0),  // I  原 LC/cc
+            new WindowDef("BR",  22.0, -14.0, 73.0),  // J  原 perk  地面 y=73（实测 19,266 只 100%）
+            new WindowDef("BL",  34.0,  -2.0, 73.0)   // K  原 bc_ent 地面 y=73（实测 19,264 只 100%）
     ));
 
     private static String fullName(String id) {
@@ -176,6 +184,12 @@ public final class WindowSpawnCounterModule implements Module {
     private static boolean isPracticeDummy(LivingEntity e, double bx, double bz) {
         double dx = bx - (-10.0), dz = bz - (-6.0);
         if (dx * dx + dz * dz > 16) return false; // 4格外不管
+
+        // 狼（幽灵犬）是有效战斗单位，但成年狼碰撞箱高仅 0.85，会被下面的 h<1.2 误判成练习靶。
+        // P4 真刷怪点 (-10.5,-5.5) 距本锚点仅 0.71 格，不先放行会把 P4 窗的狼全部丢弃
+        // （974 局全量实测 2,584 只）。必须放在尺寸判定之前。
+        if (e instanceof Wolf) return false;
+
         // 隐身盔甲架视为靶
         try { if (e.isInvisible()) return true; } catch (Throwable ignored) {}
         // 矮模型/极小碰撞箱视为靶（baby 除外，小僵尸本就矮小）
@@ -197,7 +211,7 @@ public final class WindowSpawnCounterModule implements Module {
         try { type = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath(); } catch (Throwable t) { type = "?"; }
         MicxFabric.LOGGER.info("[micx-wspawn] birth id={} type={} baby={} pos=({},{},{}) nearest={} dist={} dy={} idx={}",
                 e.getId(), type, e.isBaby(), one(bx), one(by), one(bz), w.id,
-                one(Math.hypot(bx - w.x, bz - w.z)), one(Math.abs(by - WINDOW_Y)), idx);
+                one(Math.hypot(bx - w.x, bz - w.z)), one(Math.abs(by - w.y)), idx);
     }
 
     private static String one(double v) {
@@ -205,18 +219,23 @@ public final class WindowSpawnCounterModule implements Module {
     }
 
     /**
-     * 窗口归档判定参数：出生点按 XZ 归到最近窗，且须落在该窗归档半径内。
+     * 窗口归档判定参数：出生点按 XZ 归到最近窗，且须落在该窗有效范围内。
      *
-     * <p>此前用「正方形 3×3（±1.5 格）」严格命中，与类文档的「最近窗归档」口径不符：
-     * PRESET_SPAWNS 是 ZombiesLogger 实测聚类中心，实际出生点在中心周围散布远大于 ±1.5 格，
-     * 导致绝大多数刷怪漏计（表现为窗口出怪但 HUD 不显示）。
+     * <p>有效刷怪 = 3×3 方块（中心 ±1.5 格，含边界），y = 该窗地面层 ±3.0（逐窗配置）。用户定版口径：
+     * 「windowspawn 刷怪坐标 3*3 的范围可以当做有效刷怪」。
      *
-     * <p>半径取 4.0 的依据：11 窗两两最近间距为 6.00 格（P2↔P3），最近窗优先规则下
-     * 4.0 半径虽略过中点，但归属仍由欧氏距离唯一确定，不会错配；覆盖面积约为原 3×3 的 5.6 倍。
+     * <p><b>整数层闸门</b>：出生 y 必须落在精确整数层（容差 0.1）。练习区刷在
+     * y=72.8 / 73.8 / 74.8（974 局共 183,754 只，配比恒定 鸡:狼:牛=2:1:1），
+     * 其中 46,220 只是狼 —— 走 isCountable 白名单拦不住，只能靠 Y 层隔离。
+     * 加上闸门后归档半径不再受「练习区到 P4 的 6.04 格」限制，扩窗也不会被反噬。
      */
-    private static final double WINDOW_Y = 72.0;
-    private static final double WINDOW_RADIUS = 4.0;
-    private static final double Y_TOL = 4.0;
+    private static final double HALF = 1.5;
+    private static final double Y_TOL = 3.0;
+    /**
+     * 整数层闸门容差。<b>必须取 0.1 而不是 0.5</b>：练习区在 72.8，距最近整数 73 仅 0.2，
+     * 用 0.5 会被判成「接近整数」从而放行（实测该写法在归档半径 8.0 时污染 20,440 只）。
+     */
+    private static final double INT_Y_TOL = 0.1;
 
     public void recordBirthPos(int id, double x, double y, double z) {
         birthPosById.put(id, new Vec3(x, y, z));
@@ -252,13 +271,14 @@ public final class WindowSpawnCounterModule implements Module {
         return e instanceof net.minecraft.world.entity.monster.zombie.Zombie;
     }
 
-    /** 最近窗归档：XZ 最近窗且落在该窗半径内，y 超容差不归档；-1 表示窗外出生。 */
+    /** 最近窗归档：XZ 最近窗且落在该窗 3×3 内（±1.5 含边界），y 须为整数层且在该窗地面 ±3 内；-1 表示窗外出生。 */
     static int windowIndexForBirth(double x, double y, double z) {
-        if (Math.abs(y - WINDOW_Y) > Y_TOL + 1e-6) return -1;
+        // 整数层闸门：一刀切掉练习区（72.8 / 73.8 / 74.8），成本仅为世界各处的 8 只噪声
+        if (Math.abs(y - Math.rint(y)) > INT_Y_TOL + 1e-6) return -1;
         int best = nearestWindowIndex(x, z);
         WindowDef w = WINDOWS.get(best);
-        double dx = x - w.x, dz = z - w.z;
-        if (dx * dx + dz * dz > WINDOW_RADIUS * WINDOW_RADIUS + 1e-6) return -1;
+        if (Math.abs(y - w.y) > Y_TOL + 1e-6) return -1;
+        if (Math.abs(x - w.x) > HALF + 1e-6 || Math.abs(z - w.z) > HALF + 1e-6) return -1;
         return best;
     }
 
