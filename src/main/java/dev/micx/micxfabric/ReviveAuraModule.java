@@ -8,15 +8,20 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 public final class ReviveAuraModule implements Module {
     private static final ReviveAuraModule INSTANCE = new ReviveAuraModule();
     private boolean enabled;
     private double range = 4.5;
-    private double intervalMs = 200.0;
-    private long lastRevive = 0L;
     private boolean configLoaded;
+    /** Hyp 救援语义：对倒地玩家发一次 interact 即开始救援，服务端固定时长完成且不被打断，
+     *  重复包无意义——每个目标每次倒地只发一包，起立/消失后解除标记可再次救援。 */
+    private final Set<Integer> attemptedIds = new HashSet<>();
 
     private ReviveAuraModule() {}
 
@@ -29,13 +34,11 @@ public final class ReviveAuraModule implements Module {
         loadConfig();
         enabled = v;
         ModuleStateStore.put(id(), v);
-        if (v) { lastRevive = 0L; sendLogs = 0; scanLogAt = 0L; }
+        if (v) { attemptedIds.clear(); sendLogs = 0; scanLogAt = 0L; }
     }
 
     public double getRange() { loadConfig(); return range; }
     public void setRange(double v) { range = Math.max(1.0, Math.min(10.0, v)); saveConfig(); }
-    public double getIntervalMs() { loadConfig(); return intervalMs; }
-    public void setIntervalMs(double v) { intervalMs = Math.max(50.0, Math.min(1000.0, v)); saveConfig(); }
 
     /** 诊断：扫描状态日志节流时间戳。 */
     private long scanLogAt;
@@ -59,25 +62,31 @@ public final class ReviveAuraModule implements Module {
             int players = 0;
             int candidates = 0;
             int inRange = 0;
+            int pending = 0;
             for (Entity entity : client.level.entitiesForRendering()) {
                 if (!(entity instanceof Player p) || p == client.player) continue;
                 players++;
-                if (isDownCandidate(p)) {
-                    candidates++;
-                    if (client.player.distanceTo(p) <= range) inRange++;
-                }
+                if (!isDownCandidate(p)) continue;
+                candidates++;
+                if (client.player.distanceTo(p) <= range) inRange++;
+                if (!attemptedIds.contains(p.getId())) pending++;
             }
             if (diagAll || candidates > 0) {
-                MicxFabric.LOGGER.info("[micx-revive] scan: players={} candidates={} inRange={} range={}", players, candidates, inRange, range);
+                MicxFabric.LOGGER.info("[micx-revive] scan: players={} candidates={} inRange={} pending={} range={}", players, candidates, inRange, pending, range);
             }
         }
-        if (now - lastRevive < intervalMs) return;
+        // 收集全部倒地候选并解除已起立/消失目标的标记；未发过包且在范围内的目标同 tick 并行各发一包
+        Set<Integer> downedIds = new HashSet<>();
+        List<Player> pending = new ArrayList<>();
         for (Entity entity : client.level.entitiesForRendering()) {
-            if (!(entity instanceof Player player)) continue;
-            if (player == client.player) continue;
+            if (!(entity instanceof Player player) || player == client.player) continue;
             if (!isDownCandidate(player)) continue;
-            if (client.player.distanceTo(player) > range) continue;
-            if (client.getConnection() == null) return;
+            downedIds.add(player.getId());
+            if (!attemptedIds.contains(player.getId()) && client.player.distanceTo(player) <= range) pending.add(player);
+        }
+        attemptedIds.retainAll(downedIds);
+        if (pending.isEmpty() || client.getConnection() == null) return;
+        for (Player player : pending) {
             // 26.2 协议无"无坐标 INTERACT"（LpVec3 零向量=空坐标单字节哨兵，write 非空解引用），
             // Via 转 1.8.9 恒为 INTERACT_AT。location 对准目标 hitbox（原版右键同款相对偏移），
             // 不转头纯发包；Hyp 不校验视线遮挡。
@@ -86,14 +95,13 @@ public final class ReviveAuraModule implements Module {
                     .map(v -> v.subtract(player.getX(), player.getY(), player.getZ()))
                     .orElse(Vec3.ZERO);
             client.getConnection().send(new ServerboundInteractPacket(player.getId(), InteractionHand.MAIN_HAND, rel, false));
-            lastRevive = now;
+            attemptedIds.add(player.getId());
             if (sendLogs++ < 10) {
                 MicxFabric.LOGGER.info("[micx-revive] send -> {} dist={} rel=({},{},{}) sleeping={} pose={}",
                         player.getName().getString(), String.format("%.1f", client.player.distanceTo(player)),
                         String.format("%.2f", rel.x), String.format("%.2f", rel.y), String.format("%.2f", rel.z),
                         player.isSleeping(), player.getPose());
             }
-            break;
         }
     }
 
@@ -115,7 +123,7 @@ public final class ReviveAuraModule implements Module {
         }
     }
 
-    @Override public void resetState() { lastRevive = 0L; }
+    @Override public void resetState() { attemptedIds.clear(); }
 
     private void loadConfig() {
         if (configLoaded) return;
@@ -125,15 +133,12 @@ public final class ReviveAuraModule implements Module {
         Properties p = ConfigProperties.load(cur, leg);
         String rv = p.getProperty("range");
         if (rv != null) try { range = Math.max(1.0, Math.min(10.0, Double.parseDouble(rv.trim()))); } catch (Exception ignored) {}
-        String iv = p.getProperty("intervalMs");
-        if (iv != null) try { intervalMs = Math.max(50.0, Math.min(1000.0, Double.parseDouble(iv.trim()))); } catch (Exception ignored) {}
         toggleKeyCodes = KeyChord.readConfig(p, "toggleKeys", "toggleKey", 0);
     }
 
     private void saveConfig() {
         Properties p = new Properties();
         p.setProperty("range", Double.toString(range));
-        p.setProperty("intervalMs", Double.toString(intervalMs));
         KeyChord.writeConfig(p, "toggleKeys", "toggleKey", toggleKeyCodes);
         try { AtomicProperties.store(FabricRuntime.configPath().resolve("revive-aura.properties"), p, "MICx ReviveAura"); } catch (IOException e) { MicxFabric.LOGGER.warn("Unable to save ReviveAura configuration", e); }
     }

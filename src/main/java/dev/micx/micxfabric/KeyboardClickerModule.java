@@ -16,9 +16,9 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * Native KeyMapping clicker for the Forge 23/234/24/34 modes.
+ * Native KeyMapping clicker for the 23/234/24/34 modes.
  * It queues hotbar key clicks and never constructs interaction packets itself.
- * Reload recovery uses the same native hotbar and attack mappings.
+ * Reload recovery uses the same native hotbar and drop (Q) mappings.
  */
 public final class KeyboardClickerModule implements Module {
     private static final KeyboardClickerModule INSTANCE = new KeyboardClickerModule();
@@ -32,15 +32,14 @@ public final class KeyboardClickerModule implements Module {
     private static final long JAM_DETECT_MS = 150L;
     private static final long SKIP_LOG_INTERVAL_MS = 1_000L;
     /* ---- 模式 B（保护模式，Forge 同参） ---- */
-    /** 前兆阈值：磨损 ≥ 88% 且耐久不变 → 记 40ms 后左键换弹。 */
+    /** 前兆阈值：磨损 ≥ 88% 且耐久不变 → 记 40ms 后按 Q 换弹。 */
     private static final float JAM_PRECURSOR_RATIO = 0.88f;
     /** 模式 B 触发前兆后的切走窗口（ms）：90ms 内切到其他枪。 */
     private static final long MODE_B_SWITCH_MS = 90L;
-    /** 模式 B 切到后延迟多久补左键换弹（ms）。 */
-    private static final long MODE_B_LEFT_CLICK_MS = 40L;
-    /** 待执行左键最长等待（ms），超时放弃防悬挂。 */
+    /** 模式 B 切到后延迟多久补 Q 换弹（ms）。 */
+    private static final long MODE_B_DROP_MS = 40L;
+    /** 待执行 Q 换弹最长等待（ms），超时放弃防悬挂。 */
     private static final long MODE_B_PENDING_MAX_DELAY_MS = 500L;
-    private static final long EXEMPT_NOTICE_INTERVAL_MS = 10_000L;
     private static final int DOWN_NORMAL = 0;
     private static final int DOWN_DOWNED = 1;
     private static final int DOWN_PROTECTING = 2;
@@ -58,16 +57,12 @@ public final class KeyboardClickerModule implements Module {
     private int modeKey = DEFAULT_MODE_KEY;
     private int clickInterval = 50;
     private boolean rightClickTrigger;
-    /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补左键。 */
+    /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补 Q 换弹。 */
     private boolean jamProtectModeB;
-    /** 智能豁免总开关：准星指向 TOO 时全局停用防卡弹。 */
-    private boolean jamExemptEnabled = true;
-    private final JamExemptState jamExempt = new JamExemptState();
-    private long lastExemptNoticeAt;
-    /* ---- 模式 B 待执行左键状态 ---- */
-    private int pendingLeftClickSlot = -1;
-    private long pendingLeftClickAt;
-    private long pendingLeftClickSetAt;
+    /* ---- 模式 B 待执行 Q 换弹状态 ---- */
+    private int pendingDropSlot = -1;
+    private long pendingDropAt;
+    private long pendingDropSetAt;
     private boolean modeBSwitch90;
     private boolean configLoaded;
     private Properties config = new Properties();
@@ -178,7 +173,7 @@ public final class KeyboardClickerModule implements Module {
         advanceDownJamProtection(client, now);
         resetClickerModesOnNewGame();
         if (enabled) adaptForGoldenShovel(client);
-        updateJamExempt(client, now);
+        advancePendingDrop(client, now);
         checkJamDetection(client, now);
         checkDownedJamDetection(client, now);
 
@@ -204,16 +199,15 @@ public final class KeyboardClickerModule implements Module {
             sequenceIndex = (sequenceIndex + attempts + 1) % sequence.length;
             lastClick = now;
             // 模式 B（实验）：切到瞬间检测前兆——磨损极高且当前没在变化
-            // → 记 40ms 后左键换弹（90ms 切走窗口内，不叠加），避免同帧按键的机器特征
-            if (jamProtectModeB && !item.isEmpty() && item.getMaxDamage() > 0
-                    && !jamExempt.isExempt()) {
+            // → 记 40ms 后按 Q 换弹（90ms 切走窗口内，不叠加），避免同帧按键的机器特征
+            if (jamProtectModeB && !item.isEmpty() && item.getMaxDamage() > 0) {
                 int damage = item.getDamageValue();
                 Integer previous = slotLastDamage.get(hotbarSlot);
                 if (damage >= item.getMaxDamage() * JAM_PRECURSOR_RATIO
                         && previous != null && previous == damage) {
-                    pendingLeftClickSlot = hotbarSlot;
-                    pendingLeftClickAt = now + MODE_B_LEFT_CLICK_MS;
-                    pendingLeftClickSetAt = now;
+                    pendingDropSlot = hotbarSlot;
+                    pendingDropAt = now + MODE_B_DROP_MS;
+                    pendingDropSetAt = now;
                     modeBSwitch90 = true;
                     MicxFabric.LOGGER.debug("KeyboardClicker mode B precursor on slot {}", hotbarSlot);
                 }
@@ -225,134 +219,23 @@ public final class KeyboardClickerModule implements Module {
         }
     }
 
-    /** 模式 B 待执行左键：到期且未豁免、未超时、仍持目标槽 → 左键换弹。 */
-    private void advancePendingLeftClick(Minecraft client, long now) {
-        if (pendingLeftClickSlot < 0) return;
-        if (!jamExempt.isExempt()
-                && now <= pendingLeftClickAt + MODE_B_PENDING_MAX_DELAY_MS
-                && selectedSlot(client) == pendingLeftClickSlot) {
-            queueLeftClick();
-            MicxFabric.LOGGER.debug("KeyboardClicker mode B left click for slot {}", pendingLeftClickSlot);
+    /** 模式 B 待执行 Q 换弹：到期、未超时、仍持目标槽 → 按 Q。 */
+    private void advancePendingDrop(Minecraft client, long now) {
+        if (pendingDropSlot < 0) return;
+        if (now <= pendingDropAt + MODE_B_PENDING_MAX_DELAY_MS
+                && selectedSlot(client) == pendingDropSlot) {
+            queueDropKey();
+            MicxFabric.LOGGER.debug("KeyboardClicker mode B drop key for slot {}", pendingDropSlot);
         }
-        pendingLeftClickSlot = -1;
-        pendingLeftClickAt = 0L;
-        pendingLeftClickSetAt = 0L;
-    }
-
-    private void updateJamExempt(Minecraft client, long now) {
-        advancePendingLeftClick(client, now);
-        if (!jamExemptEnabled) {
-            if (jamExempt.isExempt()) jamExempt.reset();
-            return;
-        }
-        boolean crosshairOnToo = isCrosshairOnToo(client);
-        JamExemptState.Event event = jamExempt.observeGlobal(crosshairOnToo);
-        if (event == JamExemptState.Event.ENTERED) {
-            if (pendingProtection != null) {
-                JamProtectionSequence sequence = pendingProtection;
-                int previous = sequence.previousSlot();
-                if (previous >= 0 && previous <= 8) queueHotbarSlot(previous);
-                pendingProtection = null;
-            }
-            slotVeryLowSince.clear();
-            slotLastDamage.clear();
-            pendingLeftClickSlot = -1;
-            pendingLeftClickAt = 0L;
-            pendingLeftClickSetAt = 0L;
-            modeBSwitch90 = false;
-            sendJamExemptNotice(client, "§e[KeyboardClicker] §c防卡弹已停用（准星指向 TOO）");
-        } else if (event == JamExemptState.Event.EXITED) {
-            sendJamExemptNotice(client, "§e[KeyboardClicker] §a防卡弹已恢复");
-        }
-    }
-
-    private boolean isCrosshairOnToo(Minecraft client) {
-        if (client == null || client.level == null || client.player == null) return false;
-        try {
-            net.minecraft.world.phys.Vec3 eye = client.player.getEyePosition(1.0f);
-            net.minecraft.world.phys.Vec3 look = client.player.getViewVector(1.0f);
-            java.util.List<net.minecraft.world.entity.Entity> entities = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
-            for (net.minecraft.world.entity.Entity e : client.level.entitiesForRendering()) entities.add(e);
-            double rayLen = 1.0;
-            for (net.minecraft.world.entity.Entity ent : entities) {
-                if (!(ent instanceof net.minecraft.world.entity.monster.zombie.Zombie zombie)) continue;
-                if (zombie.isDeadOrDying() || zombie.getHealth() <= 0f || !zombie.isBaby()) continue;
-                net.minecraft.world.phys.Vec3 c = new net.minecraft.world.phys.Vec3(ent.getX(), ent.getY() + ent.getBbHeight() * 0.5, ent.getZ());
-                double d = eye.distanceTo(c) + Math.max(ent.getBbWidth(), ent.getBbHeight()) + 1.0;
-                if (!Double.isNaN(d) && !Double.isInfinite(d)) rayLen = Math.max(rayLen, d);
-            }
-            net.minecraft.world.phys.Vec3 reach = eye.add(look.x * rayLen, look.y * rayLen, look.z * rayLen);
-            double best = Double.POSITIVE_INFINITY;
-            net.minecraft.world.entity.monster.zombie.Zombie bestToo = null;
-            net.minecraft.world.phys.Vec3 bestHit = null;
-            for (net.minecraft.world.entity.Entity ent : entities) {
-                if (!(ent instanceof net.minecraft.world.entity.monster.zombie.Zombie zombie)) continue;
-                if (zombie.isDeadOrDying() || zombie.getHealth() <= 0f) continue;
-                if (ent.hasPassenger(client.player) || client.player.hasPassenger(ent)) continue;
-                net.minecraft.world.phys.AABB bb = ent.getBoundingBox().inflate(0.3, 0.3, 0.3);
-                java.util.Optional<net.minecraft.world.phys.Vec3> hit = bb.clip(eye, reach);
-                net.minecraft.world.phys.Vec3 hitVec = bb.contains(eye) ? eye : hit.orElse(null);
-                if (hitVec == null) continue;
-                double d2 = eye.distanceToSqr(hitVec);
-                if (d2 >= best) continue;
-                boolean isToo = isFabricToo(zombie);
-                if (!isToo) continue;
-                best = d2;
-                bestToo = zombie;
-                bestHit = hitVec;
-            }
-            if (bestToo == null || bestHit == null) return false;
-            net.minecraft.world.phys.HitResult wall = client.level.clip(
-                    new net.minecraft.world.level.ClipContext(eye, bestHit,
-                            net.minecraft.world.level.ClipContext.Block.COLLIDER,
-                            net.minecraft.world.level.ClipContext.Fluid.NONE, client.player));
-            if (wall != null && wall.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
-                    && wall.getLocation() != null && eye.distanceToSqr(wall.getLocation()) < best - 1e-6) return false;
-            return true;
-        } catch (RuntimeException ignored) {
-            return false;
-        }
-    }
-
-    private boolean isFabricToo(net.minecraft.world.entity.monster.zombie.Zombie zombie) {
-        if (zombie == null || !zombie.isBaby()) return false;
-        net.minecraft.world.item.ItemStack chest = zombie.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
-        if (chest == null || chest.isEmpty()) return false;
-        Integer color = dyedColorForToo(chest);
-        if (color == null) return false;
-        int col = color;
-        int target = 43570;
-        int tol = 500;
-        int slime = 14381203;
-        if (Math.abs(col - slime) < 500) return false;
-        if (Math.abs(col - target) < tol) return true;
-        int r = (col >> 16) & 0xFF, g = (col >> 8) & 0xFF, b = col & 0xFF;
-        return g > 50 && g * 100 > r * 115 && g * 100 > b * 115;
-    }
-
-    private static Integer dyedColorForToo(net.minecraft.world.item.ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return null;
-        net.minecraft.world.item.component.DyedItemColor dyed = stack.get(net.minecraft.core.component.DataComponents.DYED_COLOR);
-        return dyed == null ? null : dyed.rgb();
-    }
-
-    private void sendJamExemptNotice(Minecraft client, String text) {
-        if (client != null && client.player != null) {
-            if (now_() - lastExemptNoticeAt < EXEMPT_NOTICE_INTERVAL_MS) return;
-            lastExemptNoticeAt = now_();
-            client.player.sendSystemMessage(net.minecraft.network.chat.Component.literal(text));
-        }
-    }
-
-    private static long now_() {
-        return System.currentTimeMillis();
+        pendingDropSlot = -1;
+        pendingDropAt = 0L;
+        pendingDropSetAt = 0L;
     }
 
     private void checkJamDetection(Minecraft client, long now) {
         if (downJamState == DOWN_PROTECTING) return;
         // 模式 B（实验）：不走旧检测/保护序列，前兆处理在轮转循环内
         if (jamProtectModeB) return;
-        if (jamExempt.isExempt()) return;   // 威胁豁免：不检测不触发
         if (modeIndex == 0) {
             slotVeryLowSince.clear();
             slotLastDamage.clear();
@@ -396,7 +279,7 @@ public final class KeyboardClickerModule implements Module {
         JamProtectionSequence.Action action = sequence.advance(selectedSlot(client), now);
         switch (action.kind) {
             case SELECT -> queueHotbarSlot(action.slot);
-            case LEFT_CLICK -> queueLeftClick();
+            case DROP -> queueDropKey();
             case RESTORE -> queueHotbarSlot(action.slot);
             case CANCEL -> cancelProtection("manual_slot_change_or_timeout");
             case COMPLETE -> pendingProtection = null;
@@ -456,7 +339,7 @@ public final class KeyboardClickerModule implements Module {
             downJamStageTime = now;
         } else if (downJamStage == 1) {
             if (selectedSlot(client) == targetSlot) {
-                queueLeftClick();
+                queueDropKey();
                 downJamStage = 2;
                 downJamStageTime = now;
             } else if (now - downJamStageTime >= JamProtectionRules.DOWN_SLOT_WAIT_MS) {
@@ -627,9 +510,9 @@ public final class KeyboardClickerModule implements Module {
             modeIndex = 0;
             sequenceIndex = 0;
             lastClick = System.currentTimeMillis() + 1000L;
-            pendingLeftClickSlot = -1;
-            pendingLeftClickAt = 0L;
-            pendingLeftClickSetAt = 0L;
+            pendingDropSlot = -1;
+            pendingDropAt = 0L;
+            pendingDropSetAt = 0L;
             modeBSwitch90 = false;
             queueHotbarSlot(0);
         } else if (!cur[0] && hotbarPrevDown[0]) {
@@ -657,8 +540,9 @@ public final class KeyboardClickerModule implements Module {
         KeyMapping.click(InputConstants.getKey(new KeyEvent(GLFW.GLFW_KEY_1 + slot, 0, 0)));
     }
 
-    private void queueLeftClick() {
-        KeyMapping.click(InputConstants.Type.MOUSE.getOrCreate(InputConstants.MOUSE_BUTTON_LEFT));
+    /** 模拟按下 Q 键（换弹）：与数字键同一条原生 KeyMapping 流水线。 */
+    private void queueDropKey() {
+        KeyMapping.click(InputConstants.getKey(new KeyEvent(GLFW.GLFW_KEY_Q, 0, 0)));
     }
 
     @Override
@@ -771,18 +655,6 @@ public final class KeyboardClickerModule implements Module {
         saveConfig();
     }
 
-    public boolean isJamExemptEnabled() {
-        loadConfig();
-        return jamExemptEnabled;
-    }
-
-    public void setJamExemptEnabled(boolean value) {
-        loadConfig();
-        jamExemptEnabled = value;
-        if (!value) jamExempt.reset();
-        saveConfig();
-    }
-
     private void clearJamSlotAll() {
         slotVeryLowSince.clear();
         slotLastDamage.clear();
@@ -808,7 +680,6 @@ public final class KeyboardClickerModule implements Module {
         clickInterval = ConfigProperties.integer(config, "clickIntervalMs", 50, MIN_INTERVAL, MAX_INTERVAL);
         rightClickTrigger = ConfigProperties.bool(config, "rightClickTrigger", false);
         jamProtectModeB = ConfigProperties.bool(config, "jamProtectModeB", false);
-        jamExemptEnabled = ConfigProperties.bool(config, "jamExemptEnabled", true);
         pendingMode = enabledModesFromConfig().stream().findFirst().orElse(1);
     }
 
@@ -828,7 +699,6 @@ public final class KeyboardClickerModule implements Module {
         properties.setProperty("clickIntervalMs", Integer.toString(clickInterval));
         properties.setProperty("rightClickTrigger", Boolean.toString(rightClickTrigger));
         properties.setProperty("jamProtectModeB", Boolean.toString(jamProtectModeB));
-        properties.setProperty("jamExemptEnabled", Boolean.toString(jamExemptEnabled));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("keyboard-clicker.properties"), properties,
                     "MICx KeyboardClicker configuration");

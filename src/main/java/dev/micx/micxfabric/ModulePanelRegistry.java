@@ -54,6 +54,8 @@ public final class ModulePanelRegistry {
         meta("player_outline_esp", GROUP_VISION, 6);
         meta("last_mobs", GROUP_VISION, 7);
         meta("fullbright", GROUP_VISION, 8);
+        meta("aimbot", GROUP_ACTION, 0);
+        meta("aimbot_hud", GROUP_ACTION, 1);
         meta("aim_lead", GROUP_ACTION, 2);
         meta("magnet", GROUP_ACTION, 2);
         meta("right_clicker", GROUP_ACTION, 2);
@@ -133,18 +135,14 @@ public final class ModulePanelRegistry {
                 "屏蔽所有粒子效果（爆炸/破坏等一切），匹配 1.8.9 的完全关闭语义。",
                 ParticleFreeModule.instance(), null);
         real("revive_aura", "ReviveAura", "自动救人", GROUP_CORE,
-                "队友倒地睡在附近时自动发送救援交互包（纯发包，范围/间隔可配）。",
+                "队友倒地睡在附近时自动发送救援交互包（每人每次倒地一包，多目标同 tick 并行，范围可配）。",
                 ReviveAuraModule.instance(), parent -> new SimpleModuleScreen(parent,
                         ReviveAuraModule.instance(), "ReviveAura", "自动救援发包",
                         List.of(
                                 SimpleModuleScreen.Row.decimal("Range 范围",
                                         ReviveAuraModule.instance()::getRange,
                                         ReviveAuraModule.instance()::setRange, 1, 10,
-                                        "与倒地队友的最大救援距离（格）。"),
-                                SimpleModuleScreen.Row.decimal("Interval 间隔ms",
-                                        ReviveAuraModule.instance()::getIntervalMs,
-                                        ReviveAuraModule.instance()::setIntervalMs, 50, 1000,
-                                        "两次救援包之间的最小间隔。"))));
+                                        "与倒地队友的最大救援距离（格）。"))));
         real("last_mobs", "LastMobs", "残怪连线", GROUP_INFO,
                 "回合剩余怪 ≤N 时，准心向每只残怪拉黄色指示线（计分板权威计数）。",
                 LastMobsModule.instance(), parent -> new SimpleModuleScreen(parent,
@@ -320,6 +318,12 @@ public final class ModulePanelRegistry {
                                         NoReloadModule.instance()::setRrMode,
                                         "金铲子槽不点击背包（近战无需重置）。"))));
 
+        real("aimbot", "Aimbot", "瞄准辅助", GROUP_COMBAT,
+                "从 1.8.9 迁移的目标筛选、优先级、AimLead 头部点、鼠标接管与 Hold-Lock；默认关闭。",
+                AimbotModule.instance(), AimbotConfigScreen::new);
+        real("aimbot_hud", "Aimbot HUD", "Aimbot HUD", GROUP_COMBAT,
+                "独立显示 TOO/Golem/Slime 忽略、Clown/Giant/Baby 优先和 Closest 状态，并处理分组快捷键。",
+                AimbotHudModule.instance(), null);
         real("aim_lead", "AimLead", "瞄准提前量", GROUP_COMBAT,
                 "按服务端 movement packet 轨迹预判目标位置，标出开火提前点。",
                 AimLeadModule.instance(), AimLeadConfigScreen::new);
@@ -521,7 +525,8 @@ public final class ModulePanelRegistry {
     }
 
     private static void setPrimaryChord(Module module, int[] codes) {
-        if (module instanceof ReviveAuraModule m) m.setToggleKeyCodes(codes);
+        if (module instanceof AimbotModule m) m.config().setToggleKeyCodes(codes);
+        else if (module instanceof ReviveAuraModule m) m.setToggleKeyCodes(codes);
         else if (module instanceof MagnetModule m) m.setToggleKeyCodes(codes);
         else if (module instanceof LastMobsModule m) m.setToggleKeyCodes(codes);
     }

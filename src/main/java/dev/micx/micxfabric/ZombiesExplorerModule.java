@@ -59,6 +59,14 @@ public final class ZombiesExplorerModule implements Module {
     public void setPowerupDetector(boolean v) { powerupDetector = v; saveConfig(); }
     public boolean getBadHeadShotDetector() { loadConfig(); return badHeadShotDetector; }
     public void setBadHeadShotDetector(boolean v) { badHeadShotDetector = v; saveConfig(); }
+
+    /** Exposes the spawn-order BadHeadShot classification to Aimbot. */
+    public boolean isBadHeadshot(LivingEntity target, double playerBaseY) {
+        loadConfig();
+        if (!enabled || !badHeadShotDetector) return false;
+        return tracker.isBadHeadshot(target, playerBaseY);
+    }
+
     public boolean getBadHeadShotOnLine() { loadConfig(); return badHeadShotOnLine; }
     public void setBadHeadShotOnLine(boolean v) { badHeadShotOnLine = v; saveConfig(); }
     public boolean getNameTag() { loadConfig(); return nameTag; }

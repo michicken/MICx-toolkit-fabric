@@ -430,7 +430,7 @@ public final class ZombiesAssistModule implements Module {
         }
     }
 
-    private static boolean isTooSignature(Zombie zombie, boolean tooStrictGreen) {
+    static boolean isTooSignature(Zombie zombie, boolean tooStrictGreen) {
         if (!zombie.isBaby()) return false;
         ItemStack helmet = zombie.getItemBySlot(EquipmentSlot.HEAD);
         if (helmet.isEmpty() || !isHeadItem(helmet)) return false;
@@ -442,7 +442,7 @@ public final class ZombiesAssistModule implements Module {
         return ZombieThreatRules.isToo(true, true, diamondSword, color, tooStrictGreen);
     }
 
-    private static boolean isClownSignature(Zombie zombie) {
+    static boolean isClownSignature(Zombie zombie) {
         if (zombie.isBaby()) return false;
         Integer chest = dyedColor(zombie.getItemBySlot(EquipmentSlot.CHEST));
         Integer legs = dyedColor(zombie.getItemBySlot(EquipmentSlot.LEGS));

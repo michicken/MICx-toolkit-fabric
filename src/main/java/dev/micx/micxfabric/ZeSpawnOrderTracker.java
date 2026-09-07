@@ -106,10 +106,31 @@ public final class ZeSpawnOrderTracker {
                 }
             }
         }
-        if (badHeadShot) {
-            if (!badhsMobList.contains(e)) badhsMobList.add(e);
+        if (badHeadShot && isBadHsAwareMob(e)) {
+            // The legacy list is spawn-ordered, and its tail is the current
+            // BadHeadShot anchor. Non-aware mobs must not shift that anchor.
+            badhsMobList.remove(e);
+            badhsMobList.add(e);
         }
         allEntities.add(e);
+    }
+
+    /**
+     * Mirrors BridgerAimbotEngine.applyBadHsAwareAimPreference: an aware
+     * zombie/skeleton above the player is the bad-headshot case unless it is
+     * the most recently spawned aware mob.
+     */
+    boolean isBadHeadshot(LivingEntity target, double playerBaseY) {
+        if (!isBadHsAwareMob(target) || target.getY() <= playerBaseY + 0.25) return false;
+        for (int i = badhsMobList.size() - 1; i >= 0; i--) {
+            LivingEntity tracked = badhsMobList.get(i);
+            if (isBadHsAwareMob(tracked)) return tracked != target;
+        }
+        return false;
+    }
+
+    private static boolean isBadHsAwareMob(LivingEntity entity) {
+        return entity instanceof Skeleton || entity instanceof Zombie;
     }
 
     void tickCleanup() {

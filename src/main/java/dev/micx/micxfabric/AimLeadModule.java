@@ -52,7 +52,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <ul>
  *   <li>采样：客户端渲染位置（服务器广播 + 本地模拟合成，覆盖投放/飘落怪），
- *       同坐标去重；packet mixin 路径只保留 L0 影子框（服务器最后报的坐标）用途。</li>
+ *       同坐标短间隔去重、定时补采样以保留静止目标；packet mixin 路径只保留 L0 影子框
+ *       （服务器最后报的坐标）用途。</li>
  *   <li>测速：相邻样本对差分（≤8 对/1500ms 窗）→ rejectVelocityPair 剔尖峰 →
  *       水平分量中位数 + verticalVelocity 短窗（3 对）中位数；lv* 兜底 ≤2500ms。</li>
  *   <li>转向检测：新旧半窗 cos&lt;0.766 或速率比 &lt;0.4/&gt;2.5 → lowConf + 短窗响应。</li>
@@ -70,6 +71,8 @@ public final class AimLeadModule implements Module {
     private static final AimLeadModule INSTANCE = new AimLeadModule();
     private static final int SAMPLE_CAP = 12;
     private static final long SAMPLE_TTL_MS = 2_000L;
+    /** 静止目标也要周期性补一个时间样本，否则速度轨迹会永远只有 1 点并过期。 */
+    private static final long STATIONARY_SAMPLE_INTERVAL_MS = 100L;
     private static final long STALE_DROP_MS = 3_500L;
     private static final double MAX_SPEED = 15.0;        // 水平限幅（垂直不限）
     private static final double RAY_RANGE = 70.0;        // L2 射线长度
@@ -243,7 +246,8 @@ public final class AimLeadModule implements Module {
             requestRtt(client);
         }
 
-        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies()) {
+        boolean broadAimbotTracking = AimbotModule.instance().needsAimLeadTracking();
+        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies() && !broadAimbotTracking) {
             if (!tracks.isEmpty()) tracks.clear();
             return;
         }
@@ -271,7 +275,10 @@ public final class AimLeadModule implements Module {
             int n = track.size();
             if (n > 0) {
                 int i0 = track.idx(0);
-                if (track.xs[i0] == pos.x && track.ys[i0] == pos.y && track.zs[i0] == pos.z) continue;   // 未更新不重写
+                if (track.xs[i0] == pos.x && track.ys[i0] == pos.y && track.zs[i0] == pos.z
+                        && now - track.ts[i0] < STATIONARY_SAMPLE_INTERVAL_MS) {
+                    continue;   // 未更新不重写；按时间间隔补样本，静止目标不会失去轨迹
+                }
             }
             track.add(now, pos.x, pos.y, pos.z);
         }
@@ -380,7 +387,7 @@ public final class AimLeadModule implements Module {
         List<Cand> cands = new ArrayList<>();
         for (Map.Entry<Integer, Track> entry : tracks.entrySet()) {
             Track track = entry.getValue();
-            if (track.size() < 2) continue;
+            if (track.size() == 0) continue;
             Entity entity = client.level.getEntity(entry.getKey());
             if (!(entity instanceof LivingEntity living) || !isTarget(living)) continue;
             if (living.isDeadOrDying() || living.getHealth() <= 0f) continue;
@@ -650,7 +657,7 @@ public final class AimLeadModule implements Module {
     public AABB leadBoxFor(LivingEntity entity) {
         if (!enabled || entity == null || !isTarget(entity)) return null;
         Track track = tracks.get(entity.getId());
-        if (track == null || track.size() < 2) return null;
+        if (track == null || track.size() == 0) return null;
         LeadPoint lp = computeLeadPoint(entity, track, System.currentTimeMillis(), tauMs() / 1000.0);
         if (lp == null) return null;
         double w = entity.getBbWidth() * 0.5;

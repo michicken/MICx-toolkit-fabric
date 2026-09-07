@@ -2,7 +2,7 @@ package dev.micx.micxfabric;
 
 /** Minecraft-free ordinary jam recovery sequence. */
 final class JamProtectionSequence {
-    enum Kind { NONE, SELECT, LEFT_CLICK, RESTORE, COMPLETE, CANCEL }
+    enum Kind { NONE, SELECT, DROP, RESTORE, COMPLETE, CANCEL }
 
     static final class Action {
         final Kind kind;
@@ -19,7 +19,7 @@ final class JamProtectionSequence {
 
     private static final int SWITCH = 0;
     private static final int WAIT_FOR_TARGET = 1;
-    private static final int LEFT_CLICK = 2;
+    private static final int DROP = 2;
     private static final int RESTORE = 3;
 
     private final int targetSlot;
@@ -42,7 +42,7 @@ final class JamProtectionSequence {
         if (finished) return Action.of(Kind.COMPLETE, -1);
         if (stage == SWITCH) {
             if (selectedSlot == targetSlot) {
-                stage = LEFT_CLICK;
+                stage = DROP;
                 return Action.none();
             }
             stage = WAIT_FOR_TARGET;
@@ -51,7 +51,7 @@ final class JamProtectionSequence {
         }
         if (stage == WAIT_FOR_TARGET) {
             if (selectedSlot == targetSlot) {
-                stage = LEFT_CLICK;
+                stage = DROP;
                 return Action.none();
             }
             if (selectedSlot != previousSlot || now - waitingSince >= 100L) {
@@ -60,13 +60,13 @@ final class JamProtectionSequence {
             }
             return Action.none();
         }
-        if (stage == LEFT_CLICK) {
+        if (stage == DROP) {
             if (selectedSlot != targetSlot) {
                 finished = true;
                 return Action.of(Kind.CANCEL, -1);
             }
             stage = RESTORE;
-            return Action.of(Kind.LEFT_CLICK, targetSlot);
+            return Action.of(Kind.DROP, targetSlot);
         }
         if (selectedSlot != targetSlot) {
             finished = true;
