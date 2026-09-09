@@ -63,6 +63,32 @@ public final class AimbotRules {
                 <= Math.max(0.0, Math.abs(toleranceDeg));
     }
 
+    /** 爆头带容差的安全系数：不要把准心推到爆头层边界上。 */
+    public static final double CRIT_TOL_SAFETY = 0.8;
+
+    /** 爆头带容差的下限（°）：防止远距离角度过小导致永不收敛、持续微抖。 */
+    public static final double CRIT_TOL_FLOOR_DEG = 0.2;
+
+    /**
+     * 垂直方向仍落在爆头层（碰撞箱上 20%）内的最大 pitch 偏差（°）。
+     * 取瞄准点到爆头层上下边界的较小余量换算成角度，再乘安全系数，
+     * 保证准心不会越出爆头层 —— 这是「暴击优先」下 pitch 的容差上限。
+     * 瞄准点不在爆头层内（例如已降级到身体点）时返回 0，表示无暴击带可守。
+     */
+    public static double critPitchToleranceDeg(double aimY, double footY, double height,
+                                               double horizontalDistance) {
+        if (!Double.isFinite(aimY) || !Double.isFinite(footY) || !Double.isFinite(height)) {
+            return 0.0;
+        }
+        if (height <= 0.0 || horizontalDistance <= 0.05) return 0.0;
+        double bandBottom = footY + headLayerBottom(height);
+        double bandTop = footY + height;
+        double clearance = Math.min(aimY - bandBottom, bandTop - aimY);
+        if (clearance <= 0.0) return 0.0;
+        double raw = CRIT_TOL_SAFETY * Math.toDegrees(Math.atan(clearance / horizontalDistance));
+        return Math.max(CRIT_TOL_FLOOR_DEG, raw);
+    }
+
     /** Returns only an upward correction; positive Minecraft pitch is downward. */
     public static double upwardOnlyPitchDelta(double currentPitch, double targetPitch) {
         if (!Double.isFinite(currentPitch) || !Double.isFinite(targetPitch)) return 0.0;

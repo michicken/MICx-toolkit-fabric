@@ -124,6 +124,8 @@ public final class AimbotModule implements Module {
     private boolean humanTracking;
     private double humanErrYaw;
     private double humanErrPitch;
+    /** 当前帧的爆头带垂直容差（°）；<=0 表示无暴击带可守（瞄准点已降级到身体）。 */
+    private double critPitchTolDeg;
     private boolean faceUpOn;
     private final int[] faceUpExit = new int[1];
     private boolean faceUpRecovery;
@@ -893,6 +895,8 @@ public final class AimbotModule implements Module {
         }
         double lockRadius = Math.max(
                 AimbotRules.headRadiusDeg(horizontalDistance), c.humanizeMaxErrDeg);
+        // 暴击优先：人为 pitch 误差（原本下限 1°、上限 3°）必须夹在爆头带内，否则必然脱靶。
+        critPitchTolDeg = critPitchToleranceDeg(client, best.entity, best.point);
 
         // Two or more targets in the crosshair cone produce a continuous scan
         // across the group instead of pinning one entity on every tick.
@@ -1021,6 +1025,7 @@ public final class AimbotModule implements Module {
                     AimbotRules.NEAR_SWEEP_ERR_CAP_DEG));
             humanErrPitch = randomError(Math.min(Math.max(lockRadius * 0.6, 1.0),
                     AimbotRules.NEAR_SWEEP_ERR_CAP_DEG));
+            clampHumanErrPitch();
             errHoldTicks = 0;
             corrActive = false;
             nearSweepNextAtMs = 0L;
@@ -1052,6 +1057,7 @@ public final class AimbotModule implements Module {
                     if (settle > 0.0) {
                         humanErrYaw += AimbotRules.tremor(humanRand, settle);
                         humanErrPitch += AimbotRules.tremor(humanRand, settle * 0.5);
+                        clampHumanErrPitch();
                         if (settle >= lockRadius * 0.5) {
                             errHoldTicks = AimbotRules.reactionDelayTicks(humanRand);
                         }
@@ -1064,6 +1070,7 @@ public final class AimbotModule implements Module {
                         humanErrYaw = randomError(AimbotRules.nearSweepErrAmplitude(lockRadius));
                         humanErrPitch = randomError(
                                 AimbotRules.nearSweepErrAmplitude(lockRadius) * 0.5);
+                        clampHumanErrPitch();
                         nearSweepNextAtMs = now + (long) AimbotRules.nearSweepIntervalMs(
                                 humanRand, c.humanizeCorrMs);
                         smoothYawTarget = targetAngles[0] + humanErrYaw;
@@ -1078,6 +1085,7 @@ public final class AimbotModule implements Module {
                             humanErrYaw, AR1_ALPHA, AR1_SIGMA_YAW, humanRand);
                     humanErrPitch = AimbotRules.ar1Step(
                             humanErrPitch, AR1_ALPHA, AR1_SIGMA_PITCH, humanRand);
+                    clampHumanErrPitch();
                 }
                 double correctionYaw = AimbotRules.angleDelta(currentYaw, smoothYawTarget);
                 double correctionPitch = AimbotRules.angleDelta(
@@ -1262,7 +1270,7 @@ public final class AimbotModule implements Module {
         } else {
             double preferred = normalPitchTarget(client, best.entity, best.point,
                     targetAngles[0], targetAngles[1]);
-            pitchDelta = pitchAlreadyOnTarget(client, best.entity, targetAngles[0],
+            pitchDelta = pitchAlreadyOnTarget(client, best.entity, best.point,
                     currentPitch, targetAngles[1])
                     ? 0.0
                     : AimbotRules.bruteRotationStep(
@@ -1296,7 +1304,7 @@ public final class AimbotModule implements Module {
         } else {
             double preferred = normalPitchTarget(client, best.entity, best.point,
                     targetAngles[0], targetAngles[1]);
-            pitch = pitchAlreadyOnTarget(client, best.entity, targetAngles[0],
+            pitch = pitchAlreadyOnTarget(client, best.entity, best.point,
                     currentPitch, targetAngles[1])
                     ? currentPitch
                     : currentPitch + AimbotRules.smoothRotationStep(
@@ -1324,7 +1332,7 @@ public final class AimbotModule implements Module {
 
         // 松锁判据用「真实攻击点」而不是叠加了地平线预留的角度：
         // 否则预留(最多 3°)与容差(默认 2°)会叠加成 5° 误差，准心停在怪物头顶的空气里。
-        if (pitchAlreadyOnTarget(client, target, (float) targetYaw, currentPitch, targetPitch)) {
+        if (pitchAlreadyOnTarget(client, target, aimPoint, currentPitch, targetPitch)) {
             humanVelPitch = 0.0;
             return 0.0;
         }
@@ -1349,6 +1357,9 @@ public final class AimbotModule implements Module {
         // 预留角度先被"攻击点到箱顶的余量"夹住，保证预留不会把准心推出碰撞箱。
         double margin = Math.min(Math.abs(config.pitchHorizonMarginDeg),
                 safeReserveDeg(client, target, aimPoint));
+        // 暴击优先：地平线预留不得把准心推出爆头带（>=80% 高度那一段）。
+        double crit = critPitchToleranceDeg(client, target, aimPoint);
+        if (crit > 0.0) margin = Math.min(margin, crit);
         if (margin <= 0.0) return targetPitch;
         double preferred = AimbotRules.normalPitchTarget(targetPitch, margin);
         if (preferred >= targetPitch) return preferred;
@@ -1373,15 +1384,43 @@ public final class AimbotModule implements Module {
     }
 
     /**
-     * 普通怪的 pitch 松锁：当前 pitch 离真实攻击点在容差内，
-     * 或者当前视线本来就打得到怪，就不与玩家争抢。
+     * 普通怪的 pitch 松锁：当前 pitch 离真实攻击点在容差内就不与玩家争抢。
+     * 不再把「射线打到碰撞箱任意位置」当作已锁定 —— 碰撞箱向下一直延伸到脚底，
+     * 该判据对偏低瞄准极其宽容（蹭到腿/身体就冻结），是"经常往下打"的根因。
      */
     private boolean pitchAlreadyOnTarget(Minecraft client, LivingEntity target,
-                                         float targetYaw, double currentPitch,
+                                         Vec3 aimPoint, double currentPitch,
                                          double targetPitch) {
         return AimbotRules.normalPitchCompatible(currentPitch, targetPitch,
-                config.pitchHoldToleranceDeg)
-                || pitchRayHitsTarget(client, target, targetYaw, currentPitch);
+                pitchHoldToleranceDeg(client, target, aimPoint));
+    }
+
+    /**
+     * pitch 保持容差：瞄准点落在爆头层（>=80% 高度）内时收紧到爆头带，
+     * 保证"锁定"时准心确实在暴击区；瞄准点已降级到身体时无暴击带可守，沿用配置值。
+     */
+    private double pitchHoldToleranceDeg(Minecraft client, LivingEntity target, Vec3 aimPoint) {
+        double crit = critPitchToleranceDeg(client, target, aimPoint);
+        if (crit <= 0.0) return config.pitchHoldToleranceDeg;
+        return Math.min(config.pitchHoldToleranceDeg, crit);
+    }
+
+    /** 瞄准点所在爆头带的垂直角度容差（°）；不在爆头层内时返回 0。 */
+    private double critPitchToleranceDeg(Minecraft client, LivingEntity target, Vec3 aimPoint) {
+        if (client == null || client.player == null || target == null || aimPoint == null) {
+            return 0.0;
+        }
+        Vec3 eye = client.player.getEyePosition(1.0f);
+        double distance = Math.hypot(target.getX() - eye.x, target.getZ() - eye.z);
+        return AimbotRules.critPitchToleranceDeg(aimPoint.y, target.getY(),
+                target.getBbHeight(), distance);
+    }
+
+    /** 暴击优先：人为 pitch 误差不得把准心推出爆头带。 */
+    private void clampHumanErrPitch() {
+        if (critPitchTolDeg <= 0.0) return;
+        if (humanErrPitch > critPitchTolDeg) humanErrPitch = critPitchTolDeg;
+        else if (humanErrPitch < -critPitchTolDeg) humanErrPitch = -critPitchTolDeg;
     }
 
     private boolean pitchRayHitsTarget(Minecraft client, LivingEntity target,

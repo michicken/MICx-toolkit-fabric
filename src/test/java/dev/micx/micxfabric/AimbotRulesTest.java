@@ -314,6 +314,41 @@ class AimbotRulesTest {
     }
 
     @Test
+    void critPitchToleranceStaysInsideTheHeadBand() {
+        double footY = 72.0;
+        double height = 1.95;                       // 普通僵尸
+        double bandBottom = footY + AimbotRules.headLayerBottom(height);   // 73.56
+        double bandTop = footY + height;                                   // 73.95
+        double center = (bandBottom + bandTop) / 2.0;                      // 73.755
+
+        // 爆头带中心：容差为正，且明显小于配置默认 2°（会收紧冻结判据）
+        double tol10 = AimbotRules.critPitchToleranceDeg(center, footY, height, 10.0);
+        assertTrue(tol10 > 0.0 && tol10 < 2.0, "10 格容差应在 (0,2) 内，实际 " + tol10);
+
+        // 距离越远角度越小
+        double tol5 = AimbotRules.critPitchToleranceDeg(center, footY, height, 5.0);
+        double tol20 = AimbotRules.critPitchToleranceDeg(center, footY, height, 20.0);
+        assertTrue(tol5 > tol10 && tol10 > tol20, "容差应随距离单调变紧");
+
+        // 容差换算回线性余量后不得超出爆头层
+        double linear = Math.tan(Math.toRadians(tol10)) * 10.0;
+        assertTrue(linear <= (bandTop - bandBottom) / 2.0 + 1.0E-9,
+                "容差不得越出爆头层，实际 " + linear);
+
+        // 瞄准点已降级到身体（低于 80% 线）或高于头顶 -> 无暴击带可守
+        assertEquals(0.0, AimbotRules.critPitchToleranceDeg(bandBottom - 0.1, footY, height, 10.0));
+        assertEquals(0.0, AimbotRules.critPitchToleranceDeg(bandTop + 0.1, footY, height, 10.0));
+
+        // 非法输入
+        assertEquals(0.0, AimbotRules.critPitchToleranceDeg(Double.NaN, footY, height, 10.0));
+        assertEquals(0.0, AimbotRules.critPitchToleranceDeg(center, footY, 0.0, 10.0));
+
+        // 极远距离仍有下限，避免永不收敛
+        assertTrue(AimbotRules.critPitchToleranceDeg(center, footY, height, 1000.0)
+                >= AimbotRules.CRIT_TOL_FLOOR_DEG);
+    }
+
+    @Test
     void highSpeedFallIgnoresOnlyAirborneMidDrops() {
         double groundY = 76.0;
         double fallSpeed = 1.8;
