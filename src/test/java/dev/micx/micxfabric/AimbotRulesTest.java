@@ -75,12 +75,15 @@ class AimbotRulesTest {
     }
 
     @Test
-    void giantPitchAssistNeverMovesDownward() {
-        assertEquals(-9.0, AimbotRules.upwardOnlyPitchStep(-5.0, -20.0, 4.0), 1.0e-9);
-        assertEquals(-5.0, AimbotRules.upwardOnlyPitchStep(-5.0, 10.0, 4.0), 1.0e-9);
-        assertEquals(-20.0, AimbotRules.upwardOnlyPitchStep(-20.0, -10.0, 4.0), 1.0e-9);
-        assertEquals(-15.0, AimbotRules.upwardOnlyPitchDelta(-5.0, -20.0), 1.0e-9);
-        assertEquals(0.0, AimbotRules.upwardOnlyPitchDelta(-5.0, 10.0), 1.0e-9);
+    void giantAimPointKeepsTheCritBand() {
+        // 原版巨人碰撞箱 3.6 × 12.0：90% 落点(10.8) 仍落在头部层 [9.6, 12.0] 内
+        assertTrue(AimbotRules.isHeadLayer(10.8, 0.0, 12.0));
+        assertFalse(AimbotRules.isHeadLayer(9.0, 0.0, 12.0));
+        // 落点距爆头层上下边界各 1.2 格 → 爆头带容差为正且随距离收紧
+        double near = AimbotRules.critPitchToleranceDeg(10.8, 0.0, 12.0, 10.0);
+        double far = AimbotRules.critPitchToleranceDeg(10.8, 0.0, 12.0, 40.0);
+        assertTrue(near > far);
+        assertTrue(far >= 0.2);
     }
 
     @Test

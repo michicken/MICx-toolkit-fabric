@@ -89,20 +89,6 @@ public final class AimbotRules {
         return Math.max(CRIT_TOL_FLOOR_DEG, raw);
     }
 
-    /** Returns only an upward correction; positive Minecraft pitch is downward. */
-    public static double upwardOnlyPitchDelta(double currentPitch, double targetPitch) {
-        if (!Double.isFinite(currentPitch) || !Double.isFinite(targetPitch)) return 0.0;
-        return Math.min(0.0, targetPitch - currentPitch);
-    }
-
-    /** Bounded step for the Giant exception: never pulls the view downward. */
-    public static double upwardOnlyPitchStep(double currentPitch, double targetPitch,
-                                             double maxStep) {
-        double delta = upwardOnlyPitchDelta(currentPitch, targetPitch);
-        double step = Math.max(0.0, Math.abs(maxStep));
-        return currentPitch + Math.max(delta, -step);
-    }
-
     /** Bounded non-wrapping step used by the legacy non-humanized fallback. */
     public static double stepToward(double current, double target, double maxStep) {
         double step = Math.max(0.0, Math.abs(maxStep));

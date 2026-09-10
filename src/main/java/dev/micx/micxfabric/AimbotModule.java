@@ -872,10 +872,7 @@ public final class AimbotModule implements Module {
                     strictPitchDelta, humanVelPitch,
                     c.humanizePeakDeg, 1.5 * c.humanizePeakDeg,
                     0.3 * c.humanizePeakDeg, c.humanizeOvershoot);
-            double pitchDelta = giant
-                    ? humanizedGiantPitchDelta(currentPitch, pitchTarget, humanVelPitch)
-                    : humanVelPitch;
-            writeHumanizedView(client, 0.0, pitchDelta);
+            writeHumanizedView(client, 0.0, humanVelPitch);
             return;
         }
 
@@ -1249,11 +1246,8 @@ public final class AimbotModule implements Module {
                     target.getY() + target.getBbHeight(),
                     client.player.getY() + client.player.getEyeHeight(),
                     horizontalDistance);
-            double pitchDelta = giant
-                    ? AimbotRules.upwardOnlyPitchDelta(currentPitch, pitchTarget)
-                    : pitchTarget - currentPitch;
             queueRotationDelta(0.0, AimbotRules.bruteRotationStep(
-                    pitchDelta, c.bruteMaxDegPerTick));
+                    pitchTarget - currentPitch, c.bruteMaxDegPerTick));
             return;
         }
 
@@ -1263,10 +1257,6 @@ public final class AimbotModule implements Module {
         if (badHeadshot) {
             pitchDelta = AimbotRules.bruteRotationStep(
                     targetAngles[1] - currentPitch, c.bruteMaxDegPerTick);
-        } else if (giant) {
-            pitchDelta = AimbotRules.bruteRotationStep(
-                    AimbotRules.upwardOnlyPitchDelta(currentPitch, targetAngles[1]),
-                    c.bruteMaxDegPerTick);
         } else {
             double preferred = normalPitchTarget(client, best.entity, best.point,
                     targetAngles[0], targetAngles[1]);
@@ -1295,12 +1285,6 @@ public final class AimbotModule implements Module {
             double pitchDelta = AimbotRules.smoothRotationStep(
                     targetAngles[1] - currentPitch, config.maxDegPerTick);
             pitch = currentPitch + pitchDelta;
-        } else if (isGiant(best.entity)) {
-            // Minecraft pitch decreases when looking up. Giants can only be
-            // assisted in that direction; never auto-pull them downward.
-            double upwardDelta = AimbotRules.upwardOnlyPitchDelta(currentPitch, targetAngles[1]);
-            pitch = currentPitch + AimbotRules.smoothRotationStep(
-                    upwardDelta, config.maxDegPerTick);
         } else {
             double preferred = normalPitchTarget(client, best.entity, best.point,
                     targetAngles[0], targetAngles[1]);
@@ -1321,14 +1305,11 @@ public final class AimbotModule implements Module {
                                               double strictDelta,
                                               boolean badHeadshot) {
         if (badHeadshot) return strictDelta;
-        if (faceUpPitchHold && !isGiant(target)) {
+        if (faceUpPitchHold) {
             humanVelPitch = 0.0;
             return 0.0;
         }
         float currentPitch = client.player.getXRot();
-        if (isGiant(target)) {
-            return humanizedGiantPitchDelta(currentPitch, targetPitch, strictDelta);
-        }
 
         // 松锁判据用「真实攻击点」而不是叠加了地平线预留的角度：
         // 否则预留(最多 3°)与容差(默认 2°)会叠加成 5° 误差，准心停在怪物头顶的空气里。
@@ -1433,22 +1414,6 @@ public final class AimbotModule implements Module {
         Vec3 end = eye.add(direction.scale(RAY_EXTEND));
         Vec3 hit = box.clip(eye, end).orElse(null);
         return hit != null && canWallShot(client, eye, hit);
-    }
-
-    /** Humanized Giant assist, clamped so it can never become a downward pull. */
-    private double humanizedGiantPitchDelta(double currentPitch, double targetPitch,
-                                            double previousDelta) {
-        double upwardDelta = AimbotRules.upwardOnlyPitchDelta(currentPitch, targetPitch);
-        if (upwardDelta >= -1.0E-6) {
-            humanVelPitch = 0.0;
-            return 0.0;
-        }
-        humanVelPitch = AimbotRules.humanizeStep(
-                upwardDelta, previousDelta,
-                config.humanizePeakDeg, 1.5 * config.humanizePeakDeg,
-                0.3 * config.humanizePeakDeg, config.humanizeOvershoot);
-        if (humanVelPitch > 0.0) humanVelPitch = 0.0;
-        return humanVelPitch;
     }
 
     private void writeHumanizedView(Minecraft client, double yawDelta, double pitchDelta) {
