@@ -164,9 +164,19 @@ public final class AimbotModule implements Module {
      * visible staircase at any normal frame rate. Keep the decision cadence,
      * but consume its delta continuously from the render path just like zbc9's
      * MatrixStack + tickDelta event does.
+     *
+     * BRUTE speeds this up by shortening the consumption window (see
+     * double bruteRotationWindowSeconds) and by capping each frame's write to
+     * the still-unconsumed remainder, so a window shorter than one controller
+     * tick can never overshoot the decided delta.
      */
     private double frameYawPerTick;
     private double framePitchPerTick;
+    /** Still-unconsumed part of the queued delta; prevents overshoot on short windows. */
+    private double frameYawRemaining;
+    private double framePitchRemaining;
+    /** Seconds over which the queued delta is fully consumed. */
+    private double frameRotationWindowSeconds = CONTROLLER_TICK_SECONDS;
     private boolean frameRotationActive;
     private long lastRotationFrameNs;
 
@@ -1317,7 +1327,7 @@ public final class AimbotModule implements Module {
                     client.player.getY() + client.player.getEyeHeight(),
                     horizontalDistance);
             queueRotationDelta(0.0, AimbotRules.bruteRotationStep(
-                    pitchTarget - currentPitch, c.bruteMaxDegPerTick));
+                    pitchTarget - currentPitch, c.bruteMaxDegPerTick), bruteRotationWindowSeconds());
             return;
         }
 
@@ -1336,7 +1346,7 @@ public final class AimbotModule implements Module {
                     : AimbotRules.bruteRotationStep(
                     preferred - currentPitch, c.bruteMaxDegPerTick);
         }
-        queueRotationDelta(yawDelta, pitchDelta);
+        queueRotationDelta(yawDelta, pitchDelta, bruteRotationWindowSeconds());
     }
 
     /** Non-humanized 20 Hz decision controller with the same vertical policy. */
@@ -1551,15 +1561,44 @@ public final class AimbotModule implements Module {
 
     /** Stores one controller-tick delta for smooth render-frame consumption. */
     private void queueRotationDelta(double yawDelta, double pitchDelta) {
+        queueRotationDelta(yawDelta, pitchDelta, CONTROLLER_TICK_SECONDS);
+    }
+
+    /**
+     * Same as above but drains the delta over an explicit window. A window
+     * shorter than one controller tick makes the camera reach the decided
+     * angle sooner, which is what BRUTE wants; the remaining-budget cap in
+     * {@link #applyFrameRotation} keeps that from overshooting.
+     */
+    private void queueRotationDelta(double yawDelta, double pitchDelta, double windowSeconds) {
         if (!Double.isFinite(yawDelta) || !Double.isFinite(pitchDelta)) return;
         frameYawPerTick = yawDelta;
         framePitchPerTick = pitchDelta;
+        frameYawRemaining = yawDelta;
+        framePitchRemaining = pitchDelta;
+        frameRotationWindowSeconds = Double.isFinite(windowSeconds) && windowSeconds > 0.0
+                ? windowSeconds
+                : CONTROLLER_TICK_SECONDS;
         frameRotationActive = Math.abs(yawDelta) > 1.0E-6 || Math.abs(pitchDelta) > 1.0E-6;
     }
+
+    /** BRUTE 的旋转消耗窗口（秒）；越短转向越快，已在配置层夹到 5–50ms。 */
+    private double bruteRotationWindowSeconds() {
+        return config.bruteRotationWindowMs / 1000.0;
+    }
+
+    /** 把一步写入夹到尚未消耗的余量内，避免短窗口重复消耗同一份转向量。 */
+    private static double clampToRemaining(double step, double remaining) {
+        return AimbotRules.limitToRemaining(step, remaining);
+    }
+
 
     private void clearFrameRotation() {
         frameYawPerTick = 0.0;
         framePitchPerTick = 0.0;
+        frameYawRemaining = 0.0;
+        framePitchRemaining = 0.0;
+        frameRotationWindowSeconds = CONTROLLER_TICK_SECONDS;
         frameRotationActive = false;
         lastRotationFrameNs = 0L;
     }
@@ -1584,10 +1623,13 @@ public final class AimbotModule implements Module {
 
         double elapsedSeconds = Math.min(MAX_RENDER_ROTATION_SECONDS,
                 Math.max(0.0, (now - previous) / 1_000_000_000.0));
-        double yawDelta = AimbotRules.renderStepFromTickDelta(
-                frameYawPerTick, elapsedSeconds, CONTROLLER_TICK_SECONDS);
-        double pitchDelta = AimbotRules.renderStepFromTickDelta(
-                framePitchPerTick, elapsedSeconds, CONTROLLER_TICK_SECONDS);
+        double window = frameRotationWindowSeconds;
+        double yawDelta = clampToRemaining(AimbotRules.renderStepFromTickDelta(
+                frameYawPerTick, elapsedSeconds, window), frameYawRemaining);
+        double pitchDelta = clampToRemaining(AimbotRules.renderStepFromTickDelta(
+                framePitchPerTick, elapsedSeconds, window), framePitchRemaining);
+        frameYawRemaining -= yawDelta;
+        framePitchRemaining -= pitchDelta;
         applyRotationDeltaNow(client, yawDelta, pitchDelta);
     }
 

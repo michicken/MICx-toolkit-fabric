@@ -473,6 +473,22 @@ public final class AimbotRules {
         return targetVelocityDegPerSec / 20.0 + tremor(random, noiseDeg);
     }
 
+    /**
+     * Caps one render-frame write to what is left of the queued controller
+     * delta. Needed once the consumption window can be shorter than one
+     * controller tick: without the cap the same delta would be re-applied
+     * every 50 ms and the camera would fly past the decided angle.
+     *
+     * <p>Returns 0 when either side is non-finite, when nothing is left, or
+     * when the two disagree in sign (the queue was refreshed mid-drain).
+     */
+    public static double limitToRemaining(double step, double remaining) {
+        if (!Double.isFinite(step) || !Double.isFinite(remaining)) return 0.0;
+        if (step == 0.0 || remaining == 0.0) return 0.0;
+        if (Math.signum(step) != Math.signum(remaining)) return 0.0;
+        return Math.abs(step) <= Math.abs(remaining) ? step : remaining;
+    }
+
     public static final double ROT_QUANT_STEP_DEG = 0.05;
 
     public static double quantizeRotation(double deltaDeg) {

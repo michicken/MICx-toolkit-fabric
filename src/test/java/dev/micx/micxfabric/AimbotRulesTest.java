@@ -100,6 +100,43 @@ class AimbotRulesTest {
         assertFalse(AimbotRules.bruteSweepInFov(60.1, 60.0));
         assertFalse(AimbotRules.bruteSweepInFov(120.0, 60.0));
         assertFalse(AimbotRules.bruteSweepInFov(Double.NaN, 60.0));
+        // 0.2.70 起默认半角收到 45°
+        assertTrue(AimbotRules.bruteSweepInFov(44.9, 45.0));
+        assertTrue(AimbotRules.bruteSweepInFov(-45.0, 45.0));
+        assertFalse(AimbotRules.bruteSweepInFov(45.1, 45.0));
+        assertFalse(AimbotRules.bruteSweepInFov(60.0, 45.0));
+    }
+
+    @Test
+    void bruteTurnWindowDrainsOneTickWithoutOvershooting() {
+        final double tick = 1.0 / 20.0;
+        final double window = 25.0 / 1000.0;
+        double delta = 45.0;
+
+        // 半个窗口就该走完一半
+        assertEquals(22.5, AimbotRules.renderStepFromTickDelta(delta, window / 2.0, window), 1.0E-9);
+
+        // 25ms 窗口在两个 16.6ms 帧内应按余量封顶，累计恰好等于整份转向量
+        double remaining = delta;
+        double applied = 0.0;
+        for (int i = 0; i < 2; i++) {
+            double step = AimbotRules.limitToRemaining(
+                    AimbotRules.renderStepFromTickDelta(delta, 16.6 / 1000.0, window), remaining);
+            remaining -= step;
+            applied += step;
+        }
+        assertEquals(delta, applied, 1.0E-9);
+
+        // 余量耗尽后再来的帧不得继续推视角（否则短窗口会重复消耗、转过头）
+        assertEquals(0.0, AimbotRules.limitToRemaining(
+                AimbotRules.renderStepFromTickDelta(delta, tick, window), remaining), 0.0);
+
+        // 反向：队列在一半时被刷新，旧方向的步长不参与
+        assertEquals(0.0, AimbotRules.limitToRemaining(1.0, -1.0), 0.0);
+        // 退化输入一律归零
+        assertEquals(0.0, AimbotRules.limitToRemaining(Double.NaN, 1.0), 0.0);
+        assertEquals(0.0, AimbotRules.limitToRemaining(1.0, Double.NaN), 0.0);
+        assertEquals(0.0, AimbotRules.limitToRemaining(0.0, 1.0), 0.0);
     }
 
     @Test

@@ -48,6 +48,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox bruteSweepMinRoundBox;
     private EditBox bruteSweepFovBox;
     private EditBox bruteSweepDwellBox;
+    private EditBox bruteRotationWindowBox;
 
     public AimbotConfigScreen(Screen parent) {
         super(parent, "Aimbot", "目标筛选 · AimLead 攻击点 · 三态瞄准 · 鼠标策略");
@@ -82,6 +83,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         bruteSweepMinRoundBox = box("bruteSweepMinRound", Integer.toString(c.bruteSweepMinRound));
         bruteSweepFovBox = box("bruteSweepFov", Double.toString(c.bruteSweepFovDeg));
         bruteSweepDwellBox = box("bruteSweepDwell", Integer.toString(c.bruteSweepDwellMs));
+        bruteRotationWindowBox = box("bruteRotationWindow", Integer.toString(c.bruteRotationWindowMs));
     }
 
     private EditBox box(String name, String value) {
@@ -238,8 +240,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "扫射起始回合 / Sweep Min Round", "1–200", bruteSweepMinRoundBox, y);
         y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
         y = numberRow(graphics, "单目标停留 / Dwell", "40–600ms", bruteSweepDwellBox, y);
+        y = numberRow(graphics, "转头完成时间 / Turn Window", "5–50ms", bruteRotationWindowBox, y);
         y = wrapped(graphics,
-                "暴力扫射在起始回合之前完全不生效（只按 TOO/巨人 > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，停留时间越短切换越激进。Humanize 的扫射参数与这一组互不影响。",
+                "暴力扫射在起始回合之前完全不生效（只按 TOO/巨人 > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，停留时间越短切换越激进。Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "JOYSTICK / 手动推偏", y);
@@ -431,6 +434,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.bruteSweepMinRound = parseInt(bruteSweepMinRoundBox, 1, 200, "Brute Sweep Min Round");
             c.bruteSweepFovDeg = parseDouble(bruteSweepFovBox, 5.0, 180.0, "Brute Sweep FOV");
             c.bruteSweepDwellMs = parseInt(bruteSweepDwellBox, 40, 600, "Brute Sweep Dwell");
+            c.bruteRotationWindowMs = parseInt(bruteRotationWindowBox, 5, 50, "Brute Turn Window");
             c.save();
             super.saveAndClose();
         } catch (NumberFormatException exception) {
