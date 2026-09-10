@@ -161,6 +161,41 @@ public final class AimbotRules {
         return belowAcc[0] < exitMs;
     }
 
+    /* ---- 暴力模式扫射（BRUTE sweep，2026-09-10 用户定稿）----
+     * 与 Humanize 的连续扫射不同：不做连续扫描线，而是在限定 FOV 内
+     * 「逐个精准锁定 + 超快速切换」，快速扫过一堆怪里的每一个目标。 */
+
+    /**
+     * 扫射回合门控：`round <= 0`（回合未知，例如非 Zombies 局）不门控，
+     * 与 0.2.66 的 Humanize 扫射门控保持同一口径。
+     */
+    public static boolean bruteSweepAllowed(int round, int minRound) {
+        if (round <= 0) return true;
+        return round >= Math.max(1, minRound);
+    }
+
+    /** 只有落在限定 FOV 半角内的目标才参与暴力扫射（不做 360° 乱扫）。 */
+    public static boolean bruteSweepInFov(double signedYawDeg, double fovDeg) {
+        if (!Double.isFinite(signedYawDeg) || !Double.isFinite(fovDeg)) return false;
+        return Math.abs(signedYawDeg) <= Math.abs(fovDeg);
+    }
+
+    /**
+     * 空间顺序推进：给出按 signed yaw 升序排列的候选偏角，返回第一个
+     * 严格大于 `prevYawOff + eps` 的下标；若已扫到最右端则回到 0（重新从左开始）。
+     * `prevYawOff` 不是有限值时也从 0 开始。
+     *
+     * @return 下标；数组为空返回 -1
+     */
+    public static int bruteSweepAdvance(double[] yawOffAscending, double prevYawOff, double eps) {
+        if (yawOffAscending == null || yawOffAscending.length == 0) return -1;
+        double start = Double.isFinite(prevYawOff) ? prevYawOff + Math.max(0.0, eps) : Double.NEGATIVE_INFINITY;
+        for (int i = 0; i < yawOffAscending.length; i++) {
+            if (yawOffAscending[i] > start) return i;
+        }
+        return 0;
+    }
+
     /* ---- Humanize target sweep and rotation model, ported from the final 1.8.9 rules ---- */
 
     public static final double SWEEP_CONE_DEG = 10.0;

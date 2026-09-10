@@ -78,6 +78,8 @@ public final class AimbotModule implements Module {
     private static final double TRACKING_CORRECTION_CAP_DEG = 12.0;
     /** 手动 A/D 横移时的目标切换滞回，避免同级目标在准心两侧来回抢锁。 */
     private static final double STRAFE_TARGET_SWITCH_MARGIN_DEG = 2.0;
+    /** BRUTE 扫射的空间推进容差：signed yaw 必须比上一个目标大出这个量才认作「下一个」。 */
+    private static final double BRUTE_SWEEP_ADVANCE_EPS_DEG = 0.25;
     /**
      * AA 地面层 y≈72（实测 71~75）。高于此值才算"尚未落地"；
      * 窗户下落的怪贴地生成（y≤74 且只掉 1~2 格），会被这条排除。
@@ -109,6 +111,11 @@ public final class AimbotModule implements Module {
     private int lockedTargetId = -1;
     private Vec3 lastLockedDir;
     private Object lastLevel;
+
+    /* BRUTE 扫射状态：在限定 FOV 内从左到右逐个精准锁定。 */
+    private int bruteSweepHeldId = -1;
+    private double bruteSweepPrevYawOff = Double.NaN;
+    private long bruteSweepNextHopAtMs;
 
     private double joyYawOff;
     private double joyPitchOff;
@@ -401,7 +408,7 @@ public final class AimbotModule implements Module {
         } else if (AimbotRules.joystickHoldCurrent(config.joystick, false, current != null)) {
             best = current;
         } else if (bruteMode) {
-            best = bruteChoice(scored);
+            best = bruteChoice(client, eye, scored, now);
         } else if (config.humanize) {
             best = humanizedChoice(scored, current, isManualStrafing(client));
         } else {
@@ -465,6 +472,7 @@ public final class AimbotModule implements Module {
         debugAim = null;
         debugAimAt = 0L;
         resetHumanState();
+        resetBruteSweep();
         clearFrameRotation();
     }
 
@@ -593,9 +601,67 @@ public final class AimbotModule implements Module {
         return swap ? best : current;
     }
 
-    /** Brute style always takes the highest-ranked scored candidate immediately. */
-    private Scored bruteChoice(List<Scored> scored) {
-        return scored.get(0);
+    /**
+     * BRUTE 选靶。默认取排序第一（排序已把 TOO/巨人放最前，再按转向角最小）。
+     * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对准星的
+     * signed yaw 从左到右排好，依次停留并完整瞄准每一个，停留 dwellMs 后再跳下一个；
+     * 扫到最右端重新回到最左。不做连续扫描线，也不做 360° 乱扫。
+     */
+    private Scored bruteChoice(Minecraft client, Vec3 eye, List<Scored> scored, long now) {
+        if (!bruteSweepActive()) {
+            resetBruteSweep();
+            return scored.get(0);
+        }
+        float currentYaw = client.player.getYRot();
+        int size = scored.size();
+        double[] yawOff = new double[size];
+        int[] slot = new int[size];
+        int count = 0;
+        for (int i = 0; i < size; i++) {
+            float[] angles = calculateYawPitch(eye, scored.get(i).point);
+            double off = AimbotRules.angleDelta(currentYaw, angles[0]);
+            if (!AimbotRules.bruteSweepInFov(off, config.bruteSweepFovDeg)) continue;
+            int k = count++;
+            while (k > 0 && yawOff[k - 1] > off) {
+                yawOff[k] = yawOff[k - 1];
+                slot[k] = slot[k - 1];
+                k--;
+            }
+            yawOff[k] = off;
+            slot[k] = i;
+        }
+        if (count == 0) {
+            resetBruteSweep();
+            return scored.get(0);
+        }
+        if (bruteSweepHeldId >= 0 && now < bruteSweepNextHopAtMs) {
+            for (int k = 0; k < count; k++) {
+                Scored value = scored.get(slot[k]);
+                if (value.entity.getId() == bruteSweepHeldId) return value;
+            }
+        }
+        int pos = AimbotRules.bruteSweepAdvance(yawOff, bruteSweepPrevYawOff,
+                BRUTE_SWEEP_ADVANCE_EPS_DEG);
+        if (pos < 0) pos = 0;
+        Scored pick = scored.get(slot[pos]);
+        bruteSweepHeldId = pick.entity.getId();
+        bruteSweepPrevYawOff = yawOff[pos];
+        bruteSweepNextHopAtMs = now + Math.max(40, config.bruteSweepDwellMs);
+        return pick;
+    }
+
+    /** 暴力扫射是否生效：开关开启 + Zombies 局内 + 已达到起始回合（回合未知不门控）。 */
+    private boolean bruteSweepActive() {
+        if (!config.bruteSweep) return false;
+        if (!ZombiesTracker.instance().isInZombies()) return false;
+        int round = ZombiesTracker.instance().round();
+        return round <= 0 || AimbotRules.bruteSweepAllowed(round, config.bruteSweepMinRound);
+    }
+
+    private void resetBruteSweep() {
+        bruteSweepHeldId = -1;
+        bruteSweepPrevYawOff = Double.NaN;
+        bruteSweepNextHopAtMs = 0L;
     }
 
     /** Humanized target choice: sweep the crosshair cone instead of pinning one entity forever. */
@@ -707,8 +773,12 @@ public final class AimbotModule implements Module {
             int distance = Double.compare(a.distance, b.distance);
             if (distance != 0) return distance;
         }
-        // 用户定稿：需要转动的角度（fov 需变化值）最小者优先，压过威胁/TOO/巨人/爆头线/穿透数。
-        // 唯一的例外是显式开启的 Closest 模式（距离优先是它的定义）。
+        // 用户定稿 2026-09-10：TOO 与巨人优先于转向角（会主动索敌的只有这两类），
+        // 威胁相关逻辑保持原样不动；其余仍按「需要转动的角度最小」优先，
+        // 保留该口径是为了不被快速发现异常（暴力模式同样留余地）。
+        boolean aKey = a.candidate.too || a.candidate.giant;
+        boolean bKey = b.candidate.too || b.candidate.giant;
+        if (aKey != bKey) return aKey ? -1 : 1;
         int turn = Double.compare(a.candidate.angle, b.candidate.angle);
         if (turn != 0) return turn;
         if (a.group != b.group) return Integer.compare(b.group, a.group);

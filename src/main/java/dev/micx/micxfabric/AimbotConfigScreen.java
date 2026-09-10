@@ -45,6 +45,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox midFallSpeedBox;
     private EditBox aboveHeightBox;
     private EditBox sweepMinRoundBox;
+    private EditBox bruteSweepMinRoundBox;
+    private EditBox bruteSweepFovBox;
+    private EditBox bruteSweepDwellBox;
 
     public AimbotConfigScreen(Screen parent) {
         super(parent, "Aimbot", "目标筛选 · AimLead 攻击点 · 三态瞄准 · 鼠标策略");
@@ -76,6 +79,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         midFallSpeedBox = box("midFallSpeed", Double.toString(c.midFallSpeed));
         aboveHeightBox = box("aboveHeightBlocks", Double.toString(c.aboveHeightBlocks));
         sweepMinRoundBox = box("sweepMinRound", Integer.toString(c.sweepMinRound));
+        bruteSweepMinRoundBox = box("bruteSweepMinRound", Integer.toString(c.bruteSweepMinRound));
+        bruteSweepFovBox = box("bruteSweepFov", Double.toString(c.bruteSweepFovDeg));
+        bruteSweepDwellBox = box("bruteSweepDwell", Integer.toString(c.bruteSweepDwellMs));
     }
 
     private EditBox box(String name, String value) {
@@ -108,7 +114,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 () -> cycleAimStyle(c), y,
                 "点击右侧按钮循环：HUMANIZE 拟人 → NORMAL 普通 → BRUTE 暴力；三态互斥。");
         y = wrapped(graphics,
-                "拟人模式会加入平滑、微小误差和自然换目标；普通模式只做平滑锁定；暴力模式立即换目标并使用 Brute Step。三种模式都继续遵守目标筛选、AimLead、穿透和特殊 pitch 规则。",
+                "拟人模式会加入平滑、微小误差和自然换目标；普通模式只做平滑锁定；暴力模式立即换目标并使用 Brute Step，并在达到「暴力扫射起始回合」后启用 BRUTE 专用扫射（FOV 内逐个精准锁定 + 超快速切换）。三种模式都继续遵守目标筛选、AimLead、穿透和特殊 pitch 规则。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "TRIGGER / 触发", y);
@@ -208,7 +214,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "地平线预留 / Horizon Reserve", "0–8°", pitchHorizonMarginBox, y);
         y = numberRow(graphics, "手动容差 / Hold Tolerance", "0.5–8°", pitchHoldToleranceBox, y);
         y = wrapped(graphics,
-                "普通怪：当前 pitch 已落在可用范围内时，Aimbot 不与鼠标争抢；目标高于地平线时会预留指定角度，超出容差才拉回。BadHeadShot 完全按目标点瞄准；巨人只允许自动向上；贴脸 Zombie（距离不超过 Face-up Dist）会抬头看向天空。",
+                "普通怪：当前 pitch 已落在可用范围内时，Aimbot 不与鼠标争抢；目标高于地平线时会预留指定角度，超出容差才拉回。BadHeadShot 完全按目标点瞄准；巨人自 0.2.68 起与普通怪同一套俯仰策略（已取消「只向上」限制）；贴脸 Zombie（距离不超过 Face-up Dist）会抬头看向天空。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "HUMANIZE / 拟人参数", y);
@@ -222,6 +228,18 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "扫射起始回合 / Sweep Min Round", "1–200", sweepMinRoundBox, y);
         y = wrapped(graphics,
                 "只有 HUMANIZE 会使用这组参数：峰值速度控制大角度转向上限；过冲模拟超过目标后的回拉；微摆间隔控制锁定附近的非周期漂移；最大误差限制准心偏差；Repull 是偏离过大时重新追踪的阈值；Face-up Dist 是 Zombie 进入抬头逻辑的水平距离。扫射起始回合之前的回合完全关闭锥内扫动与大幅扫描线，只锁单只。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+
+        section(graphics, "BRUTE SWEEP / 暴力扫射", y);
+        y += 20;
+        y = toggleRow(graphics, mouseX, mouseY, "暴力扫射 / Brute Sweep", c.bruteSweep,
+                () -> c.bruteSweep = !c.bruteSweep, y,
+                "仅在 BRUTE 模式生效：在 FOV 限幅内把目标按空间顺序逐个精准锁定并超快速切换，快速扫过一堆怪里的每一个；不是连续扫描线，也不会 360° 乱扫。");
+        y = numberRow(graphics, "扫射起始回合 / Sweep Min Round", "1–200", bruteSweepMinRoundBox, y);
+        y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
+        y = numberRow(graphics, "单目标停留 / Dwell", "40–600ms", bruteSweepDwellBox, y);
+        y = wrapped(graphics,
+                "暴力扫射在起始回合之前完全不生效（只按 TOO/巨人 > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，停留时间越短切换越激进。Humanize 的扫射参数与这一组互不影响。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "JOYSTICK / 手动推偏", y);
@@ -410,6 +428,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.midFallSpeed = parseDouble(midFallSpeedBox, 0.5, 4.0, "Mid Fall Speed");
             c.aboveHeightBlocks = parseDouble(aboveHeightBox, 1.0, 32.0, "Above Height");
             c.sweepMinRound = parseInt(sweepMinRoundBox, 1, 200, "Sweep Min Round");
+            c.bruteSweepMinRound = parseInt(bruteSweepMinRoundBox, 1, 200, "Brute Sweep Min Round");
+            c.bruteSweepFovDeg = parseDouble(bruteSweepFovBox, 5.0, 180.0, "Brute Sweep FOV");
+            c.bruteSweepDwellMs = parseInt(bruteSweepDwellBox, 40, 600, "Brute Sweep Dwell");
             c.save();
             super.saveAndClose();
         } catch (NumberFormatException exception) {

@@ -87,6 +87,35 @@ class AimbotRulesTest {
     }
 
     @Test
+    void bruteSweepGatesByRoundAndStaysInsideTheFov() {
+        // 起始回合 53：之前不生效，53 起生效，未知回合不门控
+        assertFalse(AimbotRules.bruteSweepAllowed(52, 53));
+        assertTrue(AimbotRules.bruteSweepAllowed(53, 53));
+        assertTrue(AimbotRules.bruteSweepAllowed(80, 53));
+        assertTrue(AimbotRules.bruteSweepAllowed(0, 53));
+        assertTrue(AimbotRules.bruteSweepAllowed(-1, 53));
+        // FOV 半角之内才参与扫射，不做 360° 乱扫
+        assertTrue(AimbotRules.bruteSweepInFov(-59.9, 60.0));
+        assertTrue(AimbotRules.bruteSweepInFov(60.0, 60.0));
+        assertFalse(AimbotRules.bruteSweepInFov(60.1, 60.0));
+        assertFalse(AimbotRules.bruteSweepInFov(120.0, 60.0));
+        assertFalse(AimbotRules.bruteSweepInFov(Double.NaN, 60.0));
+    }
+
+    @Test
+    void bruteSweepAdvancesLeftToRightThenRestarts() {
+        double[] yaw = {-30.0, -5.0, 12.0, 40.0};
+        assertEquals(0, AimbotRules.bruteSweepAdvance(yaw, Double.NaN, 0.25));
+        assertEquals(0, AimbotRules.bruteSweepAdvance(yaw, -45.0, 0.25));
+        assertEquals(1, AimbotRules.bruteSweepAdvance(yaw, -30.0, 0.25));
+        assertEquals(2, AimbotRules.bruteSweepAdvance(yaw, -5.0, 0.25));
+        assertEquals(3, AimbotRules.bruteSweepAdvance(yaw, 12.0, 0.25));
+        assertEquals(0, AimbotRules.bruteSweepAdvance(yaw, 40.0, 0.25));
+        assertEquals(-1, AimbotRules.bruteSweepAdvance(new double[0], 0.0, 0.25));
+        assertEquals(-1, AimbotRules.bruteSweepAdvance(null, 0.0, 0.25));
+    }
+
+    @Test
     void threatMemoryAndCandidatePriorityMatchForgeRules() {
         long now = 10_000L;
         assertTrue(AimbotRules.isThreat(6.0, 6.0, 0L, now));

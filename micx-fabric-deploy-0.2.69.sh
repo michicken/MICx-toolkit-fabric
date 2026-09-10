@@ -2,9 +2,9 @@
 set -euo pipefail
 
 INST="/Users/micx/Library/Application Support/PrismLauncher/instances/26.2"
-JAR="/Users/micx/MICx-toolkit/fabric/build/libs/micx-fabric-0.2.68.jar"
+JAR="/Users/micx/MICx-toolkit/fabric/build/libs/micx-fabric-0.2.69.jar"
 MODS_DIR="$INST/minecraft/mods"
-BACKUP_ROOT="/Users/micx/MICx-toolkit/.zcode/backups/fabric-deploy-0.2.68-$(date +%Y%m%d-%H%M%S)"
+BACKUP_ROOT="/Users/micx/MICx-toolkit/.zcode/backups/fabric-deploy-0.2.69-$(date +%Y%m%d-%H%M%S)"
 
 printf '%s\n' '== 检查 Minecraft 是否运行...'
 if pgrep -f '[n]et\.minecraft\.client\.main\.Main' >/dev/null 2>&1; then
@@ -22,8 +22,8 @@ if [[ ! -f "$JAR" ]]; then
     exit 1
 fi
 if ! unzip -p "$JAR" fabric.mod.json 2>/dev/null \
-        | grep -q '"version"[[:space:]]*:[[:space:]]*"0.2.68"'; then
-    printf '%s\n' '错误: JAR 内 fabric.mod.json 不是 0.2.68'
+        | grep -q '"version"[[:space:]]*:[[:space:]]*"0.2.69"'; then
+    printf '%s\n' '错误: JAR 内 fabric.mod.json 不是 0.2.69'
     exit 1
 fi
 
@@ -38,7 +38,7 @@ done < <(find "$MODS_DIR" -maxdepth 1 -type f \( \
     -name 'micx-fabric-*.jar*' -o -name 'MICx-toolkit-*.jar*' \
     \) -print0)
 
-TARGET="$MODS_DIR/micx-fabric-0.2.68.jar"
+TARGET="$MODS_DIR/micx-fabric-0.2.69.jar"
 cp -p "$JAR" "$TARGET"
 cmp -s "$JAR" "$TARGET"
 TARGET_SHA=$(shasum -a 256 "$TARGET" | awk '{print $1}')

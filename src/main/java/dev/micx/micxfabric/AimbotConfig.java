@@ -41,6 +41,18 @@ public final class AimbotConfig {
      */
     public int sweepMinRound = 49;
 
+    /**
+     * BRUTE（暴力）模式专用扫射：在限定 FOV 内逐个精准锁定 + 超快速切换，
+     * 快速扫过一堆怪里的每一个目标（与 Humanize 的连续扫描线不同）。
+     */
+    public boolean bruteSweep = true;
+    /** BRUTE 扫射的起始回合（用户定稿 53）；回合未知时不门控。 */
+    public int bruteSweepMinRound = 53;
+    /** BRUTE 扫射的 FOV 半角（°）：只有落在这个角范围内的目标才参与，不做 360° 乱扫。 */
+    public double bruteSweepFovDeg = 60.0;
+    /** BRUTE 扫射在每个目标上停留的时间（ms），越小切换越激进。 */
+    public int bruteSweepDwellMs = 120;
+
     /** Vertical lazy-lock policy for ordinary mobs. */
     public double pitchHorizonMarginDeg = 3.0;
     public double pitchHoldToleranceDeg = 2.0;
@@ -126,6 +138,10 @@ public final class AimbotConfig {
         humanizeRepullDeg = ConfigProperties.real(p, "humanizeRepullDeg", 10.0, 2.0, 60.0);
         faceUpDist = ConfigProperties.real(p, "faceUpDist", 0.5, 0.2, 2.0);
         sweepMinRound = ConfigProperties.integer(p, "sweepMinRound", 49, 1, 200);
+        bruteSweep = ConfigProperties.bool(p, "bruteSweep", true);
+        bruteSweepMinRound = ConfigProperties.integer(p, "bruteSweepMinRound", 53, 1, 200);
+        bruteSweepFovDeg = ConfigProperties.real(p, "bruteSweepFovDeg", 60.0, 5.0, 180.0);
+        bruteSweepDwellMs = ConfigProperties.integer(p, "bruteSweepDwellMs", 120, 40, 600);
         pitchHorizonMarginDeg = ConfigProperties.real(p, "pitchHorizonMarginDeg", 3.0, 0.0, 8.0);
         pitchHoldToleranceDeg = ConfigProperties.real(p, "pitchHoldToleranceDeg", 2.0, 0.5, 8.0);
 
@@ -205,6 +221,10 @@ public final class AimbotConfig {
         put(p, "ignoreAbovePlayer", ignoreAbovePlayer);
         put(p, "aboveHeightBlocks", clamp(aboveHeightBlocks, 1.0, 32.0));
         put(p, "sweepMinRound", clamp(sweepMinRound, 1, 200));
+        put(p, "bruteSweep", bruteSweep);
+        put(p, "bruteSweepMinRound", clamp(bruteSweepMinRound, 1, 200));
+        put(p, "bruteSweepFovDeg", clamp(bruteSweepFovDeg, 5.0, 180.0));
+        put(p, "bruteSweepDwellMs", clamp(bruteSweepDwellMs, 40, 600));
         put(p, "prioClown", prioClown);
         put(p, "prioGiant", prioGiant);
         put(p, "prioBaby", prioBaby);
