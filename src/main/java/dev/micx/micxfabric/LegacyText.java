@@ -63,6 +63,51 @@ public final class LegacyText {
         return root;
     }
 
+    /**
+     * 剥除 § 格式码，返回纯文本（复制/正则匹配等「要纯文本」的场景使用）。
+     *
+     * <p>规则（用户定稿 2026-09-11，ChatCopy）：
+     * <ul>
+     *   <li>{@code §} + 后跟一位字符（颜色 0-9/a-f、格式 k/l/m/n/o/r、重置 r）
+     *       → 符号与该数字/字母<b>一并移除</b>；</li>
+     *   <li>{@code §#RRGGBB}（26.2 hex 颜色）→ 连同后面 6 位十六进制一并移除；
+     *       不是合法 6 位 hex 时也至少移除 {@code §#}；</li>
+     *   <li>行末孤立的 {@code §} 直接移除。</li>
+     * </ul>
+     *
+     * <p>与项目里既有的 {@code replaceAll("§.", "")}（ZombiesTracker/TeamSync）的差别：
+     * 那里对 hex 码只吃掉 {@code §#}，会残留 6 位十六进制字符（如 {@code §#FF0000RED}
+     * 变成 {@code FF0000RED}），本方法不会。
+     */
+    public static String stripFormatting(String text) {
+        if (text == null || text.isEmpty()) return text == null ? "" : text;
+        StringBuilder plain = new StringBuilder(text.length());
+        int i = 0;
+        while (i < text.length()) {
+            char ch = text.charAt(i);
+            if (ch != '\u00a7') {
+                plain.append(ch);
+                i++;
+                continue;
+            }
+            if (i + 1 < text.length() && text.charAt(i + 1) == '#') {
+                // §#RRGGBB（8 字符）或退化的 §#
+                i += isHex6(text, i + 2) ? 8 : 2;
+                continue;
+            }
+            i += 2; // §x：标准码（含行末孤立 §，直接丢弃）
+        }
+        return plain.toString();
+    }
+
+    private static boolean isHex6(String text, int from) {
+        if (from + 6 > text.length()) return false;
+        for (int k = 0; k < 6; k++) {
+            if (Character.digit(text.charAt(from + k), 16) < 0) return false;
+        }
+        return true;
+    }
+
     private static MutableComponent styled(String text, ChatFormatting color, boolean bold, boolean italic) {
         MutableComponent part = Component.literal(text);
         if (color != null) part = part.withStyle(color);

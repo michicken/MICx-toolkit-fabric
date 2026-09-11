@@ -44,11 +44,16 @@ public final class ChatCopyModule implements Module {
         ModuleStateStore.put(id(), enabled);
     }
 
+    /**
+     * 复制内容剥掉 § 格式码（含 § 后的数字/字母与 §#RRGGBB），默认开启、无开关
+     * （用户定稿 2026-09-11）：带码的原文贴到外部会变成乱码字符。
+     */
     private Component decorate(Component message, boolean overlay) {
         if (!enabled || overlay || message == null || message.getString().isBlank()) return message;
+        String plain = LegacyText.stripFormatting(message.getString());
         Component suffix = Component.literal("  [C]")
                 .withStyle(Style.EMPTY.withColor(0xFF666666)
-                        .withClickEvent(new ClickEvent.CopyToClipboard(message.getString())));
+                        .withClickEvent(new ClickEvent.CopyToClipboard(plain)));
         return message.copy().append(suffix);
     }
 
