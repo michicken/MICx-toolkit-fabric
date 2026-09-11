@@ -27,7 +27,7 @@ public final class AimbotHudModule implements Module {
 
     private static final String[] KEY_IDS = {
             "ignoreToo", "ignoreGolem", "ignoreSlime", "prioClown",
-            "prioGiant", "prioBaby", "closest"
+            "prioGiant", "closest"
     };
 
     private boolean enabled;
@@ -224,7 +224,7 @@ public final class AimbotHudModule implements Module {
     private static int[][] keyArrays(AimbotConfig config) {
         return new int[][]{
                 config.getIgnoreTooKey(), config.getIgnoreGolemKey(), config.getIgnoreSlimeKey(),
-                config.getPrioClownKey(), config.getPrioGiantKey(), config.getPrioBabyKey(),
+                config.getPrioClownKey(), config.getPrioGiantKey(),
                 config.getClosestKey()
         };
     }
@@ -240,8 +240,7 @@ public final class AimbotHudModule implements Module {
             case 2 -> config.ignoreSlime;
             case 3 -> config.prioClown;
             case 4 -> config.prioGiant;
-            case 5 -> config.prioBaby;
-            case 6 -> config.closest;
+            case 5 -> config.closest;
             default -> false;
         };
     }
@@ -253,8 +252,7 @@ public final class AimbotHudModule implements Module {
             case 2 -> config.ignoreSlime = !config.ignoreSlime;
             case 3 -> config.setPrioClown(!config.prioClown);
             case 4 -> config.setPrioGiant(!config.prioGiant);
-            case 5 -> config.prioBaby = !config.prioBaby;
-            case 6 -> config.closest = !config.closest;
+            case 5 -> config.closest = !config.closest;
             default -> {
             }
         }

@@ -164,7 +164,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "下坠速度阈值 / Mid Fall Speed", "0.5–4 格/tick", midFallSpeedBox, y);
         y = toggleRow(graphics, mouseX, mouseY, "忽略头顶高处 / Ignore Above", c.ignoreAbovePlayer,
                 () -> c.ignoreAbovePlayer = !c.ignoreAbovePlayer, y,
-                "开启后跳过脚底比玩家高出阈值以上的目标（高台、屋顶、轨道上够不着的怪）。恶魂 Ghast 是飞行怪，一律豁免不受此限。 ");
+                "开启后跳过脚底比玩家高出阈值以上的目标（高台、屋顶、轨道上够不着的怪）。恶魂 Ghast 是飞行怪，一律豁免不受此限；第 21 回合整条豁免（飞碟/高处投放怪密集），阈值不变。 ");
         y = numberRow(graphics, "高度差阈值 / Above Height", "1–32 格", aboveHeightBox, y);
         y = toggleRow(graphics, mouseX, mouseY, "优先小丑 / Prio Clown", c.prioClown,
                 () -> c.setPrioClown(!c.prioClown), y,
@@ -176,11 +176,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "开启后提高 Giant 目标组优先级，并自动关闭 Clown 优先。 ");
         y = keyRow(graphics, mouseX, mouseY, "巨人快捷键 / Prio Giant Key", c::getPrioGiantKey,
                 c::setPrioGiantKey, y, "绑定后可快速切换巨人优先。 ");
-        y = toggleRow(graphics, mouseX, mouseY, "优先 Baby / Prio Baby", c.prioBaby,
-                () -> c.prioBaby = !c.prioBaby, y,
-                "开启后有普通 Baby 时先清理 Baby，适用于需要优先处理小目标的回合。 ");
-        y = keyRow(graphics, mouseX, mouseY, "Baby 快捷键 / Prio Baby Key", c::getPrioBabyKey,
-                c::setPrioBabyKey, y, "绑定后可快速切换 Baby 优先。 ");
+        y = wrapped(graphics,
+                "Baby 僵尸已固定降到「普通怪之后」：优先打普通怪，只有场上再无别的可打目标时才锁 Baby（仅 BRUTE 扫射生效时恢复最高优先）。原 Prio Baby 开关已废弃移除。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = toggleRow(graphics, mouseX, mouseY, "近身威胁 / Threat", c.threatEnabled,
                 () -> c.threatEnabled = !c.threatEnabled, y,
                 "开启后近距离威胁目标会被保送，并且可以无视 FOV 限制；受伤记录保留约 5 秒。 ");
@@ -201,7 +199,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 y, "读取 AimLead 的预测 AABB 和攻击点；关闭、没有有效轨迹或预测点不可见时不会瞄准。 ");
         y = toggleRow(graphics, mouseX, mouseY, "楼梯穿透 / WS Stair", c.wsStair,
                 () -> c.wsStair = !c.wsStair, y,
-                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。 ");
+                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。注意：橡木栅栏门（oak_fence_gate）与铁活板门（iron_trapdoor）已固定为不可穿透，本开关不影响它们。 ");
         y = numberRow(graphics, "视野范围 / FOV", "30–360°", fovBox, y);
         y = numberRow(graphics, "普通步长 / Max Step", "5–90°/tick", maxStepBox, y);
         y = numberRow(graphics, "暴力步长 / Brute Step", "30–180°/tick", bruteMaxStepBox, y);
@@ -219,7 +217,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = numberRow(graphics, "巨人瞄点 / Giant Frac", "0.50–1.00", giantAimFracBox, y);
         y = wrapped(graphics,
-                "巨人专属瞄准高度系数，默认 0.98（脚上 11.76 / 箱高 12.0，比眼高高 1.32 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.98 时距箱顶仅 0.24 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
+                "巨人专属瞄准高度系数，默认 0.995（脚上 11.94 / 箱高 12.0，比眼高高 1.50 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.995 时距箱顶仅 0.06 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = wrapped(graphics,
                 "FOV 是相对当前视线的筛选角度，360° 表示不限制；Max Step 只影响 NORMAL，Brute Step 只在 BRUTE 生效。",
@@ -251,7 +249,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = toggleRow(graphics, mouseX, mouseY, "暴力扫射 / Brute Sweep", c.bruteSweep,
                 () -> c.bruteSweep = !c.bruteSweep, y,
                 "仅在 BRUTE 模式生效：在 FOV 限幅内把目标按空间顺序逐个精准锁定并超快速切换，快速扫过一堆怪里的每一个；不是连续扫描线，也不会 360° 乱扫。");
-        y = numberRow(graphics, "扫射起始回合 / Sweep Min Round", "1–200", bruteSweepMinRoundBox, y);
+        y = numberRow(graphics, "暴力扫射起始回合 / Brute Min Round", "1–200", bruteSweepMinRoundBox, y);
         y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
         y = numberRow(graphics, "单目标停留 / Dwell", "40–600ms", bruteSweepDwellBox, y);
         y = numberRow(graphics, "转头完成时间 / Turn Window", "5–50ms", bruteRotationWindowBox, y);

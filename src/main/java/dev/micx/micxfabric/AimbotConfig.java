@@ -46,8 +46,8 @@ public final class AimbotConfig {
      * 快速扫过一堆怪里的每一个目标（与 Humanize 的连续扫描线不同）。
      */
     public boolean bruteSweep = true;
-    /** BRUTE 扫射的起始回合（用户定稿 53）；回合未知时不门控。 */
-    public int bruteSweepMinRound = 53;
+    /** BRUTE 扫射的起始回合（用户定稿 36）；回合未知时不门控。 */
+    public int bruteSweepMinRound = 36;
     /** BRUTE 扫射的 FOV 半角（°）：只有落在这个角范围内的目标才参与，不做 360° 乱扫。 */
     public double bruteSweepFovDeg = 45.0;
     /** BRUTE 扫射在每个目标上停留的时间（ms），越小切换越激进。 */
@@ -75,15 +75,16 @@ public final class AimbotConfig {
     /** 判定"高速下落"的垂直速度阈值（格/tick），越大越严格。 */
     public double midFallSpeed = 1.8;
     /**
+    /**
      * 忽略玩家上方高度差过大的目标（高台上够不着的怪）。
      * 判据：怪脚底 y − 玩家脚底 y > 阈值。恶魂（Ghast）是飞行怪，豁免本条。
+     * 第 21 回合整条豁免（飞碟/高处投放怪密集），阈值不变。
      */
     public boolean ignoreAbovePlayer = true;
-    /** 高度差阈值（格）。超过这个高度差的目标不参与选靶（恶魂除外）。 */
+    /** 高度差阈值（格）。超过这个高度差的目标不参与选靶（恶魂除外、R21 豁免）。 */
     public double aboveHeightBlocks = 5.0;
     public boolean prioClown = false;
     public boolean prioGiant = false;
-    public boolean prioBaby = false;
     public int fov = 360;
 
     public boolean showHud = true;
@@ -110,7 +111,7 @@ public final class AimbotConfig {
     public double badHeadshotFrac = AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT;
 
     /**
-     * 巨人的瞄准高度系数（作用在幽灵框上），默认 0.98（脚上 11.76 / 箱高 12.0）。
+     * 巨人的瞄准高度系数（作用在幽灵框上），默认 0.995（脚上 11.94 / 箱高 12.0）。
      * 与全局 {@link #crits} 解耦，且不受 {@link #headFracMax} 夹取——
      * 本字段自身的 [0.50, 1.00] 范围已保证瞄点不会超出箱体。
      */
@@ -122,7 +123,6 @@ public final class AimbotConfig {
     private int[] ignoreSlimeKey = KeyChord.EMPTY;
     private int[] prioClownKey = KeyChord.EMPTY;
     private int[] prioGiantKey = KeyChord.EMPTY;
-    private int[] prioBabyKey = KeyChord.EMPTY;
     private int[] closestKey = KeyChord.EMPTY;
     private int[] holdLockKey = KeyChord.EMPTY;
     private int[] toggleKey = KeyChord.EMPTY;
@@ -164,7 +164,7 @@ public final class AimbotConfig {
         faceUpDist = ConfigProperties.real(p, "faceUpDist", 0.5, 0.2, 2.0);
         sweepMinRound = ConfigProperties.integer(p, "sweepMinRound", 49, 1, 200);
         bruteSweep = ConfigProperties.bool(p, "bruteSweep", true);
-        bruteSweepMinRound = ConfigProperties.integer(p, "bruteSweepMinRound", 53, 1, 200);
+        bruteSweepMinRound = ConfigProperties.integer(p, "bruteSweepMinRound", 36, 1, 200);
         bruteSweepFovDeg = ConfigProperties.real(p, "bruteSweepFovDeg", 45.0, 5.0, 180.0);
         bruteSweepDwellMs = ConfigProperties.integer(p, "bruteSweepDwellMs", 100, 40, 600);
         bruteRotationWindowMs = ConfigProperties.integer(p, "bruteRotationWindowMs", 25, 5, 50);
@@ -182,7 +182,6 @@ public final class AimbotConfig {
         prioClown = ConfigProperties.bool(p, "prioClown", false);
         prioGiant = ConfigProperties.bool(p, "prioGiant", false);
         if (prioClown && prioGiant) prioGiant = false;
-        prioBaby = ConfigProperties.bool(p, "prioBaby", false);
         fov = ConfigProperties.integer(p, "fov", 360, 30, 360);
         showHud = ConfigProperties.bool(p, "showHud", true);
         showKeyHints = ConfigProperties.bool(p, "showKeyHints", true);
@@ -204,7 +203,6 @@ public final class AimbotConfig {
         ignoreSlimeKey = readKey(p, "ignoreSlimeKeyCodes", "ignoreSlimeKeyCode");
         prioClownKey = readKey(p, "prioClownKeyCodes", "prioClownKeyCode");
         prioGiantKey = readKey(p, "prioGiantKeyCodes", "prioGiantKeyCode");
-        prioBabyKey = readKey(p, "prioBabyKeyCodes", "prioBabyKeyCode");
         closestKey = readKey(p, "closestKeyCodes", "closestKeyCode");
         holdLockKey = readKey(p, "holdLockKeyCodes", "holdLockKeyCode");
         toggleKey = readKey(p, "toggleKeyCodes", "toggleKeyCode");
@@ -259,7 +257,6 @@ public final class AimbotConfig {
         put(p, "bruteRotationWindowMs", clamp(bruteRotationWindowMs, 5, 50));
         put(p, "prioClown", prioClown);
         put(p, "prioGiant", prioGiant);
-        put(p, "prioBaby", prioBaby);
         put(p, "fov", clamp(fov, 30, 360));
         put(p, "showHud", showHud);
         put(p, "showKeyHints", showKeyHints);
@@ -278,7 +275,6 @@ public final class AimbotConfig {
         writeKey(p, "ignoreSlimeKeyCodes", "ignoreSlimeKeyCode", ignoreSlimeKey);
         writeKey(p, "prioClownKeyCodes", "prioClownKeyCode", prioClownKey);
         writeKey(p, "prioGiantKeyCodes", "prioGiantKeyCode", prioGiantKey);
-        writeKey(p, "prioBabyKeyCodes", "prioBabyKeyCode", prioBabyKey);
         writeKey(p, "closestKeyCodes", "closestKeyCode", closestKey);
         writeKey(p, "holdLockKeyCodes", "holdLockKeyCode", holdLockKey);
         writeKey(p, "toggleKeyCodes", "toggleKeyCode", toggleKey);
@@ -305,7 +301,6 @@ public final class AimbotConfig {
     public int[] getIgnoreSlimeKey() { load(); return ignoreSlimeKey.clone(); }
     public int[] getPrioClownKey() { load(); return prioClownKey.clone(); }
     public int[] getPrioGiantKey() { load(); return prioGiantKey.clone(); }
-    public int[] getPrioBabyKey() { load(); return prioBabyKey.clone(); }
     public int[] getClosestKey() { load(); return closestKey.clone(); }
     public int[] getHoldLockKeyCodes() { load(); return holdLockKey.clone(); }
     public int[] getToggleKeyCodes() { load(); return toggleKey.clone(); }
@@ -315,7 +310,6 @@ public final class AimbotConfig {
     public void setIgnoreSlimeKey(int[] value) { ignoreSlimeKey = setKey(value); save(); }
     public void setPrioClownKey(int[] value) { prioClownKey = setKey(value); save(); }
     public void setPrioGiantKey(int[] value) { prioGiantKey = setKey(value); save(); }
-    public void setPrioBabyKey(int[] value) { prioBabyKey = setKey(value); save(); }
     public void setClosestKey(int[] value) { closestKey = setKey(value); save(); }
     public void setHoldLockKeyCodes(int[] value) { holdLockKey = setKey(value); save(); }
     public void setToggleKeyCodes(int[] value) { toggleKey = setKey(value); save(); }

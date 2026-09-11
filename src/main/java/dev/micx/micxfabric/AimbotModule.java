@@ -396,11 +396,18 @@ public final class AimbotModule implements Module {
         }
         all.sort(Comparator.comparingDouble(meta -> meta.angle));
 
-        List<CandidateMeta> scanList = buildScanList(all);
-        List<Scored> scored = new ArrayList<>(scanList.size());
-        for (CandidateMeta meta : scanList) {
-            Scored result = scanTarget(client, meta, eye, all);
-            if (result != null) scored.add(result);
+        // 「降至普通怪之后」档（group < 0，baby / insta 下的史莱姆·岩浆怪）只在
+        // 首选档无可打目标时才参与：先用首选档扫一遍，全都被挡时才退到降级档。
+        // 这样「优先打普通怪，没别的可打才锁 baby」是硬保证，不受转向角排序影响。
+        List<CandidateMeta> preferred = new ArrayList<>(all.size());
+        List<CandidateMeta> demoted = new ArrayList<>();
+        for (CandidateMeta meta : all) {
+            if (meta.group < 0) demoted.add(meta);
+            else preferred.add(meta);
+        }
+        List<Scored> scored = scanCandidates(client, eye, all, preferred);
+        if (scored.isEmpty() && !demoted.isEmpty()) {
+            scored = scanCandidates(client, eye, all, demoted);
         }
         if (scored.isEmpty()) {
             clearLock();
@@ -508,6 +515,11 @@ public final class AimbotModule implements Module {
         // insta 秒杀窗口：恶魂在天上、巨人箱体巨大且瞄点贴顶，窗口内整体不打；
         // 同时把移速慢、好瞄的非 baby 怪整体前置。
         boolean instaWindow = instaActive();
+        int round = ZombiesTracker.instance().round();
+        // BRUTE 扫射是「按空间顺序逐个清」，扫射生效时不再降级 baby（用户定稿 2026-09-11）。
+        boolean babyFirst = bruteSweepActive();
+        // R21 豁免「忽略头顶高处」：该回合飞碟/高处投放的怪密集，全跳过会无人可打。
+        boolean aboveExempt = AimbotRules.aboveHeightExemptRound(round);
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity living) || !isAliveTarget(living)
                     || living == client.player || living.getId() < 0) continue;
@@ -525,7 +537,7 @@ public final class AimbotModule implements Module {
             if (c.ignoreSlime && slime) continue;
             if (c.ignoreVerticalFall && isVerticalFalling(living)) continue;
             if (c.ignoreMidFall && isMidFallDrop(living)) continue;
-            if (c.ignoreAbovePlayer && !isGhast(living)
+            if (!aboveExempt && c.ignoreAbovePlayer && !isGhast(living)
                     && AimbotRules.isTooHighAbove(living.getY(), py, c.aboveHeightBlocks)) continue;
             double dx = living.getX() - px;
             double dy = living.getY() - client.player.getY();
@@ -544,13 +556,30 @@ public final class AimbotModule implements Module {
             boolean baby = living instanceof Zombie zombie && zombie.isBaby() && !too;
             boolean clown = living instanceof Zombie zombie && isClown(zombie);
             int group = instaWindow
-                    ? AimbotRules.instaGroupRank(baby)
-                    : AimbotRules.groupRank(c.prioBaby, c.prioClown, c.prioGiant,
+                    ? AimbotRules.instaGroupRank(baby, slime, babyFirst)
+                    : AimbotRules.groupRank(c.prioClown, c.prioGiant, babyFirst,
                     baby, clown, giant);
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
                     Math.sqrt(distSq)));
         }
         return result;
+    }
+
+    /**
+     * 在一个候选池上做「扫描 + 瞄点求解」，返回所有可打目标。
+     *
+     * @param all  完整候选（用于穿透数统计，语义与旧实现一致）
+     * @param pool 本次参与的目标档（首选档，或必要时退到的降级档）
+     */
+    private List<Scored> scanCandidates(Minecraft client, Vec3 eye,
+                                        List<CandidateMeta> all, List<CandidateMeta> pool) {
+        List<Scored> scored = new ArrayList<>();
+        if (pool.isEmpty()) return scored;
+        for (CandidateMeta meta : buildScanList(pool)) {
+            Scored result = scanTarget(client, meta, eye, all);
+            if (result != null) scored.add(result);
+        }
+        return scored;
     }
 
     private List<CandidateMeta> buildScanList(List<CandidateMeta> all) {
@@ -582,7 +611,7 @@ public final class AimbotModule implements Module {
         double height = box.maxY - box.minY;
         Vec3 executablePoint = computeAimPoint(client, meta.entity);
         boolean giant = isGiant(meta.entity);
-        // 巨人（首选 0.98）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
+        // 巨人（首选 0.995）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
         // 不再整只丢怪，而是退到最接近该点的可见采样 —— 先往下，没有可见的下方
         // 采样时再往上（双向兜底）。普通怪维持既有的「自上而下第一个可见」。
         boolean insta = !giant && instaActive();
@@ -1689,7 +1718,7 @@ public final class AimbotModule implements Module {
         boolean giant = isGiant(target);
         double frac;
         if (giant) {
-            // 巨人专属系数：默认 0.98（脚上 11.76 / 箱高 12.0）。
+            // 巨人专属系数：默认 0.995（脚上 11.94 / 箱高 12.0）。
             // 与全局 Crits 解耦，不再被普通怪的爆头系数连带牵动。
             frac = config.giantAimFrac;
         } else if (instaActive()) {
@@ -1703,7 +1732,7 @@ public final class AimbotModule implements Module {
             frac = 0.9 + 0.2 * config.crits;
         }
         // 巨人走专属系数、且其取值范围已是 [0.50, 1.00]，不再被 Head Clamp 二次夹取，
-        // 否则面板里填 0.99 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
+        // 否则面板里填 0.995 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
         if (!giant) {
             frac = Math.max(0.05, Math.min(config.headFracMax, frac));
         }
@@ -1787,6 +1816,9 @@ public final class AimbotModule implements Module {
     /** Mirrors the old Block/BlockSlab/BlockStairs whitelist on modern registry paths. */
     private boolean isAllowedFirstSolid(BlockState state, String path) {
         if (path == null || path.isEmpty()) return false;
+        // 硬实心例外：橡木栅栏门 / 铁活板门必须真正挡枪，不能被 *_fence_gate / *_trapdoor
+        // 后缀规则放进可穿透名单（其余木种/活板门不受影响）。
+        if (AimbotRules.isHardSolidPath(path)) return false;
         if (path.endsWith("_slab")) {
             boolean doubleSlab = path.startsWith("double_");
             if (!doubleSlab && state != null && state.getBlock() instanceof SlabBlock) {

@@ -85,30 +85,32 @@ class AimbotRulesTest {
     void giantAimFracDefaultSitsInsideTheHeadBandNearTheTop() {
         double frac = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
         double height = 12.0;                       // 26.2 GIANT sized(3.6, 12.0)
-        double aimY = height * frac;                // 11.76
-        assertEquals(11.76, aimY, 1.0e-9);
+        double aimY = height * frac;
+        // 用户定稿口径：0.995 -> 脚上 11.94 格、距箱顶 0.06 格
+        assertEquals(11.94, aimY, 1.0e-9);
         // 必须落在爆头带（下沿 0.80 = 9.60）之内，否则丢掉爆头线优先
         assertTrue(AimbotRules.isHeadLayer(aimY, 0.0, height));
-        // 距箱顶余量只有 0.24 格 —— 这正是 0.98 的代价
-        assertEquals(0.24, height - aimY, 1.0e-9);
+        // 贴顶但余量必须为正
+        double margin = height - aimY;
+        assertTrue(margin > 0.0 && margin < 0.10, "距箱顶余量应很小: " + margin);
         // 且仍然严格在箱体之内
         assertTrue(aimY < height);
     }
 
     @Test
     void bodyFallbackForGiantPicksTheSampleNearestTheAimPoint() {
-        double preferred = AimbotRules.GIANT_AIM_FRAC_DEFAULT;   // 0.98
-        double justUnder = AimbotRules.bodyFallbackScore(0.95, true, preferred);
-        double mid = AimbotRules.bodyFallbackScore(0.85, true, preferred);
+        double preferred = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
+        double justUnder = AimbotRules.bodyFallbackScore(preferred - 0.05, true, preferred);
+        double mid = AimbotRules.bodyFallbackScore(preferred - 0.15, true, preferred);
         double low = AimbotRules.bodyFallbackScore(0.50, true, preferred);
 
-        assertEquals(0.03, justUnder, 1.0e-9);
-        // 越接近首选越优先：0.95 -> 0.85 -> 0.50
+        assertEquals(0.05, justUnder, 1.0e-9);
+        // 越接近首选越优先
         assertTrue(justUnder < mid);
         assertTrue(mid < low);
-        // 距离完全相同时（0.96 与 1.00 距 0.98 都是 0.02）下方优先
-        assertTrue(AimbotRules.bodyFallbackScore(0.96, true, preferred)
-                < AimbotRules.bodyFallbackScore(1.00, true, preferred));
+        // 与首选等距时下方优先（两者距首选同为 0.005）
+        assertTrue(AimbotRules.bodyFallbackScore(preferred - 0.005, true, preferred)
+                < AimbotRules.bodyFallbackScore(preferred + 0.005, true, preferred));
     }
 
     @Test
@@ -122,10 +124,28 @@ class AimbotRulesTest {
     }
 
     @Test
-    void instaGroupRankPrefersNonBaby() {
-        assertEquals(1, AimbotRules.instaGroupRank(false));
-        assertEquals(0, AimbotRules.instaGroupRank(true));
-        assertTrue(AimbotRules.instaGroupRank(false) > AimbotRules.instaGroupRank(true));
+    void instaGroupRankDemotesBabyAndSlimeBehindNormalMobs() {
+        // 普通怪（非 baby、非史莱姆）在 insta 窗口里前置
+        assertEquals(AimbotRules.GROUP_PRIORITY, AimbotRules.instaGroupRank(false, false, false));
+        // baby 与史莱姆/岩浆怪都降到「普通怪之后」档，且同档
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.instaGroupRank(true, false, false));
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.instaGroupRank(false, true, false));
+        assertEquals(AimbotRules.instaGroupRank(true, false, false),
+                AimbotRules.instaGroupRank(false, true, false));
+        assertTrue(AimbotRules.instaGroupRank(false, false, false)
+                > AimbotRules.instaGroupRank(true, true, false));
+        // BRUTE 扫射生效时 baby 恢复最高组
+        assertEquals(AimbotRules.GROUP_BABY_FIRST, AimbotRules.instaGroupRank(true, false, true));
+    }
+
+    @Test
+    void aboveHeightIsExemptOnlyOnRound21() {
+        assertTrue(AimbotRules.aboveHeightExemptRound(21));
+        assertFalse(AimbotRules.aboveHeightExemptRound(20));
+        assertFalse(AimbotRules.aboveHeightExemptRound(22));
+        // 回合未知（未进局 / 解析失败）不豁免
+        assertFalse(AimbotRules.aboveHeightExemptRound(0));
+        assertFalse(AimbotRules.aboveHeightExemptRound(-1));
     }
 
     @Test
@@ -170,6 +190,24 @@ class AimbotRulesTest {
         assertFalse(AimbotRules.isAllowedSingleSlab("spruce_slab", false));
         assertTrue(AimbotRules.isAllowedSingleSlab("stone_brick_slab", false));
         assertFalse(AimbotRules.isAllowedSingleSlab("stone_brick_slab", true));
+    }
+
+    @Test
+    void oakFenceGateAndIronTrapdoorAreHardSolidsThatBlockShots() {
+        assertTrue(AimbotRules.isHardSolidPath("oak_fence_gate"));
+        assertTrue(AimbotRules.isHardSolidPath("iron_trapdoor"));
+    }
+
+    @Test
+    void otherFenceGatesAndTrapdoorsRemainPenetrable() {
+        assertFalse(AimbotRules.isHardSolidPath("spruce_fence_gate"));
+        assertFalse(AimbotRules.isHardSolidPath("dark_oak_fence_gate"));
+        assertFalse(AimbotRules.isHardSolidPath("oak_trapdoor"));
+        assertFalse(AimbotRules.isHardSolidPath("spruce_trapdoor"));
+        assertFalse(AimbotRules.isHardSolidPath("iron_door"));
+        assertFalse(AimbotRules.isHardSolidPath("stone_brick_slab"));
+        assertFalse(AimbotRules.isHardSolidPath(null));
+        assertFalse(AimbotRules.isHardSolidPath(""));
     }
 
     @Test
@@ -304,11 +342,21 @@ class AimbotRulesTest {
 
     @Test
     void groupPriorityAndClosestMarginMatchForgeRules() {
-        assertEquals(0, AimbotRules.groupRank(false, false, false, true, false, false));
-        assertEquals(2, AimbotRules.groupRank(true, false, false, true, false, false));
-        assertEquals(1, AimbotRules.groupRank(false, true, false, false, true, false));
-        assertEquals(1, AimbotRules.groupRank(false, false, true, false, false, true));
-        assertEquals(0, AimbotRules.groupRank(false, true, false, true, false, false));
+        // 新签名：groupRank(prioClown, prioGiant, babyFirst, baby, clown, giant)
+        // baby 不再有独立开关，默认降到「普通怪之后」档
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
+                AimbotRules.groupRank(false, false, false, true, false, false));
+        // BRUTE 扫射生效时 baby 恢复最高组
+        assertEquals(AimbotRules.GROUP_BABY_FIRST,
+                AimbotRules.groupRank(false, false, true, true, false, false));
+        assertEquals(AimbotRules.GROUP_PRIORITY,
+                AimbotRules.groupRank(true, false, false, false, true, false));
+        assertEquals(AimbotRules.GROUP_PRIORITY,
+                AimbotRules.groupRank(false, true, false, false, false, true));
+        // 普通怪仍是 0，baby 降级后严格低于普通怪
+        assertEquals(0, AimbotRules.groupRank(false, false, false, false, false, false));
+        assertTrue(AimbotRules.groupRank(false, false, false, false, false, false)
+                > AimbotRules.groupRank(false, false, false, true, false, false));
 
         assertFalse(AimbotRules.closestBetter(10.0, 13.0, 3.0));
         assertTrue(AimbotRules.closestBetter(10.0, 13.1, 3.0));

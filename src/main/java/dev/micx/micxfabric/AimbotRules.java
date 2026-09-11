@@ -39,15 +39,16 @@ public final class AimbotRules {
     /**
      * 巨人的默认瞄准高度系数（作用在幽灵框上）。
      *
-     * <p>26.2 巨人尺寸 {@code sized(3.6f, 12.0f).eyeHeight(10.44f)}：瞄 {@code 0.98}
-     * 即脚上 <b>11.76 格</b>，比眼高（10.44）高 1.32 格，仍在爆头带
-     * {@code [0.80, 1.00]} 之内 —— 但距箱顶只剩 <b>0.24 格</b>，暴击容差相应收窄。
+     * <p>26.2 巨人尺寸 {@code sized(3.6f, 12.0f).eyeHeight(10.44f)}：瞄 {@code 0.995}
+     * 即脚上 <b>11.94 格</b>，比眼高（10.44）高 1.50 格，仍在爆头带
+     * {@code [0.80, 1.00]} 之内 —— 距箱顶仅剩 <b>0.06 格</b>，暴击容差极窄，
+     * 属用户明确要求的「尽量贴顶」口径（0.98 → 0.995，2026-09-11）。
      *
      * <p>此前巨人复用 {@code 0.9 + 0.2 * Crits}，会被<b>全局 Crits 旋钮连带牵动</b>；
      * 现改用这个专属系数，巨人瞄点与 Crits <b>解耦</b>，也不再受 {@code headFracMax}
      * 夹取（该系数自身范围即 {@code [0.50, 1.00]}）。
      */
-    public static final double GIANT_AIM_FRAC_DEFAULT = 0.98;
+    public static final double GIANT_AIM_FRAC_DEFAULT = 0.995;
 
     /**
      * insta（Insta Kill 秒杀）窗口内的固定瞄准高度系数。
@@ -62,14 +63,33 @@ public final class AimbotRules {
     public static final double INSTA_AIM_FRAC = 0.5;
 
     /**
-     * insta 窗口内的候选分组：<b>非 baby 的怪整体前置</b>。
+     * 「降至普通怪之后」档：分组值小于 0 即表示该目标只在首选档<b>无可打目标</b>时才参与。
      *
-     * <p>baby 僵尸的碰撞箱只有成体一半、移速还快，命中窗口很小；成体移速慢、
-     * 好瞄。秒杀期间追求的是「快速清掉每一只」，所以优先打打得中的。
-     * 巨人已由调用方在该窗口内整体剔除，这里不再区分。
+     * <p>用户定稿 2026-09-11：baby 僵尸（全局，BRUTE 扫射除外）与 insta 窗口内的
+     * 史莱姆/岩浆怪都降到这一档 —— 优先打普通怪，只有场上再无别的可打目标时才锁它们。
      */
-    public static int instaGroupRank(boolean baby) {
-        return baby ? 0 : 1;
+    public static final int GROUP_DEPRIORITIZED = -1;
+
+    /** BRUTE 扫射生效时 baby 恢复的最高组。 */
+    public static final int GROUP_BABY_FIRST = 2;
+
+    /** 小丑/巨人优先组。 */
+    public static final int GROUP_PRIORITY = 1;
+
+    /**
+     * insta 窗口内的候选分组。
+     *
+     * <p>用户定稿 2026-09-11：<b>非 baby 且非史莱姆/岩浆怪的怪整体前置</b>。
+     * baby 僵尸碰撞箱只有成体一半、移速还快；史莱姆/岩浆怪体型跳脱、命中窗口小。
+     * 秒杀期间追求「快速清掉每一只」，所以优先打打得中的，其余降到
+     * {@link #GROUP_DEPRIORITIZED} 档。巨人已由调用方在该窗口内整体剔除，这里不再区分。
+     *
+     * @param babyFirst BRUTE 扫射生效时为 true —— 扫射是「按空间顺序逐个清」，不再降级 baby
+     */
+    public static int instaGroupRank(boolean baby, boolean slime, boolean babyFirst) {
+        if (babyFirst && baby) return GROUP_BABY_FIRST;
+        if (baby || slime) return GROUP_DEPRIORITIZED;
+        return GROUP_PRIORITY;
     }
 
     /**
@@ -194,6 +214,25 @@ public final class AimbotRules {
     public static boolean isAllowedSingleSlab(String registryPath, boolean doubleSlab) {
         if (doubleSlab || registryPath == null || registryPath.startsWith("double_")) return false;
         return "stone_brick_slab".equals(registryPath) || "oak_slab".equals(registryPath);
+    }
+
+    /**
+     * 「硬实心」方块名单：即使命中它的碰撞形状，也<b>不允许</b>把它当作可穿透的首个实心方块
+     * —— 即这两类方块必须真正挡住弹道。
+     *
+     * <p>理由（用户口径 2026-09-11）：{@code isAllowedFirstSolid} 默认把 {@code *_fence_gate}
+     * 与 {@code *_trapdoor} 都视为可穿透，但其中
+     * <ul>
+     *   <li>{@code oak_fence_gate}（橡木栅栏门）关闭时是一片实心门板，理应挡枪；</li>
+     *   <li>{@code iron_trapdoor}（铁活板门）是铁质整格构件，更不该被穿过。</li>
+     * </ul>
+     * 二者被误判为可穿透会导致「对着关着的门/活板门开枪打空或打到门后目标」。
+     *
+     * <p><b>范围严格限定这两种方块</b>：其余木种的栅栏门（spruce/birch/…）与其余活板门
+     * （{@code oak_trapdoor} 等）<b>保持可穿透</b>，与本函数无关。
+     */
+    public static boolean isHardSolidPath(String registryPath) {
+        return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath);
     }
 
     /** Minecraft's yaw/pitch convention, used by the virtual joystick selector. */
@@ -645,12 +684,20 @@ public final class AimbotRules {
         return best.penCount < current.penCount;
     }
 
-    public static int groupRank(boolean prioBaby, boolean prioClown, boolean prioGiant,
+    /**
+     * 普通（非 insta）分组。
+     *
+     * <p>用户定稿 2026-09-11：<b>废弃 Prio Baby 开关</b>——baby 僵尸默认降到
+     * {@link #GROUP_DEPRIORITIZED}（排在普通怪之后，只有再无别的可打目标时才锁），
+     * 仅当 BRUTE 扫射生效（{@code babyFirst}）时恢复 {@link #GROUP_BABY_FIRST} 最高组。
+     * 小丑/巨人优先组不受影响。
+     */
+    public static int groupRank(boolean prioClown, boolean prioGiant, boolean babyFirst,
                                 boolean baby, boolean clown, boolean giant) {
-        if (prioBaby && baby) return 2;
-        if (prioClown && clown) return 1;
-        if (prioGiant && giant) return 1;
-        return 0;
+        if (babyFirst && baby) return GROUP_BABY_FIRST;
+        if (prioClown && clown) return GROUP_PRIORITY;
+        if (prioGiant && giant) return GROUP_PRIORITY;
+        return baby ? GROUP_DEPRIORITIZED : 0;
     }
 
     public static boolean closestBetter(double newDistance, double currentDistance, double margin) {
@@ -689,6 +736,23 @@ public final class AimbotRules {
     public static boolean isTooHighAbove(double footY, double playerFootY, double threshold) {
         if (!Double.isFinite(footY) || !Double.isFinite(playerFootY)) return false;
         return footY - playerFootY > Math.max(0.0, threshold);
+    }
+
+    /**
+     * 「忽略头顶高处」的豁免回合：<b>第 21 回合</b>。
+     *
+     * <p>用户定稿 2026-09-11：R21 是 Prison 的 5 波长表回合，飞碟/高处投放的怪密集，
+     * 原规则把它们全部跳过会导致 R21 无人可打，故<b>仅该回合</b>豁免——允许打这些
+     * 头顶高处的怪；其余回合照常跳过（含 {@code ignoreMidFall} 与
+     * {@code ignoreVerticalFall} 两条不受影响）。回合未知（≤0）不豁免。
+     *
+     * <p>注意豁免的是「Ignored Above」这一条规则本身，阈值 {@code aboveHeightBlocks}
+     * 保持 5.0 不变。
+     */
+    public static final int ABOVE_HEIGHT_EXEMPT_ROUND = 21;
+
+    public static boolean aboveHeightExemptRound(int round) {
+        return round == ABOVE_HEIGHT_EXEMPT_ROUND;
     }
 
     public static boolean isHighSpeedFall(double y, double motionY, double horizontalSpeed,
