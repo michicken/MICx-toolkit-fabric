@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelTerrainRenderContext;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -1867,9 +1868,31 @@ public final class AimbotModule implements Module {
         return count;
     }
 
-    /** 1.8.9 wall policy: the first colliding block decides. */
+    /**
+     * 1.8.9 wall policy: the first colliding block decides —— 接触判定升级为「整格」口径
+     * （用户定稿 2026-09-11）：一个方块是 1×1×1 的格，铁活板门 1×3/16×1 的薄板也遮挡它
+     * 所在整格体积的子弹。按格序沿射线找第一个被整格接触的白名单/硬名单方块：
+     * <ul>
+     *   <li>白名单可穿透（玻璃/铁栏杆/普通活板门等；含起点格 —— 玩家站在铁栏杆等可站入的
+     *       可穿透方块格内时，子弹出发即接触它，first colliding 已放行）→ 整条射线放行，
+     *       <b>后续遇到的硬名单方块也不再判定</b>；</li>
+     *   <li>硬名单（橡木栅栏门/铁活板门/黏土块）→ 挡枪，不依赖真实碰撞 shape；</li>
+     *   <li>两者都不是（含空气/无碰撞 shape 的草等）→ 继续下一格；路径查完落回原
+     *       clip shape 判定（普通实心挡枪 / MISS 放行）。</li>
+     * </ul>
+     */
     private boolean canWallShot(Minecraft client, Vec3 start, Vec3 end) {
         try {
+            int[] cells = AimbotRules.rayCells(start.x, start.y, start.z, end.x, end.y, end.z);
+            for (int i = 0; i + 2 < cells.length; i += 3) {
+                BlockState state = client.level.getBlockState(
+                        new BlockPos(cells[i], cells[i + 1], cells[i + 2]));
+                if (state.isAir()) continue;
+                var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+                String path = key == null ? "" : key.getPath();
+                if (AimbotRules.isHardSolidPath(path)) return false;
+                if (isAllowedFirstSolid(state, path)) return true;
+            }
             BlockHitResult hit = client.level.clip(new ClipContext(start, end,
                     ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
             if (hit.getType() == HitResult.Type.MISS) return true;
@@ -1877,11 +1900,10 @@ public final class AimbotModule implements Module {
             if (state.getCollisionShape(client.level, hit.getBlockPos()).isEmpty()) return true;
             var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             String path = key == null ? "" : key.getPath();
-            if (isAllowedFirstSolid(state, path)) return true;
+            return isAllowedFirstSolid(state, path);
         } catch (RuntimeException ignored) {
             return false;
         }
-        return false;
     }
 
     /** Mirrors the old Block/BlockSlab/BlockStairs whitelist on modern registry paths. */

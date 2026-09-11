@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -622,5 +623,59 @@ class AimbotRulesTest {
                 groundY, fallSpeed, maxHorizontal));
         assertFalse(AimbotRules.isHighSpeedFall(90.0, Double.NaN, 0.0,
                 groundY, fallSpeed, maxHorizontal));
+    }
+
+    private static void assertCells(int[] actual, int[][] expected) {
+        assertEquals(expected.length * 3, actual.length,
+                "cell 数应为 " + expected.length + "，实际 " + (actual.length / 3));
+        for (int i = 0; i < expected.length; i++) {
+            assertArrayEquals(expected[i],
+                    new int[]{actual[i * 3], actual[i * 3 + 1], actual[i * 3 + 2]},
+                    "第 " + i + " 个 cell 不匹配");
+        }
+    }
+
+    @Test
+    void rayCellsSameCellStartAndEnd() {
+        assertCells(AimbotRules.rayCells(0.5, 0.5, 0.5, 0.7, 0.9, 0.3),
+                new int[][]{{0, 0, 0}});
+    }
+
+    @Test
+    void rayCellsWalksPositiveXAxisInOrder() {
+        assertCells(AimbotRules.rayCells(0.5, 0.5, 0.5, 3.5, 0.5, 0.5),
+                new int[][]{{0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}});
+    }
+
+    @Test
+    void rayCellsWalksNegativeXAxisInOrder() {
+        assertCells(AimbotRules.rayCells(3.5, 0.5, 0.5, 0.5, 0.5, 0.5),
+                new int[][]{{3, 0, 0}, {2, 0, 0}, {1, 0, 0}, {0, 0, 0}});
+    }
+
+    @Test
+    void rayCellsEndsAtBoundaryOnTheFarCell() {
+        // 终点 3.0 恰在格 3 的左边界上（MC 格子左闭右开）→ 终点格为 3，必须包含
+        assertCells(AimbotRules.rayCells(0.5, 0.5, 0.5, 3.0, 0.5, 0.5),
+                new int[][]{{0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}});
+    }
+
+    @Test
+    void rayCellsCoversBothSidesOnPerfectDiagonal() {
+        // 45° 对角精确平局：侧格与对角格全部记录（格角两侧都算被整格接触，宁多勿漏）
+        assertCells(AimbotRules.rayCells(0.5, 0.5, 0.5, 2.5, 2.5, 0.5),
+                new int[][]{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {2, 1, 0}, {2, 2, 0}});
+    }
+
+    @Test
+    void rayCellsWalksVerticalStack() {
+        assertCells(AimbotRules.rayCells(0.5, 1.5, 0.5, 0.5, 4.5, 0.5),
+                new int[][]{{0, 1, 0}, {0, 2, 0}, {0, 3, 0}, {0, 4, 0}});
+    }
+
+    @Test
+    void rayCellsHandlesNegativeCoordinates() {
+        assertCells(AimbotRules.rayCells(-0.5, 0.5, 0.5, 1.5, 0.5, 0.5),
+                new int[][]{{-1, 0, 0}, {0, 0, 0}, {1, 0, 0}});
     }
 }

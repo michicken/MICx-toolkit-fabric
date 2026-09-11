@@ -217,8 +217,10 @@ public final class AimbotRules {
     }
 
     /**
-     * 「硬实心」方块名单：即使命中它的碰撞形状，也<b>不允许</b>把它当作可穿透的首个实心方块
-     * —— 即这些方块必须真正挡住弹道。
+     * 「硬实心」方块名单：属于不可穿透方块 —— 且按「整格」口径遮挡弹道（用户定稿
+     * 2026-09-11）：一个方块是 1×1×1 的格，名单方块的<b>整个格子体积</b>都视为挡弹，
+     * 不依赖真实碰撞 shape（铁活板门 1×3/16×1 的薄板上方空隙同样挡弹）。路径遍历用
+     * {@link #rayCells} 按格序判定 first colliding。
      *
      * <p>理由（用户口径 2026-09-11）：{@code isAllowedFirstSolid} 默认把 {@code *_fence_gate}
      * 与 {@code *_trapdoor} 都视为可穿透，但其中
@@ -237,6 +239,92 @@ public final class AimbotRules {
     public static boolean isHardSolidPath(String registryPath) {
         return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath)
                 || "clay".equals(registryPath);
+    }
+
+    /**
+     * DDA（Amanatides &amp; Woo）体素遍历：按<b>路径顺序</b>枚举射线 from→to 经过的所有
+     * 整格 cell（含两端所在格），供「不可穿透名单按整格遮挡」的弹道语义使用（用户定稿
+     * 2026-09-11）：服务端弹道对名单方块按其所在 1×1×1 格判定接触，不依赖真实碰撞 shape
+     * —— 铁活板门 1×3/16×1 的薄板上方空隙同样挡弹；起点格是可穿透方块（站铁栏杆格内）
+     * 则整条射线放行。两条规则都要求<b>按格序</b>找 first colliding，故遍历顺序必须严格
+     * 沿射线推进。
+     *
+     * <p>返回 flat {@code int[]}，每格连续三个 int (x,y,z)。恰好穿过格角（两/三轴 tMax
+     * 平局）时，各侧 cell 与对角 cell 全部进入结果 —— 整格遮挡宁可多算不可漏判
+     * （多判的代价是放弃个别可打点并走兜底，漏判的代价是对着被挡的弹道开枪 MISS）。
+     */
+    public static int[] rayCells(double x0, double y0, double z0,
+                                 double x1, double y1, double z1) {
+        int cx = floorCell(x0);
+        int cy = floorCell(y0);
+        int cz = floorCell(z0);
+        int ex = floorCell(x1);
+        int ey = floorCell(y1);
+        int ez = floorCell(z1);
+        // 记录次数上界 = 各轴跨界数之和 + 起点 1（平局多轴同推只是把多轴的跨界合到一步，
+        // 总记录数不变），再留 2 格余量。
+        int cap = Math.abs(ex - cx) + Math.abs(ey - cy) + Math.abs(ez - cz) + 3;
+        int[] out = new int[cap * 3];
+        int n = 0;
+        out[n++] = cx;
+        out[n++] = cy;
+        out[n++] = cz;
+        double dx = x1 - x0;
+        double dy = y1 - y0;
+        double dz = z1 - z0;
+        int sx = dx >= 0 ? 1 : -1;
+        int sy = dy >= 0 ? 1 : -1;
+        int sz = dz >= 0 ? 1 : -1;
+        double tMaxX = boundaryDist(x0, dx, cx);
+        double tMaxY = boundaryDist(y0, dy, cy);
+        double tMaxZ = boundaryDist(z0, dz, cz);
+        double tDX = dx == 0.0 ? Double.POSITIVE_INFINITY : Math.abs(1.0 / dx);
+        double tDY = dy == 0.0 ? Double.POSITIVE_INFINITY : Math.abs(1.0 / dy);
+        double tDZ = dz == 0.0 ? Double.POSITIVE_INFINITY : Math.abs(1.0 / dz);
+        final double eps = 1.0E-9;
+        while ((cx != ex || cy != ey || cz != ez) && n + 3 <= out.length) {
+            double m = Math.min(tMaxX, Math.min(tMaxY, tMaxZ));
+            boolean advanced = false;
+            // 平局多轴同推：侧格与对角格依次全部记录（格角两侧都算被接触）。
+            if (tMaxX <= m + eps && cx != ex) {
+                cx += sx;
+                tMaxX = cx == ex ? Double.POSITIVE_INFINITY : tMaxX + tDX;
+                advanced = true;
+                out[n++] = cx;
+                out[n++] = cy;
+                out[n++] = cz;
+            }
+            if (tMaxY <= m + eps && cy != ey) {
+                cy += sy;
+                tMaxY = cy == ey ? Double.POSITIVE_INFINITY : tMaxY + tDY;
+                advanced = true;
+                out[n++] = cx;
+                out[n++] = cy;
+                out[n++] = cz;
+            }
+            if (tMaxZ <= m + eps && cz != ez) {
+                cz += sz;
+                tMaxZ = cz == ez ? Double.POSITIVE_INFINITY : tMaxZ + tDZ;
+                advanced = true;
+                out[n++] = cx;
+                out[n++] = cy;
+                out[n++] = cz;
+            }
+            // 浮点兜底：理论上每次循环必有至少一轴推进；真的没有就停，避免死循环。
+            if (!advanced) break;
+        }
+        return n == out.length ? out : java.util.Arrays.copyOf(out, n);
+    }
+
+    /** 射线所在轴上、从坐标 {@code pos} 到下一条格边界（沿 {@code dir} 方向）的格距离。 */
+    private static double boundaryDist(double pos, double dir, int cell) {
+        if (dir == 0.0) return Double.POSITIVE_INFINITY;
+        double next = dir > 0 ? cell + 1.0 : cell;
+        return Math.abs(next - pos) / Math.abs(dir);
+    }
+
+    private static int floorCell(double v) {
+        return (int) Math.floor(v);
     }
 
     /**
