@@ -612,7 +612,7 @@ public final class AimbotModule implements Module {
         double height = box.maxY - box.minY;
         Vec3 executablePoint = computeAimPoint(client, meta.entity);
         boolean giant = isGiant(meta.entity);
-        // 巨人（首选 0.995）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
+        // 巨人（首选 0.999）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
         // 不再整只丢怪，而是退到最接近该点的可见采样 —— 先往下，没有可见的下方
         // 采样时再往上（双向兜底）。普通怪维持既有的「自上而下第一个可见」。
         // 每层再做「无级」水平兜底：中线被挡时沿视线垂线滑动并二分逼近，
@@ -1790,7 +1790,7 @@ public final class AimbotModule implements Module {
         boolean giant = isGiant(target);
         double frac;
         if (giant) {
-            // 巨人专属系数：默认 0.995（脚上 11.94 / 箱高 12.0）。
+            // 巨人专属系数：默认 0.999（脚上 11.988 / 箱高 12.0）。
             // 与全局 Crits 解耦，不再被普通怪的爆头系数连带牵动。
             frac = config.giantAimFrac;
         } else if (instaActive()) {
@@ -1804,7 +1804,7 @@ public final class AimbotModule implements Module {
             frac = 0.9 + 0.2 * config.crits;
         }
         // 巨人走专属系数、且其取值范围已是 [0.50, 1.00]，不再被 Head Clamp 二次夹取，
-        // 否则面板里填 0.995 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
+        // 否则面板里填 0.999 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
         if (!giant) {
             frac = Math.max(0.05, Math.min(config.headFracMax, frac));
         }

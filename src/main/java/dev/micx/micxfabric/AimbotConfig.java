@@ -111,7 +111,7 @@ public final class AimbotConfig {
     public double badHeadshotFrac = AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT;
 
     /**
-     * 巨人的瞄准高度系数（作用在幽灵框上），默认 0.995（脚上 11.94 / 箱高 12.0）。
+     * 巨人的瞄准高度系数（作用在幽灵框上），默认 0.999（脚上 11.988 / 箱高 12.0）。
      * 与全局 {@link #crits} 解耦，且不受 {@link #headFracMax} 夹取——
      * 本字段自身的 [0.50, 1.00] 范围已保证瞄点不会超出箱体。
      */

@@ -87,8 +87,8 @@ class AimbotRulesTest {
         double frac = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
         double height = 12.0;                       // 26.2 GIANT sized(3.6, 12.0)
         double aimY = height * frac;
-        // 用户定稿口径：0.995 -> 脚上 11.94 格、距箱顶 0.06 格
-        assertEquals(11.94, aimY, 1.0e-9);
+        // 用户定稿口径：0.999 -> 脚上 11.988 格、距箱顶 0.012 格
+        assertEquals(11.988, aimY, 1.0e-9);
         // 必须落在爆头带（下沿 0.80 = 9.60）之内，否则丢掉爆头线优先
         assertTrue(AimbotRules.isHeadLayer(aimY, 0.0, height));
         // 贴顶但余量必须为正

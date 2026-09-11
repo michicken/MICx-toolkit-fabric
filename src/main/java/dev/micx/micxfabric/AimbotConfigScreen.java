@@ -217,7 +217,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = numberRow(graphics, "巨人瞄点 / Giant Frac", "0.50–1.00", giantAimFracBox, y);
         y = wrapped(graphics,
-                "巨人专属瞄准高度系数，默认 0.995（脚上 11.94 / 箱高 12.0，比眼高高 1.50 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.995 时距箱顶仅 0.06 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
+                "巨人专属瞄准高度系数，默认 0.999（脚上 11.988 / 箱高 12.0，比眼高高 1.548 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.999 时距箱顶仅 0.012 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = wrapped(graphics,
                 "FOV 是相对当前视线的筛选角度，360° 表示不限制；Max Step 只影响 NORMAL，Brute Step 只在 BRUTE 生效。",

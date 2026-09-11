@@ -39,16 +39,16 @@ public final class AimbotRules {
     /**
      * 巨人的默认瞄准高度系数（作用在幽灵框上）。
      *
-     * <p>26.2 巨人尺寸 {@code sized(3.6f, 12.0f).eyeHeight(10.44f)}：瞄 {@code 0.995}
-     * 即脚上 <b>11.94 格</b>，比眼高（10.44）高 1.50 格，仍在爆头带
-     * {@code [0.80, 1.00]} 之内 —— 距箱顶仅剩 <b>0.06 格</b>，暴击容差极窄，
-     * 属用户明确要求的「尽量贴顶」口径（0.98 → 0.995，2026-09-11）。
+     * <p>26.2 巨人尺寸 {@code sized(3.6f, 12.0f).eyeHeight(10.44f)}：瞄 {@code 0.999}
+     * 即脚上 <b>11.988 格</b>，比眼高（10.44）高 1.548 格，仍在爆头带
+     * {@code [0.80, 1.00]} 之内 —— 距箱顶仅剩 <b>0.012 格</b>，暴击容差极窄，
+     * 属用户明确要求的「尽量贴顶」口径（0.98 → 0.995 → 0.999，2026-09-11）。
      *
      * <p>此前巨人复用 {@code 0.9 + 0.2 * Crits}，会被<b>全局 Crits 旋钮连带牵动</b>；
      * 现改用这个专属系数，巨人瞄点与 Crits <b>解耦</b>，也不再受 {@code headFracMax}
      * 夹取（该系数自身范围即 {@code [0.50, 1.00]}）。
      */
-    public static final double GIANT_AIM_FRAC_DEFAULT = 0.995;
+    public static final double GIANT_AIM_FRAC_DEFAULT = 0.999;
 
     /**
      * insta（Insta Kill 秒杀）窗口内的固定瞄准高度系数。
