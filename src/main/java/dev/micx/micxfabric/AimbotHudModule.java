@@ -123,12 +123,7 @@ public final class AimbotHudModule implements Module {
         if (!config.showHud) return;
 
         int[][] keys = keyArrays(config);
-        String[][] labels = {
-                {"TOO", "GOL", "SLM"},
-                {"CLO", "GIA"},
-                {"BAB"},
-                {"CLS"}
-        };
+        String[][] labels = hudLabels();
         int[] widths = new int[KEY_IDS.length];
         int flat = 0;
         for (String[] group : labels) {
@@ -219,6 +214,19 @@ public final class AimbotHudModule implements Module {
         graphics.fill(x, y + h - 1, x + w, y + h, color);
         graphics.fill(x, y, x + 1, y + h, color);
         graphics.fill(x + w - 1, y, x + w, y + h, color);
+    }
+
+    /**
+     * HUD label groups. Flattened order must stay aligned with {@link #KEY_IDS}
+     * (index 0..5 = ignoreToo/ignoreGolem/ignoreSlime/prioClown/prioGiant/closest);
+     * a mismatch throws AIOOBE every frame and kills the whole HUD.
+     */
+    static String[][] hudLabels() {
+        return new String[][]{
+                {"TOO", "GOL", "SLM"},
+                {"CLO", "GIA"},
+                {"CLS"}
+        };
     }
 
     private static int[][] keyArrays(AimbotConfig config) {
