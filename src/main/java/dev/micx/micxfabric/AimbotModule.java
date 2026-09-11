@@ -732,11 +732,21 @@ public final class AimbotModule implements Module {
      * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对准星的
      * signed yaw 从左到右排好，依次停留并完整瞄准每一个，停留 dwellMs 后再跳下一个；
      * 扫到最右端重新回到最左。不做连续扫描线，也不做 360° 乱扫。
+     * 候选中存在巨人时不扫射，退回排序第一集中先杀巨人。
      */
     private Scored bruteChoice(Minecraft client, Vec3 eye, List<Scored> scored, long now) {
         if (!bruteSweepActive()) {
             resetBruteSweep();
             return scored.get(0);
+        }
+        // 场上有可打的巨人不扫射：扫射按从左到右逐个锁定，会无视「巨人优先」排序
+        // 浪费火力。此时直接锁排序第一（compareScored 已把巨人排最前）集中先杀巨人；
+        // 巨人死光或暂时不可打（候选被挡丢弃）才恢复从左到右扫射（用户定稿 2026-09-11）。
+        for (Scored value : scored) {
+            if (isGiant(value.entity)) {
+                resetBruteSweep();
+                return scored.get(0);
+            }
         }
         float currentYaw = client.player.getYRot();
         int size = scored.size();
