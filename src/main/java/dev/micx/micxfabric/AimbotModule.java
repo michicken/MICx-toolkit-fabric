@@ -108,6 +108,8 @@ public final class AimbotModule implements Module {
 
     private final AimbotConfig config = new AimbotConfig();
     private final Map<Integer, Long> threatUntil = new HashMap<>();
+    /** 无敌怪（跨回合存活满 2 回合）追踪：命中后不再选靶/锁定（0.2.79）。 */
+    private final ImmortalMobTracker immortalMobs = new ImmortalMobTracker();
     private boolean enabled;
     private int lockedTargetId = -1;
     private Vec3 lastLockedDir;
@@ -249,6 +251,7 @@ public final class AimbotModule implements Module {
     public void resetState() {
         resetInput();
         threatUntil.clear();
+        immortalMobs.reset();
         lastLevel = null;
     }
 
@@ -526,6 +529,9 @@ public final class AimbotModule implements Module {
                     || living == client.player || living.getId() < 0) continue;
             if (living instanceof Player || living instanceof WitherBoss) continue;
             if (!AimLeadModule.isTarget(living)) continue;
+            // 无敌怪（同一局内持续存在满 2 个回合，含巨人）不再选靶/锁定；
+            // 追踪对所有目标怪生效——即便本 tick 被 ignore 开关排除也不会断档。
+            if (immortalMobs.isImmortal(living.getId(), round)) continue;
             if (isChildWolf(living)) continue;
 
             boolean too = isToo(living);

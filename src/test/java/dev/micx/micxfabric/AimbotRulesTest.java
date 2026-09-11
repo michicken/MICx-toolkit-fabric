@@ -201,6 +201,26 @@ class AimbotRulesTest {
     }
 
     @Test
+    void allLeavesAreHardSolidsThatBlockShots() {
+        // 全木种树叶 + azalea 系（均以 _leaves 结尾）
+        assertTrue(AimbotRules.isHardSolidPath("oak_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("spruce_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("birch_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("jungle_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("acacia_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("dark_oak_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("mangrove_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("cherry_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("pale_oak_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("azalea_leaves"));
+        assertTrue(AimbotRules.isHardSolidPath("flowering_azalea_leaves"));
+        // 非树叶方块不得被后缀误伤
+        assertFalse(AimbotRules.isHardSolidPath("leaves"));
+        assertFalse(AimbotRules.isHardSolidPath("oak_log"));
+        assertFalse(AimbotRules.isHardSolidPath("oak_planks"));
+    }
+
+    @Test
     void otherFenceGatesAndTrapdoorsRemainPenetrable() {
         assertFalse(AimbotRules.isHardSolidPath("spruce_fence_gate"));
         assertFalse(AimbotRules.isHardSolidPath("dark_oak_fence_gate"));

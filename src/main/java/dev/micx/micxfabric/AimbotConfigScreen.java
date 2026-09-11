@@ -199,7 +199,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 y, "读取 AimLead 的预测 AABB 和攻击点；关闭、没有有效轨迹或预测点不可见时不会瞄准。 ");
         y = toggleRow(graphics, mouseX, mouseY, "楼梯穿透 / WS Stair", c.wsStair,
                 () -> c.wsStair = !c.wsStair, y,
-                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。注意：橡木栅栏门（oak_fence_gate）、铁活板门（iron_trapdoor）与黏土块（clay）已固定为不可穿透，本开关不影响它们。不可穿透方块按整格（1×1×1）遮挡弹道：即使活板门薄板只占格子一小部分，整格都挡；起点格若为可穿透方块（如铁栏杆）则整条射线放行。 ");
+                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。注意：橡木栅栏门（oak_fence_gate）、铁活板门（iron_trapdoor）、黏土块（clay）与树叶（*_leaves）已固定为不可穿透，本开关不影响它们。不可穿透方块按整格（1×1×1）遮挡弹道：即使活板门薄板只占格子一小部分，整格都挡；起点格若为可穿透方块（如铁栏杆）则整条射线放行。 ");
         y = numberRow(graphics, "视野范围 / FOV", "30–360°", fovBox, y);
         y = numberRow(graphics, "普通步长 / Max Step", "5–90°/tick", maxStepBox, y);
         y = numberRow(graphics, "暴力步长 / Brute Step", "30–180°/tick", bruteMaxStepBox, y);

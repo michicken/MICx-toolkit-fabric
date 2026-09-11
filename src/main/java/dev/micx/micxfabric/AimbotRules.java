@@ -228,17 +228,21 @@ public final class AimbotRules {
      *   <li>{@code oak_fence_gate}（橡木栅栏门）关闭时是一片实心门板，理应挡枪；</li>
      *   <li>{@code iron_trapdoor}（铁活板门）是铁质整格构件，更不该被穿过；</li>
      *   <li>{@code clay}（黏土块）是完整的整格实心方块（0.2.73 起加入），本就不该进任何
-     *       穿透白名单 —— 加入它是防御性的：即便后续白名单重构，黏土块也始终挡枪。</li>
+     *       穿透白名单 —— 加入它是防御性的：即便后续白名单重构，黏土块也始终挡枪；</li>
+     *   <li>{@code *_leaves}（树叶，全木种 + azalea/flowering_azalea，0.2.79 起加入）
+     *       为空手/子弹不可穿透的装饰方块，按整格遮挡。</li>
      * </ul>
      * 被误判为可穿透会导致「对着这些方块开枪打空或打到方块后目标」。
      *
-     * <p><b>范围严格限定这三种方块</b>：其余木种的栅栏门（spruce/birch/…）、其余活板门
-     * （{@code oak_trapdoor} 等）以及陶瓦系（{@code *_terracotta}）<b>保持可穿透</b>，
-     * 与本函数无关。注意「黏土块」是 {@code clay}，不是黏土球（物品）也不是陶瓦。
+     * <p><b>栅栏门/活板门范围严格限定 {@code oak_fence_gate} + {@code iron_trapdoor}</b>：
+     * 其余木种的栅栏门（spruce/birch/…）、其余活板门（{@code oak_trapdoor} 等）以及
+     * 陶瓦系（{@code *_terracotta}）<b>保持可穿透</b>，与本函数无关。
+     * 注意「黏土块」是 {@code clay}，不是黏土球（物品）也不是陶瓦。
      */
     public static boolean isHardSolidPath(String registryPath) {
+        if (registryPath == null) return false;
         return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath)
-                || "clay".equals(registryPath);
+                || "clay".equals(registryPath) || registryPath.endsWith("_leaves");
     }
 
     /**
