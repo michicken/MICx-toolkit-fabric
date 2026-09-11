@@ -35,6 +35,116 @@ class AimbotRulesTest {
     }
 
     @Test
+    void badHeadshotDefaultAimPointSitsBelowTheCritBand() {
+        double frac = AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT;
+        // 必须落在爆头带（下沿 0.80）之下，否则射线会被推到头顶附近、贴着预测框上沿走
+        assertTrue(frac < 0.80, "BadHS 默认瞄点必须低于爆头带下沿");
+        // 也不能低到腿上去，仍要留在躯干中上段
+        assertTrue(frac > 0.55, "BadHS 默认瞄点不应低到腿部");
+        // 相对历史胸腔系数 0.76 必须是下调（用户实测 0.76 常打空）
+        assertTrue(frac < 0.76, "新默认值应低于历史胸腔系数 0.76");
+        // 26.2 实测体型换算：僵尸 sized(0.6,1.95) / 骷髅 sized(0.6,1.99)
+        assertEquals(1.2675, 1.95 * frac, 1.0e-9);
+        assertEquals(1.2935, 1.99 * frac, 1.0e-9);
+    }
+
+    @Test
+    void bodyFallbackKeepsLegacyOrderingForNormalMobs() {
+        // 普通怪：分数 = -frac，即自上而下第一个可见采样胜出（移植前行为）
+        assertEquals(-0.95, AimbotRules.bodyFallbackScore(0.95, false, Double.NaN), 1.0e-9);
+        assertEquals(-0.10, AimbotRules.bodyFallbackScore(0.10, false, Double.NaN), 1.0e-9);
+        assertTrue(AimbotRules.bodyFallbackScore(0.95, false, Double.NaN)
+                < AimbotRules.bodyFallbackScore(0.50, false, Double.NaN));
+    }
+
+    @Test
+    void bodyFallbackForBadHeadshotPrefersDownThenAllowsUp() {
+        double preferred = 0.65;
+        double down = AimbotRules.bodyFallbackScore(0.60, true, preferred);
+        double up = AimbotRules.bodyFallbackScore(0.70, true, preferred);
+
+        assertEquals(0.05, down, 1.0e-9);
+        // 同样接近首选点时，下方采样优先（下优先）
+        assertTrue(down < up);
+        // 明显更远的采样排在后面
+        assertTrue(down < AimbotRules.bodyFallbackScore(0.95, true, preferred));
+        assertTrue(AimbotRules.bodyFallbackScore(0.95, true, preferred)
+                < AimbotRules.bodyFallbackScore(0.10, true, preferred));
+
+        // 只有上方可见时，往上兜底仍然可用（上可用）
+        double onlyUp = AimbotRules.bodyFallbackScore(0.80, true, preferred);
+        assertTrue(Double.isFinite(onlyUp));
+        assertEquals(0.15, onlyUp, 1.0e-5);
+
+        // 非法输入不参与兜底
+        assertEquals(Double.POSITIVE_INFINITY,
+                AimbotRules.bodyFallbackScore(Double.NaN, true, preferred));
+    }
+
+    @Test
+    void giantAimFracDefaultSitsInsideTheHeadBandNearTheTop() {
+        double frac = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
+        double height = 12.0;                       // 26.2 GIANT sized(3.6, 12.0)
+        double aimY = height * frac;                // 11.76
+        assertEquals(11.76, aimY, 1.0e-9);
+        // 必须落在爆头带（下沿 0.80 = 9.60）之内，否则丢掉爆头线优先
+        assertTrue(AimbotRules.isHeadLayer(aimY, 0.0, height));
+        // 距箱顶余量只有 0.24 格 —— 这正是 0.98 的代价
+        assertEquals(0.24, height - aimY, 1.0e-9);
+        // 且仍然严格在箱体之内
+        assertTrue(aimY < height);
+    }
+
+    @Test
+    void bodyFallbackForGiantPicksTheSampleNearestTheAimPoint() {
+        double preferred = AimbotRules.GIANT_AIM_FRAC_DEFAULT;   // 0.98
+        double justUnder = AimbotRules.bodyFallbackScore(0.95, true, preferred);
+        double mid = AimbotRules.bodyFallbackScore(0.85, true, preferred);
+        double low = AimbotRules.bodyFallbackScore(0.50, true, preferred);
+
+        assertEquals(0.03, justUnder, 1.0e-9);
+        // 越接近首选越优先：0.95 -> 0.85 -> 0.50
+        assertTrue(justUnder < mid);
+        assertTrue(mid < low);
+        // 距离完全相同时（0.96 与 1.00 距 0.98 都是 0.02）下方优先
+        assertTrue(AimbotRules.bodyFallbackScore(0.96, true, preferred)
+                < AimbotRules.bodyFallbackScore(1.00, true, preferred));
+    }
+
+    @Test
+    void instaAimFracIsBodyMiddleNotHead() {
+        double frac = AimbotRules.INSTA_AIM_FRAC;
+        assertEquals(0.50, frac, 1.0e-9);
+        // 0.5 是腰腹，必须明确落在爆头带（下沿 0.80）之外 —— 它从来就不是「头点」
+        double height = 1.95;
+        assertFalse(AimbotRules.isHeadLayer(height * frac, 0.0, height));
+        assertEquals(0.975, height * frac, 1.0e-9);
+    }
+
+    @Test
+    void instaGroupRankPrefersNonBaby() {
+        assertEquals(1, AimbotRules.instaGroupRank(false));
+        assertEquals(0, AimbotRules.instaGroupRank(true));
+        assertTrue(AimbotRules.instaGroupRank(false) > AimbotRules.instaGroupRank(true));
+    }
+
+    @Test
+    void instaKillKindMatchIsCaseInsensitiveAndTolerant() {
+        // 解析器正则会捕获全大写形态
+        assertTrue(AimbotRules.isInstaKillKind("INSTA KILL"));
+        // 字幕路径产出标题大小写
+        assertTrue(AimbotRules.isInstaKillKind("Insta Kill"));
+        assertTrue(AimbotRules.isInstaKillKind("insta kill"));
+        // 其余道具不得误命中
+        assertFalse(AimbotRules.isInstaKillKind("Double Gold"));
+        assertFalse(AimbotRules.isInstaKillKind("Shopping Spree"));
+        assertFalse(AimbotRules.isInstaKillKind("Max Ammo"));
+        assertFalse(AimbotRules.isInstaKillKind(""));
+        assertFalse(AimbotRules.isInstaKillKind("   "));
+        assertFalse(AimbotRules.isInstaKillKind(null));
+    }
+
+    @Test
     void lookVectorMatchesMinecraftYawPitchConvention() {
         Vec3 forward = AimbotRules.lookFromAngles(0.0f, 0.0f);
         assertEquals(0.0, forward.x, 1.0e-9);

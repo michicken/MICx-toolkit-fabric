@@ -27,6 +27,7 @@
     "MixinGameRendererViewHold",
     "MixinCapeLayer",
     "MixinCameraLegacySneak",
+    "MixinEntityLegacySneakEyeHeight",
     "MixinAvatarLegacySneakOffset",
     "MixinItemInHandZombieFade",
     "MixinSkullBlockRenderer",

@@ -383,6 +383,10 @@ public final class AimbotModule implements Module {
             return;
         }
 
+        // 眼位必须与「本地命中射线 / 相机 / 1.8.9 服务端」同一真值：潜行时由
+        // LegacySneakVisuals 的 MixinEntityLegacySneakEyeHeight 把 getEyeHeight
+        // 抬到 1.8 的 1.54，这里读到的 getEyePosition() 随之对齐。不要把本行
+        // 换成手算 getY()+getEyeHeight() 之外的常量，否则瞄准会整体偏移 0.27。
         Vec3 eye = client.player.getEyePosition(1.0f);
         Vec3 look = client.player.getViewVector(1.0f);
         List<CandidateMeta> all = collectCandidates(client, eye, look, now);
@@ -501,6 +505,9 @@ public final class AimbotModule implements Module {
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
+        // insta 秒杀窗口：恶魂在天上、巨人箱体巨大且瞄点贴顶，窗口内整体不打；
+        // 同时把移速慢、好瞄的非 baby 怪整体前置。
+        boolean instaWindow = instaActive();
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity living) || !isAliveTarget(living)
                     || living == client.player || living.getId() < 0) continue;
@@ -512,6 +519,7 @@ public final class AimbotModule implements Module {
             boolean giant = isGiant(living);
             boolean slime = isSlime(living);
             boolean golem = living instanceof IronGolem;
+            if (instaWindow && (giant || isGhast(living))) continue;
             if (c.ignoreToo && too) continue;
             if (c.ignoreGolem && golem) continue;
             if (c.ignoreSlime && slime) continue;
@@ -535,7 +543,9 @@ public final class AimbotModule implements Module {
 
             boolean baby = living instanceof Zombie zombie && zombie.isBaby() && !too;
             boolean clown = living instanceof Zombie zombie && isClown(zombie);
-            int group = AimbotRules.groupRank(c.prioBaby, c.prioClown, c.prioGiant,
+            int group = instaWindow
+                    ? AimbotRules.instaGroupRank(baby)
+                    : AimbotRules.groupRank(c.prioBaby, c.prioClown, c.prioGiant,
                     baby, clown, giant);
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
                     Math.sqrt(distSq)));
@@ -571,22 +581,38 @@ public final class AimbotModule implements Module {
         if (box == null) return null;
         double height = box.maxY - box.minY;
         Vec3 executablePoint = computeAimPoint(client, meta.entity);
-        boolean allowNormalBodyFallback = !meta.giant && !isBadHeadshot(client, meta.entity);
+        boolean giant = isGiant(meta.entity);
+        // 巨人（首选 0.98）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
+        // 不再整只丢怪，而是退到最接近该点的可见采样 —— 先往下，没有可见的下方
+        // 采样时再往上（双向兜底）。普通怪维持既有的「自上而下第一个可见」。
+        boolean insta = !giant && instaActive();
+        boolean badHeadshot = !giant && !insta && isBadHeadshot(client, meta.entity);
+        boolean nearestPreferred = giant || insta || badHeadshot;
+        double preferredFrac = giant ? config.giantAimFrac
+                : insta ? AimbotRules.INSTA_AIM_FRAC
+                : badHeadshot ? config.badHeadshotFrac
+                : Double.NaN;
         Vec3 fallbackPoint = null;
+        double fallbackScore = Double.POSITIVE_INFINITY;
         for (int percent = 95; percent >= 0; percent -= 5) {
-            if (!isGiant(meta.entity) && percent <= 80 && percent % 10 != 0) continue;
-            double y = box.minY + height * percent / 100.0;
+            if (!giant && percent <= 80 && percent % 10 != 0) continue;
+            double frac = percent / 100.0;
+            double y = box.minY + height * frac;
             Vec3 scanPoint = new Vec3((box.minX + box.maxX) * 0.5, y,
                     (box.minZ + box.maxZ) * 0.5);
             if (!canWallShot(client, eye, scanPoint)) continue;
-            if (allowNormalBodyFallback && fallbackPoint == null) fallbackPoint = scanPoint;
+            double score = AimbotRules.bodyFallbackScore(frac, nearestPreferred, preferredFrac);
+            if (score < fallbackScore) {
+                fallbackScore = score;
+                fallbackPoint = scanPoint;
+            }
             if (executablePoint != null) {
                 return scoredPoint(client, meta, eye, all, box, executablePoint);
             }
         }
         // The preferred head/critical point may be behind a block or outside
-        // the usable pitch window. Keep the first visible sample so a normal
-        // body hit remains possible instead of tracking empty air.
+        // the usable pitch window. Keep the nearest visible sample so a body
+        // hit remains possible instead of tracking empty air.
         return fallbackPoint == null
                 ? null
                 : scoredPoint(client, meta, eye, all, box, fallbackPoint);
@@ -1661,9 +1687,26 @@ public final class AimbotModule implements Module {
         AABB box = leadBox(target);
         if (box == null) return null;
         boolean giant = isGiant(target);
-        double frac = !giant && config.insta ? 0.5 : 0.9 + 0.2 * config.crits;
-        if (!giant && !config.insta && isBadHeadshot(client, target)) frac = 0.76;
-        frac = Math.max(0.05, Math.min(config.headFracMax, frac));
+        double frac;
+        if (giant) {
+            // 巨人专属系数：默认 0.98（脚上 11.76 / 箱高 12.0）。
+            // 与全局 Crits 解耦，不再被普通怪的爆头系数连带牵动。
+            frac = config.giantAimFrac;
+        } else if (instaActive()) {
+            // 秒杀窗口内一击必杀，爆头无收益，压到腰腹换最高命中率。
+            frac = AimbotRules.INSTA_AIM_FRAC;
+        } else if (isBadHeadshot(client, target)) {
+            // BadHeadShot 怪下压到躯干中上段：它们恒在玩家上方，幽灵框是预测位置，
+            // 瞄点越靠上越容易从头顶掠过。系数已配置化（默认见 AimbotRules）。
+            frac = config.badHeadshotFrac;
+        } else {
+            frac = 0.9 + 0.2 * config.crits;
+        }
+        // 巨人走专属系数、且其取值范围已是 [0.50, 1.00]，不再被 Head Clamp 二次夹取，
+        // 否则面板里填 0.99 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
+        if (!giant) {
+            frac = Math.max(0.05, Math.min(config.headFracMax, frac));
+        }
         if (!giant && config.vcrits > 0.0) {
             double lower = Math.min(0.5, config.vcrits * Math.abs(box.minY - client.player.getY()));
             frac = Math.max(0.5, frac * (1.0 - lower));
@@ -1676,6 +1719,37 @@ public final class AimbotModule implements Module {
 
     private AABB leadBox(LivingEntity target) {
         return AimLeadModule.instance().leadBoxFor(target);
+    }
+
+    /**
+     * insta 瞄点是否生效：手动开关常开；或落在自动窗口内——即聊天栏报出
+     * Insta Kill 激活后，道具计时尚未走完的那段时间。
+     *
+     * <p>自动窗口<b>不写回配置</b>，纯粹由 {@link PowerUpTimer} 推导，到期自然失效，
+     * 不会污染存盘（Forge 原版是直写 cfg.insta，会连带把临时状态持久化）。
+     */
+    private boolean instaActive() {
+        if (config.insta) return true;
+        if (!config.autoInsta) return false;
+        return instaKillRemainingMs(System.currentTimeMillis()) > 0L;
+    }
+
+    /**
+     * 秒杀（Insta Kill）道具的剩余毫秒；未生效返回 0。
+     * 名称匹配大小写无关——解析器正则抓到的是 {@code INSTA KILL}，字幕路径是 {@code Insta Kill}。
+     */
+    private long instaKillRemainingMs(long now) {
+        try {
+            long best = 0L;
+            for (Map.Entry<String, PowerUpTimer.Active> entry : ZombiesTracker.instance()
+                    .eventState().powerUps().activeSnapshot().entrySet()) {
+                if (!AimbotRules.isInstaKillKind(entry.getKey())) continue;
+                best = Math.max(best, entry.getValue().expiresAt() - now);
+            }
+            return Math.max(0L, best);
+        } catch (Throwable ignored) {
+            return 0L;
+        }
     }
 
     private int countPenetration(Vec3 eye, Vec3 point, LivingEntity self, List<CandidateMeta> all) {

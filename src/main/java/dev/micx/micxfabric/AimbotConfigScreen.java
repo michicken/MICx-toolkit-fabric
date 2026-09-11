@@ -30,6 +30,8 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox critsBox;
     private EditBox vcritsBox;
     private EditBox headFracMaxBox;
+    private EditBox badHeadshotFracBox;
+    private EditBox giantAimFracBox;
     private EditBox joystickSensitivityBox;
     private EditBox joystickSwitchBox;
     private EditBox flickSpeedBox;
@@ -65,6 +67,8 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         critsBox = box("crits", Double.toString(c.crits));
         vcritsBox = box("vcrits", Double.toString(c.vcrits));
         headFracMaxBox = box("headFracMax", Double.toString(c.headFracMax));
+        badHeadshotFracBox = box("badHeadshotFrac", Double.toString(c.badHeadshotFrac));
+        giantAimFracBox = box("giantAimFrac", Double.toString(c.giantAimFrac));
         joystickSensitivityBox = box("joystickSensitivity", Double.toString(c.joystickSensitivity));
         joystickSwitchBox = box("joystickSwitchDeg", Integer.toString(c.joystickSwitchDeg));
         flickSpeedBox = box("joystickFlickPxPerSec", Integer.toString(c.joystickFlickPxPerSec));
@@ -202,11 +206,21 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "普通步长 / Max Step", "5–90°/tick", maxStepBox, y);
         y = numberRow(graphics, "暴力步长 / Brute Step", "30–180°/tick", bruteMaxStepBox, y);
         y = numberRow(graphics, "最大距离 / Max Dist", "10–400 格", maxDistBox, y);
-        y = toggleRow(graphics, mouseX, mouseY, "固定头点 / Insta", c.insta,
-                () -> c.insta = !c.insta, y, "开启后使用固定头部系数 0.5；关闭时按 Crits、VCrits 和 Head Clamp 计算攻击点。 ");
+        y = toggleRow(graphics, mouseX, mouseY, "固定腰腹 / Insta", c.insta,
+                () -> c.insta = !c.insta, y, "手动常开：非巨人目标固定瞄幽灵框 0.5，即腰腹中点（不是头）；开启后按 Crits 计算的爆头点失效。 ");
+        y = toggleRow(graphics, mouseX, mouseY, "自动秒杀窗口 / Auto Insta", c.autoInsta,
+                () -> c.autoInsta = !c.autoInsta, y, "聊天栏报出 Insta Kill 激活后自动进入 Insta 瞄点，随道具计时结束自动退出（默认开启）。窗口内不打恶魂与巨人，并优先打移速慢、好瞄的非 baby 怪；瞄点同样支持上下兜底。 ");
         y = numberRow(graphics, "水平头系数 / Crits", "-0.2–0.5", critsBox, y);
         y = numberRow(graphics, "垂直头系数 / VCrits", "0–1", vcritsBox, y);
         y = numberRow(graphics, "头部上限 / Head Clamp", "0.01–2", headFracMaxBox, y);
+        y = numberRow(graphics, "坏爆头瞄点 / BadHS Frac", "0.30–0.95", badHeadshotFracBox, y);
+        y = wrapped(graphics,
+                "BadHeadShot 怪（站在你上方的僵尸/骷髅）单独用的瞄准高度系数，作用在幽灵框上。爆头带下沿是 0.80，取更低的值把弹道压到躯干中上段、提高命中率；这类怪本就守不住暴击带，所以调低只赚命中。默认 0.65（原 Forge 版胸腔系数 0.76 偏高、常打空）。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+        y = numberRow(graphics, "巨人瞄点 / Giant Frac", "0.50–1.00", giantAimFracBox, y);
+        y = wrapped(graphics,
+                "巨人专属瞄准高度系数，默认 0.98（脚上 11.76 / 箱高 12.0，比眼高高 1.32 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.98 时距箱顶仅 0.24 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = wrapped(graphics,
                 "FOV 是相对当前视线的筛选角度，360° 表示不限制；Max Step 只影响 NORMAL，Brute Step 只在 BRUTE 生效。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
@@ -416,6 +430,8 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.crits = parseDouble(critsBox, -0.2, 0.5, "Crits");
             c.vcrits = parseDouble(vcritsBox, 0.0, 1.0, "VCrits");
             c.headFracMax = parseDouble(headFracMaxBox, 0.01, 2.0, "Head Clamp");
+            c.badHeadshotFrac = parseDouble(badHeadshotFracBox, 0.30, 0.95, "BadHS Frac");
+            c.giantAimFrac = parseDouble(giantAimFracBox, 0.50, 1.00, "Giant Frac");
             c.joystickSensitivity = parseDouble(joystickSensitivityBox, 0.2, 3.0, "Sensitivity");
             c.joystickSwitchDeg = parseInt(joystickSwitchBox, 5, 60, "Switch Deg");
             c.joystickFlickPxPerSec = parseInt(flickSpeedBox, 300, 1500, "Flick Speed");

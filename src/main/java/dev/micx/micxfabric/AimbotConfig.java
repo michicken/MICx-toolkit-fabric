@@ -93,9 +93,28 @@ public final class AimbotConfig {
 
     /** Bridger 1.8.9 head-point controls retained in the unified Fabric config. */
     public boolean insta = false;
+    /**
+     * 自动 insta 窗口：聊天栏出现 Insta Kill 激活事件时自动切到 insta 瞄点，
+     * 道具计时结束后自动退出。默认开启（对齐 Forge 原版 autoInsta 的默认值）。
+     */
+    public boolean autoInsta = true;
     public double crits = 0.0;
     public double vcrits = 0.0;
     public double headFracMax = 0.98;
+
+    /**
+     * BadHeadShot 怪的瞄准高度系数（作用在幽灵框上）。
+     * 0.80 是爆头带下沿，取更低的值把弹道压到躯干中上段、提高命中率。
+     * 默认值来源见 {@link AimbotRules#BAD_HEADSHOT_BODY_FRAC_DEFAULT}。
+     */
+    public double badHeadshotFrac = AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT;
+
+    /**
+     * 巨人的瞄准高度系数（作用在幽灵框上），默认 0.98（脚上 11.76 / 箱高 12.0）。
+     * 与全局 {@link #crits} 解耦，且不受 {@link #headFracMax} 夹取——
+     * 本字段自身的 [0.50, 1.00] 范围已保证瞄点不会超出箱体。
+     */
+    public double giantAimFrac = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
 
     private boolean loaded;
     private int[] ignoreTooKey = KeyChord.EMPTY;
@@ -171,9 +190,14 @@ public final class AimbotConfig {
         holdLock = ConfigProperties.bool(p, "holdLock", false);
 
         insta = ConfigProperties.bool(p, "insta", false);
+        autoInsta = ConfigProperties.bool(p, "autoInsta", true);
         crits = ConfigProperties.real(p, "crits", 0.0, -0.2, 0.5);
         vcrits = ConfigProperties.real(p, "vcrits", 0.0, 0.0, 1.0);
         headFracMax = ConfigProperties.real(p, "headFracMax", 0.98, 0.01, 2.0);
+        badHeadshotFrac = ConfigProperties.real(p, "badHeadshotFrac",
+                AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT, 0.30, 0.95);
+        giantAimFrac = ConfigProperties.real(p, "giantAimFrac",
+                AimbotRules.GIANT_AIM_FRAC_DEFAULT, 0.50, 1.00);
 
         ignoreTooKey = readKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode");
         ignoreGolemKey = readKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode");
@@ -242,9 +266,12 @@ public final class AimbotConfig {
         put(p, "closest", closest);
         put(p, "holdLock", holdLock);
         put(p, "insta", insta);
+        put(p, "autoInsta", autoInsta);
         put(p, "crits", clamp(crits, -0.2, 0.5));
         put(p, "vcrits", clamp(vcrits, 0.0, 1.0));
         put(p, "headFracMax", clamp(headFracMax, 0.01, 2.0));
+        put(p, "badHeadshotFrac", clamp(badHeadshotFrac, 0.30, 0.95));
+        put(p, "giantAimFrac", clamp(giantAimFrac, 0.50, 1.00));
 
         writeKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode", ignoreTooKey);
         writeKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode", ignoreGolemKey);

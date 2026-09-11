@@ -18,6 +18,99 @@ public final class AimbotRules {
         return y >= footY + headLayerBottom(height);
     }
 
+    /**
+     * BadHeadShot 怪的默认瞄准高度系数（作用在幽灵框上）。
+     *
+     * <p>爆头带下沿是 {@code 0.80}。此值取在它明显下方，把弹道压在躯干中上段：
+     * BadHeadShot 的判定前提就是「怪站在玩家上方」，此时幽灵框是<b>预测位置</b>，
+     * 瞄准点越靠上，预测偏差越容易让射线从头顶掠过而打空。普通怪体型小
+     * （僵尸 1.95 / 骷髅 1.99），这个效应被放大。
+     *
+     * <p>历史：Forge 1.8.9 里该系数叫 {@code CHEST_PRIORITY_FRAC}（胸腔优先），
+     * 取值 0.76。移植到 Fabric 时被内联成裸数字，语义标签丢失。<b>0.76 对 26.2
+     * 的小体型普通怪偏高、实测常打空</b>，故下调为 0.65，并做成配置项便于现场微调。
+     *
+     * <p>注意：这类怪本就守不住暴击带（瞄准点低于 0.80 时
+     * {@code critPitchToleranceDeg} 的 clearance 为负、直接返回 0），因此
+     * 提高命中率的收益高于保留爆头机会——值取低更稳。
+     */
+    public static final double BAD_HEADSHOT_BODY_FRAC_DEFAULT = 0.65;
+
+    /**
+     * 巨人的默认瞄准高度系数（作用在幽灵框上）。
+     *
+     * <p>26.2 巨人尺寸 {@code sized(3.6f, 12.0f).eyeHeight(10.44f)}：瞄 {@code 0.98}
+     * 即脚上 <b>11.76 格</b>，比眼高（10.44）高 1.32 格，仍在爆头带
+     * {@code [0.80, 1.00]} 之内 —— 但距箱顶只剩 <b>0.24 格</b>，暴击容差相应收窄。
+     *
+     * <p>此前巨人复用 {@code 0.9 + 0.2 * Crits}，会被<b>全局 Crits 旋钮连带牵动</b>；
+     * 现改用这个专属系数，巨人瞄点与 Crits <b>解耦</b>，也不再受 {@code headFracMax}
+     * 夹取（该系数自身范围即 {@code [0.50, 1.00]}）。
+     */
+    public static final double GIANT_AIM_FRAC_DEFAULT = 0.98;
+
+    /**
+     * insta（Insta Kill 秒杀）窗口内的固定瞄准高度系数。
+     *
+     * <p><b>注意：0.5 是幽灵框高度的中点，即「腰腹」，不是头</b>——爆头带下沿是
+     * {@code 0.80}。面板上曾把它标成「固定头点」，那是历史误译：Forge 原版把返回
+     * 这个值的函数命名为 {@code usualHeadFrac()}，语义标签沿用至今。
+     *
+     * <p>设计意图是正确的：秒杀道具生效期间一击必杀，爆头毫无收益，而腰腹是
+     * 命中容差最大的位置，所以压到 0.5 换取最高命中率。
+     */
+    public static final double INSTA_AIM_FRAC = 0.5;
+
+    /**
+     * insta 窗口内的候选分组：<b>非 baby 的怪整体前置</b>。
+     *
+     * <p>baby 僵尸的碰撞箱只有成体一半、移速还快，命中窗口很小；成体移速慢、
+     * 好瞄。秒杀期间追求的是「快速清掉每一只」，所以优先打打得中的。
+     * 巨人已由调用方在该窗口内整体剔除，这里不再区分。
+     */
+    public static int instaGroupRank(boolean baby) {
+        return baby ? 0 : 1;
+    }
+
+    /**
+     * 该 PowerUp 名称是否是 Insta Kill。
+     *
+     * <p>必须大小写无关且用 contains：名称有两个来源——解析器正则会捕获
+     * {@code INSTA KILL}（Hypixel 原文全大写），字幕路径则产出 {@code Insta Kill}。
+     * 用等值比较会漏掉其中一半。
+     */
+    public static boolean isInstaKillKind(String kind) {
+        if (kind == null || kind.isBlank()) return false;
+        return kind.toLowerCase(java.util.Locale.ROOT).contains("insta");
+    }
+
+    /** 兜底采样「同样接近首选瞄点」时，对向上采样的微小惩罚，保证优先往下瞄。 */
+    public static final double UPWARD_FALLBACK_PENALTY = 1.0e-6;
+
+    /**
+     * 首选瞄点不可用时，某个兜底采样的优先分数——<b>越小越优先</b>。
+     *
+     * <ul>
+     *   <li>{@code nearestPreferred = false}（<b>普通怪</b>）：分数取 {@code -frac}，
+     *       等价于「箱内最高的可见采样」，维持移植前的既有行为。</li>
+     *   <li>{@code nearestPreferred = true}（<b>巨人 / BadHeadShot</b>）：分数取
+     *       「与首选瞄点的距离」，因此<b>既允许往下、也允许往上</b>兜底；距离相同时由
+     *       {@link #UPWARD_FALLBACK_PENALTY} 让下方采样胜出（下优先、上可用）。</li>
+     * </ul>
+     *
+     * @param sampleFrac       该采样点在幽灵框内的归一化高度
+     * @param nearestPreferred 是否按「距首选瞄点最近」挑选
+     * @param preferredFrac    首选瞄点系数；{@code nearestPreferred = false} 时忽略
+     */
+    public static double bodyFallbackScore(double sampleFrac, boolean nearestPreferred,
+                                           double preferredFrac) {
+        if (!Double.isFinite(sampleFrac)) return Double.POSITIVE_INFINITY;
+        if (!nearestPreferred) return -sampleFrac;
+        double preferred = Double.isFinite(preferredFrac) ? preferredFrac : 0.5;
+        double distance = Math.abs(sampleFrac - preferred);
+        return sampleFrac > preferred ? distance + UPWARD_FALLBACK_PENALTY : distance;
+    }
+
     public static double angleDelta(double from, double to) {
         double delta = (to - from) % 360.0;
         if (delta > 180.0) delta -= 360.0;
