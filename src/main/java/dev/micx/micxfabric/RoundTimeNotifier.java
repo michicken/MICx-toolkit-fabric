@@ -26,14 +26,19 @@ public final class RoundTimeNotifier {
         Component line=Component.literal("§e                     You completed §cRound "+a.round+" §ein §a"+formatDuration(a.durationMs)+"§e!");
         mc.player.sendSystemMessage(bar); mc.player.sendSystemMessage(line); mc.player.sendSystemMessage(bar);
     }
-    public static void sendSplitAnnouncement(int round,long dR,long dT){
+    public static void sendSplitAnnouncement(int round,long dR,long dT,boolean hasB,long dR2,long dT2){
         Minecraft mc=Minecraft.getInstance(); if(mc==null||mc.player==null) return;
+        SpeedrunBaseline bl=SpeedrunBaseline.get();
+        String la=bl.labelA(), lb=bl.labelB();
+        mc.player.sendSystemMessage(splitLine("§7  R"+round+" §7["+la+"] ",dR,dT));
+        if(hasB) mc.player.sendSystemMessage(splitLine("§7      §7["+lb+"] ",dR2,dT2));
+    }
+    private static Component splitLine(String prefix,long dR,long dT){
         String sR=SpeedrunBaseline.formatDelta(dR), sT=SpeedrunBaseline.formatDelta(dT);
         int cR=SpeedrunBaseline.deltaColor(dR), cT=SpeedrunBaseline.deltaColor(dT);
         String rLabel=dR<0?"领先":dR>0?"落后":"持平", tLabel=dT<0?"领先":dT>0?"落后":"持平";
         String colorR=cR==0xFF55FF55?"§a":cR==0xFFFF5555?"§c":"§7";
         String colorT=cT==0xFF55FF55?"§a":cT==0xFFFF5555?"§c":"§7";
-        Component line=Component.literal("§7  R"+round+" §e本回合"+rLabel+" "+colorR+sR+" §7| §e总计"+tLabel+" "+colorT+sT);
-        mc.player.sendSystemMessage(line);
+        return Component.literal(prefix+"§e本回合"+rLabel+" "+colorR+sR+" §7| §e总计"+tLabel+" "+colorT+sT);
     }
 }

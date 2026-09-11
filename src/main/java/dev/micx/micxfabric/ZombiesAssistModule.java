@@ -1318,12 +1318,29 @@ public final class ZombiesAssistModule implements Module {
                     SpeedrunBaseline bl = SpeedrunBaseline.get();
                     if (bl.hasBaseline() && tracker.lastSplitRound() > 0) {
                         long dR = tracker.lastSplitDeltaMs(); long dT = tracker.lastSplitTotalDeltaMs();
-                        String sR = SpeedrunBaseline.formatDelta(dR); String sT = SpeedrunBaseline.formatDelta(dT);
-                        int cR = SpeedrunBaseline.deltaColor(dR); int cT = SpeedrunBaseline.deltaColor(dT);
                         int wR = client.font.width(t);
-                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(" " + sR), baseX + 13 + wR + 4, y, cR, true);
-                        String totalStr = " \u03A3" + sT;
-                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(totalStr), baseX + 13 + wR + 4 + client.font.width(" " + sR) + 6, y, cT, true);
+                        int x = baseX + 13 + wR + 4;
+                        int gray = 0xFFAAAAAA;
+                        String la = " " + bl.labelA();
+                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(la), x, y, gray, true);
+                        x += client.font.width(la) + 2;
+                        String sR = SpeedrunBaseline.formatDelta(dR);
+                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(sR), x, y, SpeedrunBaseline.deltaColor(dR), true);
+                        x += client.font.width(sR) + 2;
+                        String sT = "\u03A3" + SpeedrunBaseline.formatDelta(dT);
+                        graphics.text(client.font, net.minecraft.network.chat.Component.literal(sT), x, y, SpeedrunBaseline.deltaColor(dT), true);
+                        x += client.font.width(sT) + 6;
+                        if (tracker.lastSplitHasB()) {
+                            long dR2 = tracker.lastSplitDelta2Ms(); long dT2 = tracker.lastSplitTotalDelta2Ms();
+                            String lb = " " + bl.labelB();
+                            graphics.text(client.font, net.minecraft.network.chat.Component.literal(lb), x, y, gray, true);
+                            x += client.font.width(lb) + 2;
+                            String sR2 = SpeedrunBaseline.formatDelta(dR2);
+                            graphics.text(client.font, net.minecraft.network.chat.Component.literal(sR2), x, y, SpeedrunBaseline.deltaColor(dR2), true);
+                            x += client.font.width(sR2) + 2;
+                            String sT2 = "\u03A3" + SpeedrunBaseline.formatDelta(dT2);
+                            graphics.text(client.font, net.minecraft.network.chat.Component.literal(sT2), x, y, SpeedrunBaseline.deltaColor(dT2), true);
+                        }
                     }
                 }
                 y += lineH;

@@ -47,6 +47,9 @@ public final class ZombiesTracker {
     private volatile long lastSplitRoundMs = 0L;
     private volatile long lastSplitDeltaMs = 0L;
     private volatile long lastSplitTotalDeltaMs = 0L;
+    private volatile long lastSplitDelta2Ms = 0L;
+    private volatile long lastSplitTotalDelta2Ms = 0L;
+    private volatile boolean lastSplitHasB = false;
     private volatile int lastSplitRound = 0;
     private int goldAtSample;
     private float goldPerMin;
@@ -117,7 +120,7 @@ public final class ZombiesTracker {
         try { ZombiesExplorerModule.instance().onSessionReset(); } catch (Throwable ignored) {}
         soundMetrics.reset();
         try { WindowSpawnCounterModule.instance().onSessionReset(); } catch (Throwable ignored) {}
-        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L; lastSplitDelta2Ms=0L; lastSplitTotalDelta2Ms=0L; lastSplitHasB=false;
     }
 
     public int round() {
@@ -185,6 +188,9 @@ public final class ZombiesTracker {
     public long lastSplitRoundMs(){ return lastSplitRoundMs; }
     public long lastSplitDeltaMs(){ return lastSplitDeltaMs; }
     public long lastSplitTotalDeltaMs(){ return lastSplitTotalDeltaMs; }
+    public long lastSplitDelta2Ms(){ return lastSplitDelta2Ms; }
+    public long lastSplitTotalDelta2Ms(){ return lastSplitTotalDelta2Ms; }
+    public boolean lastSplitHasB(){ return lastSplitHasB; }
     public int lastSplitRound(){ return lastSplitRound; }
     public long cumulativeActualMs(){ return cumulativeActualMs; }
 
@@ -358,8 +364,14 @@ public final class ZombiesTracker {
                                 long cumBase = bl.cumulativeBaselineMs(pr);
                                 if (baseMs>0 && cumBase>0 && dur>0) {
                                     long dR = dur - baseMs; long dT = cm - cumBase;
+                                    long dR2 = 0L, dT2 = 0L; boolean hasB = false;
+                                    if (bl.hasBaselineB()) {
+                                        long base2 = bl.baselineMsB(pr); long cum2 = bl.cumulativeBaselineMsB(pr);
+                                        if (base2>0 && cum2>0) { dR2 = dur - base2; dT2 = cm - cum2; hasB = true; }
+                                    }
                                     lastSplitRound = pr; lastSplitRoundMs = dur; lastSplitDeltaMs = dR; lastSplitTotalDeltaMs = dT;
-                                    RoundTimeNotifier.sendSplitAnnouncement(pr, dR, dT);
+                                    lastSplitDelta2Ms = dR2; lastSplitTotalDelta2Ms = dT2; lastSplitHasB = hasB;
+                                    RoundTimeNotifier.sendSplitAnnouncement(pr, dR, dT, hasB, dR2, dT2);
                                 }
                             }
                         }
@@ -514,13 +526,13 @@ public final class ZombiesTracker {
         goldAtSample = 0;
         goldPerMin = 0.0f;
         ecoRate.reset();
-        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L; lastSplitDelta2Ms=0L; lastSplitTotalDelta2Ms=0L; lastSplitHasB=false;
     }
 
     private void finishOldSession() {
         eventState.reset();
         ecoRate.reset();
-        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L;
+        cumulativeActualMs=0L; lastSplitRound=0; lastSplitRoundMs=0L; lastSplitDeltaMs=0L; lastSplitTotalDeltaMs=0L; lastSplitDelta2Ms=0L; lastSplitTotalDelta2Ms=0L; lastSplitHasB=false;
         eventGeneration++;
         sessionResetPending = false;
         round = 0;

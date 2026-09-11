@@ -336,7 +336,10 @@ public final class MicxClientCommands {
         ZombiesAssistModule.instance().saveConfig();
         SpeedrunBaseline bl = SpeedrunBaseline.get();
         String state = cfg.speedrunEnabled ? "ON" : "OFF";
-        String base = bl.hasBaseline() ? (" baseline R"+bl.rounds()+" "+(bl.source()==null?"":bl.source())) : " no baseline";
+        String base;
+        if (bl.hasBaseline() && bl.hasBaselineB()) base = " baselines R"+bl.rounds()+" ["+bl.labelA()+"+"+bl.labelB()+"]";
+        else if (bl.hasBaseline()) base = " baseline R"+bl.rounds()+" "+(bl.source()==null?"":bl.source());
+        else base = " no baseline";
         reply(source, "Speedrun: "+state+base);
     }
 

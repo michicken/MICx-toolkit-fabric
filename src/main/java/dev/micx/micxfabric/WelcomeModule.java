@@ -66,7 +66,7 @@ public final class WelcomeModule implements Module {
                 " 制作者 / Creator: MICx",
                 " 输入 /micx 打开配置面板 · open with /micx",
                 " 帮开机器人: /micx hs <1-3> · summon bots",
-                " SR模式: /micx sr (以8月23的11015为基准)",
+                " SR模式: /micx sr (双基准: 11015+10905, 绿领先/红落后)",
                 " LR顺序提醒: /micx lr <2-4> (到自己的LR顺序时会叮叮提醒)",
                 "================================="
         };
