@@ -218,21 +218,49 @@ public final class AimbotRules {
 
     /**
      * 「硬实心」方块名单：即使命中它的碰撞形状，也<b>不允许</b>把它当作可穿透的首个实心方块
-     * —— 即这两类方块必须真正挡住弹道。
+     * —— 即这些方块必须真正挡住弹道。
      *
      * <p>理由（用户口径 2026-09-11）：{@code isAllowedFirstSolid} 默认把 {@code *_fence_gate}
      * 与 {@code *_trapdoor} 都视为可穿透，但其中
      * <ul>
      *   <li>{@code oak_fence_gate}（橡木栅栏门）关闭时是一片实心门板，理应挡枪；</li>
-     *   <li>{@code iron_trapdoor}（铁活板门）是铁质整格构件，更不该被穿过。</li>
+     *   <li>{@code iron_trapdoor}（铁活板门）是铁质整格构件，更不该被穿过；</li>
+     *   <li>{@code clay}（黏土块）是完整的整格实心方块（0.2.73 起加入），本就不该进任何
+     *       穿透白名单 —— 加入它是防御性的：即便后续白名单重构，黏土块也始终挡枪。</li>
      * </ul>
-     * 二者被误判为可穿透会导致「对着关着的门/活板门开枪打空或打到门后目标」。
+     * 被误判为可穿透会导致「对着这些方块开枪打空或打到方块后目标」。
      *
-     * <p><b>范围严格限定这两种方块</b>：其余木种的栅栏门（spruce/birch/…）与其余活板门
-     * （{@code oak_trapdoor} 等）<b>保持可穿透</b>，与本函数无关。
+     * <p><b>范围严格限定这三种方块</b>：其余木种的栅栏门（spruce/birch/…）、其余活板门
+     * （{@code oak_trapdoor} 等）以及陶瓦系（{@code *_terracotta}）<b>保持可穿透</b>，
+     * 与本函数无关。注意「黏土块」是 {@code clay}，不是黏土球（物品）也不是陶瓦。
      */
     public static boolean isHardSolidPath(String registryPath) {
-        return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath);
+        return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath)
+                || "clay".equals(registryPath);
+    }
+
+    /**
+     * 水平无级兜底 —— 箱缘采样向内收的保持系数。
+     *
+     * <p>用户定稿 2026-09-11：扫描点原先<b>永远在幽灵框 X/Z 中线</b>，中线被柱子/窗框/栅栏
+     * 挡住时整只怪会被判「不可打」丢弃 —— 即便左右边缘完全可见。改为「垂线滑动 + 二分逼近」
+     * 的无级兜底后，只要碰撞箱在该高度层<b>有任一暴露面</b>就能找到可打点。
+     *
+     * <p>二分中「可见侧」的初始端点取在 {@code slideHalfExtent × HORIZONTAL_SCAN_KEEP}
+     * 处：<b>不能取 1.0（贴边）</b> —— 采样点落在箱面上时，视线与碰撞箱的相交判定可能因
+     * 浮点精度 MISS；向内收 5% 保证端点必在箱内。
+     */
+    public static final double HORIZONTAL_SCAN_KEEP = 0.95;
+
+    /** 中线被挡且箱缘可见时的二分步数：分辨率 = 可见半程 / 2^steps（约 6% 半程）。 */
+    public static final int HORIZONTAL_BISECT_STEPS = 4;
+
+    /**
+     * 轴对齐盒的支撑函数：箱体半宽 {@code (hx, hz)} 沿单位滑动方向 {@code (nx, nz)}
+     * 的最大投影长度。中线沿 n 滑动 {@code ±slideHalfExtent} 恰好滑到箱缘。
+     */
+    public static double slideHalfExtent(double hx, double hz, double nx, double nz) {
+        return hx * Math.abs(nx) + hz * Math.abs(nz);
     }
 
     /** Minecraft's yaw/pitch convention, used by the virtual joystick selector. */

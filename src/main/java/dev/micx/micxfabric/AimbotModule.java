@@ -614,6 +614,8 @@ public final class AimbotModule implements Module {
         // 巨人（首选 0.995）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
         // 不再整只丢怪，而是退到最接近该点的可见采样 —— 先往下，没有可见的下方
         // 采样时再往上（双向兜底）。普通怪维持既有的「自上而下第一个可见」。
+        // 每层再做「无级」水平兜底：中线被挡时沿视线垂线滑动并二分逼近，
+        // 只要碰撞箱在该层有任一暴露面就能找到可打点（用户定稿 2026-09-11）。
         boolean insta = !giant && instaActive();
         boolean badHeadshot = !giant && !insta && isBadHeadshot(client, meta.entity);
         boolean nearestPreferred = giant || insta || badHeadshot;
@@ -621,15 +623,18 @@ public final class AimbotModule implements Module {
                 : insta ? AimbotRules.INSTA_AIM_FRAC
                 : badHeadshot ? config.badHeadshotFrac
                 : Double.NaN;
+        double cx = (box.minX + box.maxX) * 0.5;
+        double cz = (box.minZ + box.maxZ) * 0.5;
+        double hx = (box.maxX - box.minX) * 0.5;
+        double hz = (box.maxZ - box.minZ) * 0.5;
         Vec3 fallbackPoint = null;
         double fallbackScore = Double.POSITIVE_INFINITY;
         for (int percent = 95; percent >= 0; percent -= 5) {
             if (!giant && percent <= 80 && percent % 10 != 0) continue;
             double frac = percent / 100.0;
             double y = box.minY + height * frac;
-            Vec3 scanPoint = new Vec3((box.minX + box.maxX) * 0.5, y,
-                    (box.minZ + box.maxZ) * 0.5);
-            if (!canWallShot(client, eye, scanPoint)) continue;
+            Vec3 scanPoint = visibleScanPoint(client, eye, cx, cz, hx, hz, y);
+            if (scanPoint == null) continue;
             double score = AimbotRules.bodyFallbackScore(frac, nearestPreferred, preferredFrac);
             if (score < fallbackScore) {
                 fallbackScore = score;
@@ -645,6 +650,62 @@ public final class AimbotModule implements Module {
         return fallbackPoint == null
                 ? null
                 : scoredPoint(client, meta, eye, all, box, fallbackPoint);
+    }
+
+    /**
+     * 同一高度层的「无级」水平兜底：只要碰撞箱在该层有任一暴露面，就返回该层上
+     * 最靠中线的可打点；整层全被挡返回 null。
+     *
+     * <p>顺序：① 试中线（常态 1 次射线，与旧行为开销一致）；② 被挡则沿<b>视线垂线</b>
+     * 方向滑到箱缘内侧各试一次 —— 遮挡物挡住的是沿视线方向的一条带，沿垂线滑动恰好
+     * 横穿遮挡带；③ 任一侧箱缘可见，则在「被挡的中线」与「可见的箱缘」之间二分
+     * {@link AimbotRules#HORIZONTAL_BISECT_STEPS} 次，收敛到最靠中线的可见点。
+     * 两侧箱缘都不可见时不再花射线二分（视为整层被挡）。
+     */
+    private Vec3 visibleScanPoint(Minecraft client, Vec3 eye,
+                                  double cx, double cz, double hx, double hz, double y) {
+        Vec3 center = new Vec3(cx, y, cz);
+        if (canWallShot(client, eye, center)) return center;
+        double dx = cx - eye.x;
+        double dz = cz - eye.z;
+        double len = Math.sqrt(dx * dx + dz * dz);
+        double nx;
+        double nz;
+        if (len < 1.0E-6) {
+            nx = 1.0;
+            nz = 0.0;
+        } else {
+            nx = -dz / len;
+            nz = dx / len;
+        }
+        double sEdge = AimbotRules.slideHalfExtent(hx, hz, nx, nz)
+                * AimbotRules.HORIZONTAL_SCAN_KEEP;
+        if (sEdge <= 0.0) return null;
+        if (canWallShot(client, eye, new Vec3(cx + nx * sEdge, y, cz + nz * sEdge))) {
+            return bisectVisibleScanPoint(client, eye, cx, cz, y, nx, nz, 0.0, sEdge);
+        }
+        if (canWallShot(client, eye, new Vec3(cx - nx * sEdge, y, cz - nz * sEdge))) {
+            return bisectVisibleScanPoint(client, eye, cx, cz, y, nx, nz, 0.0, -sEdge);
+        }
+        return null;
+    }
+
+    /**
+     * 在「被挡端 blocked」与「可见端 visible」之间二分，返回最靠 blocked 一侧的
+     * 可见点（每一步都先验证可见性，返回值必然可打）。
+     */
+    private Vec3 bisectVisibleScanPoint(Minecraft client, Vec3 eye,
+                                        double cx, double cz, double y,
+                                        double nx, double nz, double blocked, double visible) {
+        for (int i = 0; i < AimbotRules.HORIZONTAL_BISECT_STEPS; i++) {
+            double mid = (blocked + visible) * 0.5;
+            if (canWallShot(client, eye, new Vec3(cx + nx * mid, y, cz + nz * mid))) {
+                visible = mid;
+            } else {
+                blocked = mid;
+            }
+        }
+        return new Vec3(cx + nx * visible, y, cz + nz * visible);
     }
 
     private Scored scoredPoint(Minecraft client, CandidateMeta meta, Vec3 eye,

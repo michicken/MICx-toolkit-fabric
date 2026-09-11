@@ -193,9 +193,10 @@ class AimbotRulesTest {
     }
 
     @Test
-    void oakFenceGateAndIronTrapdoorAreHardSolidsThatBlockShots() {
+    void oakFenceGateIronTrapdoorAndClayAreHardSolidsThatBlockShots() {
         assertTrue(AimbotRules.isHardSolidPath("oak_fence_gate"));
         assertTrue(AimbotRules.isHardSolidPath("iron_trapdoor"));
+        assertTrue(AimbotRules.isHardSolidPath("clay"));
     }
 
     @Test
@@ -206,8 +207,29 @@ class AimbotRulesTest {
         assertFalse(AimbotRules.isHardSolidPath("spruce_trapdoor"));
         assertFalse(AimbotRules.isHardSolidPath("iron_door"));
         assertFalse(AimbotRules.isHardSolidPath("stone_brick_slab"));
+        // 黏土块(clay)挡枪，但陶瓦系(terracotta)不在名单内
+        assertFalse(AimbotRules.isHardSolidPath("white_terracotta"));
+        assertFalse(AimbotRules.isHardSolidPath("terracotta"));
         assertFalse(AimbotRules.isHardSolidPath(null));
         assertFalse(AimbotRules.isHardSolidPath(""));
+    }
+
+    @Test
+    void horizontalContinuousFallbackStaysInsideTheBox() {
+        assertEquals(0.95, AimbotRules.HORIZONTAL_SCAN_KEEP, 1.0e-9);
+        assertTrue(AimbotRules.HORIZONTAL_BISECT_STEPS >= 1);
+        // 支撑函数：轴向滑动 = 对应半宽；对角滑动 = 两个半宽的投影和
+        assertEquals(0.3, AimbotRules.slideHalfExtent(0.3, 0.3, 0.0, 1.0), 1.0e-9);
+        assertEquals(0.3, AimbotRules.slideHalfExtent(0.3, 0.3, 1.0, 0.0), 1.0e-9);
+        assertEquals(0.6 * Math.sqrt(0.5),
+                AimbotRules.slideHalfExtent(0.3, 0.3, Math.sqrt(0.5), Math.sqrt(0.5)), 1.0e-12);
+        // 僵尸（宽/深 0.6）沿轴向滑到 sEdge：距箱面仍有 1.5% 箱宽余量，必在箱内
+        double sEdge = AimbotRules.slideHalfExtent(0.3, 0.3, 0.0, 1.0)
+                * AimbotRules.HORIZONTAL_SCAN_KEEP;
+        assertEquals(0.285, sEdge, 1.0e-9);
+        assertTrue(sEdge < 0.3);
+        // 二分分辨率：sEdge / 2^steps，等效无级
+        assertTrue(sEdge / Math.pow(2, AimbotRules.HORIZONTAL_BISECT_STEPS) < 0.02);
     }
 
     @Test
