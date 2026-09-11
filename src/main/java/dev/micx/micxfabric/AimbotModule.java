@@ -1005,7 +1005,9 @@ public final class AimbotModule implements Module {
 
         LivingEntity target = lockedTargetEntity();
         if (target == null) return MOUSE_PASS_THROUGH;
-        boolean badHeadshot = isBadHeadshot(client, target);
+        // 巨人不走 BadHeadShot 语义（瞄点用 giantAimFrac）；0.2.78 起 ZE 名单含 Giant，
+        // 这里必须显式排除，否则 humanize 手动 pitch 锁会误锁巨人。
+        boolean badHeadshot = !isGiant(target) && isBadHeadshot(client, target);
 
         if (config.humanize && !config.joystick) {
             // Ordinary mobs and Giants keep the complete vanilla mouse path so
@@ -1035,7 +1037,8 @@ public final class AimbotModule implements Module {
         float currentYaw = client.player.getYRot();
         float currentPitch = client.player.getXRot();
         LivingEntity target = best.entity;
-        boolean badHeadshot = isBadHeadshot(client, target);
+        // 巨人不走 BadHeadShot 语义（同鼠标路径守卫，见 isBadHeadshot 调用处注释）。
+        boolean badHeadshot = !isGiant(target) && isBadHeadshot(client, target);
         boolean giant = isGiant(target);
         boolean manualStrafing = isManualStrafing(client);
         double horizontalDistance = Math.hypot(
@@ -1439,7 +1442,8 @@ public final class AimbotModule implements Module {
         AimbotConfig c = config;
         Vec3 eye = client.player.getEyePosition(1.0f);
         LivingEntity target = best.entity;
-        boolean badHeadshot = isBadHeadshot(client, target);
+        // 巨人不走 BadHeadShot 语义（BRUTE pitch 分支同理需要显式排除）。
+        boolean badHeadshot = !isGiant(target) && isBadHeadshot(client, target);
         boolean giant = isGiant(target);
         double horizontalDistance = Math.hypot(
                 target.getX() - client.player.getX(), target.getZ() - client.player.getZ());

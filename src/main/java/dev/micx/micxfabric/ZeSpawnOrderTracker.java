@@ -119,6 +119,10 @@ public final class ZeSpawnOrderTracker {
      * Mirrors BridgerAimbotEngine.applyBadHsAwareAimPreference: an aware
      * zombie/skeleton above the player is the bad-headshot case unless it is
      * the most recently spawned aware mob.
+     *
+     * <p>0.2.78 起巨人（Giant）也参与同一 spawn-order 序列（用户定稿：巨人可被
+     * ZE 标绿 / ESP 按绿-红显示）。Aimbot 侧的瞄点判定对巨人另有 !giant 守卫，
+     * 不受本次纳入影响。
      */
     boolean isBadHeadshot(LivingEntity target, double playerBaseY) {
         if (!isBadHsAwareMob(target) || target.getY() <= playerBaseY + 0.25) return false;
@@ -130,7 +134,8 @@ public final class ZeSpawnOrderTracker {
     }
 
     private static boolean isBadHsAwareMob(LivingEntity entity) {
-        return entity instanceof Skeleton || entity instanceof Zombie;
+        return entity instanceof Skeleton || entity instanceof Zombie
+                || entity instanceof Giant;
     }
 
     void tickCleanup() {

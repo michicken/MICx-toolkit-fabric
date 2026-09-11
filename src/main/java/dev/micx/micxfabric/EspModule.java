@@ -99,7 +99,7 @@ public final class EspModule implements Module {
             if (!priority && (distanceSq < 0.25 || distanceSq > range * range)) continue;
 
             AABB local = box.move(-living.getX(), -living.getY(), -living.getZ());
-            int color = color(living, alpha);
+            int color = color(living, alpha, client);
             pose.pushPose();
             pose.translate(living.getX() - camera.x, living.getY() - camera.y, living.getZ() - camera.z);
             collector.submitShapeOutline(pose, Shapes.create(local), EspRenderTypes.espLines(), color, 2.0f, false);
@@ -112,8 +112,21 @@ public final class EspModule implements Module {
         return entity instanceof Enemy || entity instanceof Wolf || entity instanceof IronGolem;
     }
 
-    private static int color(LivingEntity entity, float alpha) {
-        int rgb = entity instanceof Giant ? 0x9933FF : 0xFF3333;
+    /**
+     * ESP 颜色（用户定稿 2026-09-11）：巨人<b>无论如何都画框</b>（豁免 autoGate/距离，
+     * 见 collectSubmits）；颜色按 ZE badheadshot 分类 —— 巨人已纳入 ZE spawn-order
+     * 序列（ZeSpawnOrderTracker.isBadHsAwareMob 含 Giant），被分类为 badheadshot
+     * （高处、非最新锚怪）→ 绿色；否则红色。其余怪保持红色。
+     */
+    private int color(LivingEntity entity, float alpha, Minecraft client) {
+        int rgb;
+        if (entity instanceof Giant) {
+            boolean badHeadshot = client.player != null && ZombiesExplorerModule.instance()
+                    .isBadHeadshot(entity, client.player.getY());
+            rgb = badHeadshot ? 0x00FF00 : 0xFF3333;
+        } else {
+            rgb = 0xFF3333;
+        }
         int a = Math.max(1, Math.min(255, Math.round(alpha * 255.0f)));
         return (a << 24) | rgb;
     }
