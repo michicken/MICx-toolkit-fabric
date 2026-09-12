@@ -49,7 +49,6 @@ public final class HudLayoutRegistry {
         addAsrBlock();
         addDpsBlock();
         addAimMarkerBlock();
-        addAimbotHudBlock();
     }
 
     /** Sprint：左下 [Sprint] 状态文字（对齐 Forge）。 */
@@ -301,29 +300,6 @@ public final class HudLayoutRegistry {
                     public float moduleScaleX() { return mod.markerScaleX(); }
                     public float moduleScaleY() { return mod.markerScaleY(); }
                     public void resetScale() { mod.setMarkerScale(1.0f, 1.0f); }
-                }));
-    }
-
-    private static void addAimbotHudBlock() {
-        AimbotModule mod = AimbotModule.instance();
-        BLOCKS.add(new HudLayoutBlock("aimbot_hud", "Aimbot HUD",
-                "TOO GOL SLM | CLO GIA | BAB | CLS", 120, 24,
-                new HudLayoutBlock.Adapter() {
-                    public int x(int sw, int sh, int rw, int rh) {
-                        return sw / 2 + mod.hudOffsetX() - rw / 2;
-                    }
-                    public int y(int sw, int sh, int rw, int rh) {
-                        int bottom = sh - 22 - 80 - 6 - 4;
-                        return bottom + mod.hudOffsetY() - rh;
-                    }
-                    public void setPosition(int x, int y, int sw, int sh, int rw, int rh) {
-                        mod.setHudOffsets(x + rw / 2 - sw / 2,
-                                y - (sh - 22 - 80 - 6 - 4 - rh));
-                    }
-                    public void resetPosition() { mod.setHudOffsets(0, 0); }
-                    public void save() { mod.saveConfiguration(); }
-                    public float moduleScaleX() { return 1.0f; }
-                    public float moduleScaleY() { return 1.0f; }
                 }));
     }
 

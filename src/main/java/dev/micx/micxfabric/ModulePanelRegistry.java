@@ -54,8 +54,6 @@ public final class ModulePanelRegistry {
         meta("player_outline_esp", GROUP_VISION, 6);
         meta("last_mobs", GROUP_VISION, 7);
         meta("fullbright", GROUP_VISION, 8);
-        meta("aimbot", GROUP_ACTION, 0);
-        meta("aimbot_hud", GROUP_ACTION, 1);
         meta("aim_lead", GROUP_ACTION, 2);
         meta("magnet", GROUP_ACTION, 2);
         meta("right_clicker", GROUP_ACTION, 2);
@@ -318,12 +316,6 @@ public final class ModulePanelRegistry {
                                         NoReloadModule.instance()::setRrMode,
                                         "金铲子槽不点击背包（近战无需重置）。"))));
 
-        real("aimbot", "Aimbot", "瞄准辅助", GROUP_COMBAT,
-                "从 1.8.9 迁移的目标筛选、优先级、AimLead 头部点、鼠标接管与 Hold-Lock；默认关闭。",
-                AimbotModule.instance(), AimbotConfigScreen::new);
-        real("aimbot_hud", "Aimbot HUD", "Aimbot HUD", GROUP_COMBAT,
-                "独立显示 TOO/Golem/Slime 忽略、Clown/Giant/Baby 优先和 Closest 状态，并处理分组快捷键。",
-                AimbotHudModule.instance(), null);
         real("aim_lead", "AimLead", "瞄准提前量", GROUP_COMBAT,
                 "按服务端 movement packet 轨迹预判目标位置，标出开火提前点。",
                 AimLeadModule.instance(), AimLeadConfigScreen::new);
@@ -525,8 +517,7 @@ public final class ModulePanelRegistry {
     }
 
     private static void setPrimaryChord(Module module, int[] codes) {
-        if (module instanceof AimbotModule m) m.config().setToggleKeyCodes(codes);
-        else if (module instanceof ReviveAuraModule m) m.setToggleKeyCodes(codes);
+        if (module instanceof ReviveAuraModule m) m.setToggleKeyCodes(codes);
         else if (module instanceof MagnetModule m) m.setToggleKeyCodes(codes);
         else if (module instanceof LastMobsModule m) m.setToggleKeyCodes(codes);
     }

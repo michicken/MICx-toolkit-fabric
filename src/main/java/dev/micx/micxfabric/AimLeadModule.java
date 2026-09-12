@@ -246,8 +246,7 @@ public final class AimLeadModule implements Module {
             requestRtt(client);
         }
 
-        boolean broadAimbotTracking = AimbotModule.instance().needsAimLeadTracking();
-        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies() && !broadAimbotTracking) {
+        if (config.zombiesOnly && !ZombiesTracker.instance().isInZombies()) {
             if (!tracks.isEmpty()) tracks.clear();
             return;
         }

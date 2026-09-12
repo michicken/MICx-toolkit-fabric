@@ -37,8 +37,6 @@ public final class ModuleRuntime {
         register(ChamsModule.instance());
         register(PlayerOutlineEspModule.instance());
         register(AimLeadModule.instance());
-        register(AimbotModule.instance());
-        register(AimbotHudModule.instance());
         register(TeamSyncModule.instance());
         register(ToggleSprintModule.instance());
         register(WelcomeModule.instance());

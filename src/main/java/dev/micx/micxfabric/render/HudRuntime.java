@@ -2,7 +2,6 @@ package dev.micx.micxfabric.render;
 
 import dev.micx.micxfabric.AntiAxeModule;
 import dev.micx.micxfabric.AimLeadModule;
-import dev.micx.micxfabric.AimbotHudModule;
 import dev.micx.micxfabric.AsrModule;
 import dev.micx.micxfabric.DpsCounterModule;
 import dev.micx.micxfabric.LastMobsModule;
@@ -27,7 +26,6 @@ public final class HudRuntime {
         HudBackend backend = new VanillaHudBackend();
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "asr"), AsrModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "aim-lead"), AimLeadModule.instance()::drawHud);
-        backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "aimbot-hud"), AimbotHudModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "dps"), DpsCounterModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "toro-health"), ToroHealthModule.instance()::drawHud);
         backend.register(Identifier.fromNamespaceAndPath("micx-fabric", "teammate-hp"), TeammateHpModule.instance()::drawHud);

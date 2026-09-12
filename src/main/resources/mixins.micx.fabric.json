@@ -34,8 +34,6 @@
     "MixinParticleEngine",
     "MixinEntityRendererExtractNameTag",
     "MixinMouseHandlerZoom",
-    "MixinMouseHandlerAimbot",
-    "MixinLivingEntityDamage",
     "MixinCameraZoom"
   ],
   "injectors": {
