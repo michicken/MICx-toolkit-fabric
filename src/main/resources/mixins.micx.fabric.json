@@ -15,6 +15,7 @@
     "MixinEquipmentLayerRenderer",
     "MixinLevelRenderer",
     "MixinHud",
+    "HudChatAccess",
     "MixinLightmapRenderStateExtractor",
     "RenderTypeAccess",
     "RenderPipelinesAccess",

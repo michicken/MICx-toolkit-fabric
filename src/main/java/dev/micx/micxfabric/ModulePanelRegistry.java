@@ -69,6 +69,7 @@ public final class ModulePanelRegistry {
         meta("team_sync", GROUP_SQUAD, 0);
         meta("chat_cleaner", GROUP_CHAT, 0);
         meta("chat_translate", GROUP_CHAT, 1);
+        meta("chat_message_translate", GROUP_CHAT, 2);
         meta("chat_copy", GROUP_CHAT, 3);
         meta("auto_text", GROUP_CHAT, 4);
         meta("welcome", GROUP_CHAT, 5);
@@ -369,6 +370,9 @@ public final class ModulePanelRegistry {
         real("chat_translate", "ChatTranslate", "聊天翻译", GROUP_MISC,
                 "中文队聊后台翻成 AA 英文，返回后自动发送",
                 ChatTranslateModule.instance(), ChatTranslateConfigScreen::new);
+        real("chat_message_translate", "ChatMessageTranslate", "消息点击翻译", GROUP_MISC,
+                "聊天行尾 [T] 点击后翻译成简体中文本地显示，原文不动",
+                ChatMessageTranslateModule.instance(), null);
         real("welcome", "Welcome", "欢迎横幅", GROUP_MISC,
                 "进服时在聊天里显示 MICx 提示与 /micx 入口", WelcomeModule.instance(), null);
         real("auto_text", "AutoText", "快捷文本", GROUP_MISC,

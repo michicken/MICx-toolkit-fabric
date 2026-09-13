@@ -17,6 +17,28 @@ public final class ChatTranslationRules {
         return false;
     }
 
+    /** [T] 点击翻译只排除空行和命令，允许英文、中文或中英混合聊天消息（对照 1.8.9）。 */
+    public static boolean shouldTranslateDisplayedMessage(String message) {
+        return message != null && !message.trim().isEmpty() && !message.trim().startsWith("/");
+    }
+
+    /** 剥掉 ChatCleaner 追加的 "  (x2)" 去重后缀，[T] 存原文时使用。 */
+    public static String stripCleanerCountSuffix(String text) {
+        if (text == null) return null;
+        String trimmed = text.stripTrailing();
+        if (!trimmed.endsWith(")")) return text;
+        int open = trimmed.lastIndexOf('(');
+        if (open <= 0) return text;
+        int digitsStart = open + 1;
+        if (digitsStart < trimmed.length() - 1 && trimmed.charAt(digitsStart) == 'x') digitsStart++;
+        if (digitsStart >= trimmed.length() - 1) return text;
+        for (int i = digitsStart; i < trimmed.length() - 1; i++) {
+            char c = trimmed.charAt(i);
+            if (c < '0' || c > '9') return text;
+        }
+        return trimmed.substring(0, open).stripTrailing();
+    }
+
     public static String safeOutbound(String translated) {
         if (translated == null) return null;
         StringBuilder result = new StringBuilder(translated.length());

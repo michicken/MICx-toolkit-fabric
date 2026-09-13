@@ -21,6 +21,7 @@ public final class ModuleRuntime {
         if (initialized) return;
         register(SwordBlockModule.instance());
         register(ChatCleanerModule.instance());
+        register(ChatMessageTranslateModule.instance());
         register(ChatCopyModule.instance());
         register(ChatTranslateModule.instance());
         register(AsrModule.instance());

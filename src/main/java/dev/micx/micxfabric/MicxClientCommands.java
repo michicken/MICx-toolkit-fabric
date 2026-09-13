@@ -1,5 +1,6 @@
 package dev.micx.micxfabric;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
@@ -17,16 +18,24 @@ public final class MicxClientCommands {
 
     public static void initialize() {
         if (registered) return;
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(ClientCommands.literal("micx")
-                        .executes(context -> openPanel(context.getSource()))
-                        .then(ClientCommands.literal("panel")
-                                .executes(context -> openPanel(context.getSource())))
-                        .then(ClientCommands.literal("gui")
-                                .executes(context -> openPanel(context.getSource())))
-                        .then(ClientCommands.argument("args", StringArgumentType.greedyString())
-                                .executes(context -> handle(context.getSource(),
-                                        StringArgumentType.getString(context, "args"))))));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(ClientCommands.literal("micx")
+                    .executes(context -> openPanel(context.getSource()))
+                    .then(ClientCommands.literal("panel")
+                            .executes(context -> openPanel(context.getSource())))
+                    .then(ClientCommands.literal("gui")
+                            .executes(context -> openPanel(context.getSource())))
+                    .then(ClientCommands.argument("args", StringArgumentType.greedyString())
+                            .executes(context -> handle(context.getSource(),
+                                    StringArgumentType.getString(context, "args")))));
+            dispatcher.register(ClientCommands.literal("micxt")
+                    .then(ClientCommands.argument("line", IntegerArgumentType.integer(1))
+                            .executes(context -> {
+                                ChatMessageTranslateModule.instance().translateLine(context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "line"));
+                                return 1;
+                            })));
+        });
         registered = true;
     }
 
