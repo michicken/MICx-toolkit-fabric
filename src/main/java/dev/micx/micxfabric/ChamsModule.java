@@ -38,7 +38,7 @@ public final class ChamsModule implements Module {
 
     @Override
     public boolean defaultEnabled() {
-        return false;
+        return true;
     }
 
     @Override

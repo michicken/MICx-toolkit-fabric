@@ -45,7 +45,7 @@ public final class LastMobsModule implements Module {
     }
 
     @Override public String id() { return "last_mobs"; }
-    @Override public boolean defaultEnabled() { return true; }
+    @Override public boolean defaultEnabled() { return false; }
     @Override public boolean enabled() { return enabled; }
 
     @Override public void setEnabled(boolean v) {

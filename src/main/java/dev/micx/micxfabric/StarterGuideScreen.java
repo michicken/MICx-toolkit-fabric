@@ -33,20 +33,14 @@ public final class StarterGuideScreen extends Screen {
     private static final List<GuideRow> ROWS = List.of(
             new GuideRow(AUTOSWITCH_ID, "自动切枪 AutoSwitch",
                     "打完一枪自动帮你切下一把枪，还能防卡弹。下面两个键分别管："),
-            new GuideRow("revive_aura", "快速救援 ReviveAura",
-                    "靠近倒地队友时按住此键自动完成救援，不用瞄准不用蹲。"),
-            new GuideRow("last_mobs", "最后怪 LastMobs",
-                    "高亮本回合剩下的最后几只怪，收尾不漏怪。"),
-            new GuideRow("skill_cast", "技能连发 SkillCast",
+            new GuideRow("skill_cast", "快捷释放技能 SkillCast",
                     "按一下自动把技能快速连点放完。"),
             new GuideRow("right_clicker", "右键连点 RightClicker",
                     "按住右键时以稳定速率自动连点（开/关在面板里切）。"),
             new GuideRow("zoom_scope", "缩放 ZoomScope",
                     "按住临时拉近视角，看清远处情况，松开恢复。"),
-            new GuideRow("player_visibility", "玩家隐身 PlayerVisibility",
-                    "一键隐藏或淡化其他玩家模型，画面更清爽。"),
-            new GuideRow("asr", "语音输入 ASR",
-                    "按住 PTT 键说话，自动转成文字发到聊天。")
+            new GuideRow("player_visibility", "隐藏周围玩家 PlayerVisibility",
+                    "一键隐藏或淡化周围其他玩家模型，画面更清爽。")
     );
 
     private record Hit(int x, int y, int w, int h, Runnable action) {
