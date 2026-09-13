@@ -52,6 +52,7 @@ public final class MicxClientCommands {
         String top = args[0].toLowerCase(Locale.ROOT);
         switch (top) {
             case "list" -> printList(source);
+            case "guide" -> source.getClient().setScreenAndShow(new StarterGuideScreen(null));
             case "panel", "gui" -> openPanel(source);
             case "copy" -> copyToClipboard(source, args);
             case "toggle" -> toggle(source, args);

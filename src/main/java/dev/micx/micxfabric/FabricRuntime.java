@@ -23,6 +23,7 @@ public final class FabricRuntime {
 
     public static void initialize() {
         if (initialized) return;
+        StarterDefaults.install(configPath());
         ModuleStateStore.initialize(configPath());
         MicxClientCommands.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -45,7 +46,12 @@ public final class FabricRuntime {
         ChatTranslateModule.instance().initializeConfig();
         AsrModule.instance().initializeConfig();
         setMainPanelOpener(client -> {
-            if (client != null) client.setScreenAndShow(new MicxPanelScreen(null));
+            if (client == null) return;
+            if (!StarterGuideState.isCompleted()) {
+                client.setScreenAndShow(new StarterGuideScreen(null));
+            } else {
+                client.setScreenAndShow(new MicxPanelScreen(null));
+            }
         });
         HudRuntime.initialize();
         RenderCapabilities capabilities = RenderCapabilityProbe.probe();
