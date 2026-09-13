@@ -4,33 +4,37 @@ import java.util.Locale;
 
 /** Supported translation languages and stable ISO-639-1 codes（对照 1.8.9 TranslationLanguage）。 */
 public enum TranslationLanguage {
-    AUTO("auto", "自动识别", "the detected source language"),
-    ZH("zh", "简体中文", "Simplified Chinese"),
-    EN("en", "English", "English"),
-    DE("de", "Deutsch", "German"),
-    FR("fr", "Français", "French"),
-    JA("ja", "日本語", "Japanese"),
-    RU("ru", "Русский", "Russian"),
-    ES("es", "Español", "Spanish"),
-    IT("it", "Italiano", "Italian"),
-    PT("pt", "Português", "Portuguese"),
-    KO("ko", "한국어", "Korean"),
-    NL("nl", "Nederlands", "Dutch"),
-    PL("pl", "Polski", "Polish"),
-    TR("tr", "Türkçe", "Turkish");
+    AUTO("auto", "自动识别", "自动识别", "the detected source language"),
+    ZH("zh", "简体中文", "中文", "Simplified Chinese"),
+    EN("en", "English", "英语", "English"),
+    DE("de", "Deutsch", "德语", "German"),
+    FR("fr", "Français", "法语", "French"),
+    JA("ja", "日本語", "日语", "Japanese"),
+    RU("ru", "Русский", "俄语", "Russian"),
+    ES("es", "Español", "西班牙语", "Spanish"),
+    IT("it", "Italiano", "意大利语", "Italian"),
+    PT("pt", "Português", "葡萄牙语", "Portuguese"),
+    KO("ko", "한국어", "韩语", "Korean"),
+    NL("nl", "Nederlands", "荷兰语", "Dutch"),
+    PL("pl", "Polski", "波兰语", "Polish"),
+    TR("tr", "Türkçe", "土耳其语", "Turkish");
 
     private final String code;
     private final String displayName;
+    private final String zhName;
     private final String promptName;
 
-    TranslationLanguage(String code, String displayName, String promptName) {
+    TranslationLanguage(String code, String displayName, String zhName, String promptName) {
         this.code = code;
         this.displayName = displayName;
+        this.zhName = zhName;
         this.promptName = promptName;
     }
 
     public String code() { return code; }
     public String displayName() { return displayName; }
+    /** 面板显示用的中文名（英语/日语/法语…）。 */
+    public String zhName() { return zhName; }
     public String promptName() { return promptName; }
 
     /** Canonicalizes ISO code, language name, hyphen and underscore spellings. */

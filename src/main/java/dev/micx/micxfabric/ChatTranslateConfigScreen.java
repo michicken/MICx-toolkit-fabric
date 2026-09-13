@@ -96,7 +96,8 @@ public final class ChatTranslateConfigScreen extends ModuleConfigScreen {
 
     private static String languageLabel() {
         TranslationLanguage language = ChatTranslateModule.instance().outgoingTargetLanguage();
-        return language.displayName() + " (" + language.code() + ")";
+        if (language == TranslationLanguage.AUTO) return "自动识别 Auto";
+        return language.zhName() + " " + language.promptName();
     }
 
     @Override
