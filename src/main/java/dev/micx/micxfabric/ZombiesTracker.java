@@ -333,6 +333,7 @@ public final class ZombiesTracker {
         try { ZombiesExplorerModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
         try { WaveSpawnSoundModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
         try { WindowSpawnCounterModule.instance().onRoundChanged(value); } catch (Throwable ignored) {}
+        try { dev.micx.micxfabric.AimbotModule.onRoundChanged(value); } catch (Throwable ignored) {}
     }
 
     private void updateRound(int value, long now) {

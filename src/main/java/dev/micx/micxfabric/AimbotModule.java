@@ -21,6 +21,7 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -108,8 +109,12 @@ public final class AimbotModule implements Module {
 
     private final AimbotConfig config = new AimbotConfig();
     private final Map<Integer, Long> threatUntil = new HashMap<>();
-    /** 无敌怪（跨回合存活满 2 回合）追踪：命中后不再选靶/锁定（0.2.79）。 */
+    /** 无敌怪（跨回合存活，永不复原）追踪：命中后不再选靶/锁定（0.2.79；2026-09-13 口径=跨 1 次回合边界）。 */
     private final ImmortalMobTracker immortalMobs = new ImmortalMobTracker();
+    /** 被动无敌怪（5s 可逆 / 10s 不可逆）快速判定（0.2.85，2026-09-13 用户定稿）。 */
+    private final PassiveImmortalTracker passiveImmortals = new PassiveImmortalTracker();
+    /** 上一回合号：回退（同世界新局重开）时清空被动标记。 */
+    private static int lastSeenRound;
     private boolean enabled;
     private int lockedTargetId = -1;
     private Vec3 lastLockedDir;
@@ -252,6 +257,7 @@ public final class AimbotModule implements Module {
         resetInput();
         threatUntil.clear();
         immortalMobs.reset();
+        passiveImmortals.reset();
         lastLevel = null;
     }
 
@@ -353,6 +359,33 @@ public final class AimbotModule implements Module {
         INSTANCE.threatUntil.put(attacker.getId(), System.currentTimeMillis() + THREAT_TTL_MS);
     }
 
+    /** 怪受伤红闪入口（MixinClientPacketListener）：喂被动无敌怪判定；可逆层被真实伤害证明可杀时复原。 */
+    public static void recordMobHurt(int entityId, double x, double y, double z) {
+        long now = System.currentTimeMillis();
+        int event = INSTANCE.passiveImmortals.onMobHurt(entityId, x, y, z, now);
+        if (event == 2) {
+            Minecraft client = Minecraft.getInstance();
+            if (client != null && client.player != null) {
+                client.player.sendSystemMessage(ChatMessageStyles.notice(
+                        "无敌怪 #" + entityId + " 受到真实伤害，已复原为普通怪"));
+            }
+        }
+    }
+
+    /** 远程玩家主手挥臂入口（MixinClientPacketListener）：挥剑相关性的信号源。 */
+    public static void recordRemotePlayerSwing(int entityId, double x, double y, double z) {
+        long now = System.currentTimeMillis();
+        INSTANCE.passiveImmortals.onPlayerSwing(entityId, x, y, z, now);
+    }
+
+    /** 回合变化入口（ZombiesTracker）：回合回退=同世界新局重开，实体 id 复用，清空被动标记。 */
+    public static void onRoundChanged(int round) {
+        if (round > 0 && round < lastSeenRound) {
+            INSTANCE.passiveImmortals.reset();
+        }
+        if (round > 0) lastSeenRound = round;
+    }
+
     @Override
     public void tick(Minecraft client) {
         config.load();
@@ -367,6 +400,11 @@ public final class AimbotModule implements Module {
             forceReacquire = false;
         }
         long now = System.currentTimeMillis();
+        // 本地玩家挥臂也是「挥剑相关」信号源（自己铁剑左键同样会激怒无敌怪）。
+        if (client.player.swinging) {
+            passiveImmortals.onPlayerSwing(client.player.getId(),
+                    client.player.getX(), client.player.getY(), client.player.getZ(), now);
+        }
         removeExpiredThreats(now);
         if (!isActiveHere(client)) {
             resetActiveGate();
@@ -529,9 +567,35 @@ public final class AimbotModule implements Module {
                     || living == client.player || living.getId() < 0) continue;
             if (living instanceof Player || living instanceof WitherBoss) continue;
             if (!AimLeadModule.isTarget(living)) continue;
-            // 无敌怪（同一局内持续存在满 2 个回合，含巨人）不再选靶/锁定；
-            // 追踪对所有目标怪生效——即便本 tick 被 ignore 开关排除也不会断档。
-            if (immortalMobs.isImmortal(living.getId(), round)) continue;
+            // 无敌怪两层追踪（含巨人）：①跨回合存活（永不复原）②被动行为判定（5s 可逆/10s 不可逆，
+            // 被左键激怒后仍保持排除）。追踪在 ignore 开关之前，保证不断档。
+            Player nearestPlayer = null;
+            double nearestPlayerDistSq = Double.MAX_VALUE;
+            for (Player p : client.level.players()) {
+                if (!p.isAlive()) continue;
+                double d = living.distanceToSqr(p);
+                if (d < nearestPlayerDistSq) {
+                    nearestPlayerDistSq = d;
+                    nearestPlayer = p;
+                }
+            }
+            if (nearestPlayer != null) {
+                double dx = nearestPlayer.getX() - living.getX();
+                double dz = nearestPlayer.getZ() - living.getZ();
+                double yawTo = Math.toDegrees(Math.atan2(dz, dx)) - 90.0;
+                float lookDelta = Math.abs(Mth.wrapDegrees(living.getYHeadRot() - (float) yawTo));
+                int passiveEvent = passiveImmortals.assessTick(living.getId(), living.getX(), living.getZ(),
+                        nearestPlayer.getX(), nearestPlayer.getZ(), nearestPlayerDistSq, lookDelta, now);
+                if (passiveEvent == 1) {
+                    client.player.sendSystemMessage(ChatMessageStyles.notice(
+                            "疑似无敌怪 #" + living.getId() + "（5s 被动·可逆）"));
+                } else if (passiveEvent == 2) {
+                    client.player.sendSystemMessage(ChatMessageStyles.notice(
+                            "确认无敌怪 #" + living.getId() + "（10s 被动·不可逆）"));
+                }
+            }
+            if (immortalMobs.isImmortal(living.getId(), round)
+                    || passiveImmortals.isExcluded(living.getId())) continue;
             if (isChildWolf(living)) continue;
 
             boolean too = isToo(living);

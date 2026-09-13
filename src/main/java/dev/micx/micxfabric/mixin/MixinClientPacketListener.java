@@ -9,6 +9,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
@@ -115,6 +117,33 @@ public abstract class MixinClientPacketListener {
                 Entity zeEnt = mc.level.getEntity(packet.getId());
                 if (zeEnt != null) dev.micx.micxfabric.ZombiesExplorerModule.instance().onEntityJoin(zeEnt);
             }
+        } catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "handleAnimate", at = @At("RETURN"))
+    private void micx$recordSwing(ClientboundAnimatePacket packet, CallbackInfo callbackInfo) {
+        // 只收玩家挥臂（挥剑相关性信号）；怪物自身挥臂不采集——打窗户≠锁敌玩家，
+        // 打窗怪的误判由真实伤害计时兜底。本地玩家不收包，由 AimbotModule.tick 自喂。
+        if (packet.getAction() != ClientboundAnimatePacket.SWING_MAIN_HAND) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) return;
+        Entity entity = client.level.getEntity(packet.getId());
+        if (entity == null || !(entity instanceof net.minecraft.world.entity.player.Player)) return;
+        try {
+            dev.micx.micxfabric.AimbotModule.recordRemotePlayerSwing(
+                    entity.getId(), entity.getX(), entity.getY(), entity.getZ());
+        } catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "handleHurtAnimation", at = @At("RETURN"))
+    private void micx$recordHurt(ClientboundHurtAnimationPacket packet, CallbackInfo callbackInfo) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) return;
+        Entity entity = client.level.getEntity(packet.id());
+        if (entity == null || entity instanceof net.minecraft.world.entity.player.Player) return;
+        try {
+            dev.micx.micxfabric.AimbotModule.recordMobHurt(
+                    entity.getId(), entity.getX(), entity.getY(), entity.getZ());
         } catch (Throwable ignored) {}
     }
 

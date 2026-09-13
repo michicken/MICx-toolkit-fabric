@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 无敌怪追踪口径：某怪在同一局内持续存在满 2 个回合（第 N 回合首见、第 N+1 回合
- * 仍在场）即判无敌；回合未知不判；回合回退（新局）重置该 id 的记录。
+ * 无敌怪追踪口径：某怪在同一局内跨过 1 次回合边界仍在场（第 N 回合首见、第 N+1 回合
+ * 仍在场）即判无敌——永不复原；回合未知不判；回合回退（新局）重置该 id 的记录。
  */
 class ImmortalMobTrackerTest {
 
@@ -24,7 +24,7 @@ class ImmortalMobTrackerTest {
     void survivingIntoTheNextRoundMarksImmortal() {
         ImmortalMobTracker tracker = new ImmortalMobTracker();
         assertFalse(tracker.isImmortal(42, 15));   // 首见 R15
-        // 存在满 2 个回合：R16 仍在场 → 判无敌
+        // 跨过 1 次回合边界：R16 仍在场 → 判无敌
         assertTrue(tracker.isImmortal(42, 16));
         assertTrue(tracker.isImmortal(42, 17));
         // 不同 id 互不影响
