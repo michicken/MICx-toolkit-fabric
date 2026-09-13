@@ -130,8 +130,7 @@ public final class StarterGuideScreen extends Screen {
                 left, y, TEXT_FAINT, right - left);
 
         int bottom = cardY + cardH - 26;
-        drawButton(graphics, "跳过", left, bottom, 64, 18, false, mouseX, mouseY, left, bottom, 64, 18, TEXT_DIM);
-        hits.add(new Hit(left, bottom, 64, 18, this::complete));
+        graphics.text(font, "完成绑定后点击按钮进入面板（本引导不可跳过）", left, bottom + 5, TEXT_FAINT);
         int finishW = 132;
         int finishX = right - finishW;
         drawButton(graphics, "完成，打开面板", finishX, bottom, finishW, 18, false, mouseX, mouseY, finishX, bottom, finishW, 18, TEXT);
@@ -264,12 +263,8 @@ public final class StarterGuideScreen extends Screen {
             listeningIndex = -1;
             return true;
         }
-        if (event.isEscape()) {
-            complete();
-            return true;
-        }
-        if (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER) {
-            complete();
+        // 引导不可跳过：ESC/回车不关闭也不完成，唯一出口是“完成”按钮
+        if (event.isEscape() || event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER) {
             return true;
         }
         return super.keyPressed(event);

@@ -63,6 +63,8 @@ public final class MicxPanelScreen extends Screen {
     private int hudLayoutX;
     private int hudLayoutY;
     private int hudLayoutW;
+    private int guideX;
+    private int guideW;
 
     public MicxPanelScreen(Screen parent) {
         super(Component.literal("MICx Toolkit"));
@@ -188,6 +190,11 @@ public final class MicxPanelScreen extends Screen {
         boolean hovered = hudLayoutX <= lastMouseX && lastMouseX < hudLayoutX + hudLayoutW
                 && hudLayoutY <= lastMouseY && lastMouseY < hudLayoutY + 16;
         drawHeaderEntry(graphics, "HUD Layout", hudLayoutX, hudLayoutY, hudLayoutW, hovered);
+        guideW = 58;
+        guideX = hudLayoutX - 6 - guideW;
+        boolean guideHovered = guideX <= lastMouseX && lastMouseX < guideX + guideW
+                && hudLayoutY <= lastMouseY && lastMouseY < hudLayoutY + 16;
+        drawHeaderEntry(graphics, "Guide", guideX, hudLayoutY, guideW, guideHovered);
     }
 
     private int lastMouseX;
@@ -453,6 +460,12 @@ public final class MicxPanelScreen extends Screen {
         int layoutW = 78;
         int layoutX = tutorialX - 6 - layoutW;
         int layoutY = cardY + 7;
+        int guideX = layoutX - 6 - 58;
+        if (mouseX >= guideX && mouseX < guideX + 58
+                && mouseY >= layoutY && mouseY < layoutY + 16) {
+            minecraft.setScreenAndShow(new StarterGuideScreen(this));
+            return true;
+        }
         if (mouseX >= layoutX && mouseX < layoutX + layoutW
                 && mouseY >= layoutY && mouseY < layoutY + 16) {
             minecraft.setScreenAndShow(new HudLayoutEditorScreen(this));
