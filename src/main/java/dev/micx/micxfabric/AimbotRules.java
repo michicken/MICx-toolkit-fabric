@@ -70,10 +70,27 @@ public final class AimbotRules {
      */
     public static final int GROUP_DEPRIORITIZED = -1;
 
+    /**
+     * 「头顶高处（高度差 &gt; aboveHeightBlocks）」档：与 {@link #GROUP_DEPRIORITIZED}
+     * 同属「首选档无可打目标时才参与」的末位档，但排在 baby 之后（两边同时成立时取更小值）。
+     *
+     * <p>用户定稿 2026-09-14（暴力模式）：高处怪不再整只跳过，改为末位锁定——地面怪
+     * 全部不可打时才去锁空中的怪。
+     */
+    public static final int GROUP_HIGH_ABOVE = -2;
+
+    /**
+     * 「巨人末位」档：Prio Giant 开启时的巨人组。
+     *
+     * <p>用户定稿 2026-09-14（暴力模式）：Clown 模式出现巨人时<b>先清小怪</b>，
+     * 巨人不抢优先权，小怪清完 / 全不可打时才锁巨人。
+     */
+    public static final int GROUP_GIANT_BACKUP = -3;
+
     /** BRUTE 扫射生效时 baby 恢复的最高组。 */
     public static final int GROUP_BABY_FIRST = 2;
 
-    /** 小丑/巨人优先组。 */
+    /** 小丑优先组。 */
     public static final int GROUP_PRIORITY = 1;
 
     /**
@@ -810,13 +827,17 @@ public final class AimbotRules {
      * <p>用户定稿 2026-09-11：<b>废弃 Prio Baby 开关</b>——baby 僵尸默认降到
      * {@link #GROUP_DEPRIORITIZED}（排在普通怪之后，只有再无别的可打目标时才锁），
      * 仅当 BRUTE 扫射生效（{@code babyFirst}）时恢复 {@link #GROUP_BABY_FIRST} 最高组。
-     * 小丑/巨人优先组不受影响。
+     *
+     * <p>用户定稿 2026-09-14（暴力模式）：<b>Prio Giant 不再把巨人提到优先组</b>。
+     * Clown 模式下出现巨人时先清小怪、巨人留到最后——巨人降到
+     * {@link #GROUP_GIANT_BACKUP}，普通怪全不可打时才锁它。
+     * {@code prioClown}（小丑僵尸优先组）语义不变。
      */
     public static int groupRank(boolean prioClown, boolean prioGiant, boolean babyFirst,
                                 boolean baby, boolean clown, boolean giant) {
         if (babyFirst && baby) return GROUP_BABY_FIRST;
         if (prioClown && clown) return GROUP_PRIORITY;
-        if (prioGiant && giant) return GROUP_PRIORITY;
+        if (prioGiant && giant) return GROUP_GIANT_BACKUP;
         return baby ? GROUP_DEPRIORITIZED : 0;
     }
 

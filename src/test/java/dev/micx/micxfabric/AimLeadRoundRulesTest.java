@@ -142,4 +142,84 @@ class AimLeadRoundRulesTest {
         // 下落怪（预测点远低于脚底）→ 查
         assertTrue(AimLeadRoundRules.groundClampNeeded(3.0, 10.5));
     }
+
+    /* ---- 转向检测 + τ 缩放（打转治乱）---- */
+
+    /** 直线匀速 → 角速度 0（不是无效值）；速度为零才是无效对。 */
+    @Test
+    void turnRateIsZeroWhenStraightAndInvalidWhenStill() {
+        assertEquals(0.0, AimLeadRoundRules.turnDegPerSec(1, 0, 1, 0, 0.1), 1e-9);
+        assertEquals(0.0, AimLeadRoundRules.turnDegPerSec(1, 0, 2, 0, 0.1), 1e-9);   // 同向变速仍为 0
+        // 停在原地 → 无方向可言，无效
+        assertEquals(-1.0, AimLeadRoundRules.turnDegPerSec(0, 0, 0, 0, 0.1), 1e-9);
+        assertEquals(-1.0, AimLeadRoundRules.turnDegPerSec(1, 0, 0, 0, 0.1), 1e-9);
+        assertEquals(-1.0, AimLeadRoundRules.turnDegPerSec(1, 0, 1, 0, 0.0), 1e-9);
+    }
+
+    /** 90° 转向耗时 0.1s = 900°/s。 */
+    @Test
+    void turnRateMeasuresAngularSpeed() {
+        assertEquals(900.0, AimLeadRoundRules.turnDegPerSec(1, 0, 0, 1, 0.1), 1e-6);
+        // 反向：180° / 0.2s = 900°/s（|角度| 语义，符号无关）
+        assertEquals(900.0, AimLeadRoundRules.turnDegPerSec(1, 0, -1, 0, 0.2), 1e-6);
+        // 小角度转动 5° / 0.1s = 50°/s
+        double small = AimLeadRoundRules.turnDegPerSec(1, 0, Math.cos(Math.toRadians(5)), Math.sin(Math.toRadians(5)), 0.1);
+        assertEquals(50.0, small, 1e-6);
+    }
+
+    /** 缩放档位：直行 1.0 / 转向 0.35 / 打转 0.15；无效值不算转向。 */
+    @Test
+    void tauScaleHasThreeGears() {
+        assertEquals(1.0, AimLeadRoundRules.tauScale(0.0), 1e-9);
+        assertEquals(1.0, AimLeadRoundRules.tauScale(-1.0), 1e-9);   // 无效 → 直行
+        assertEquals(1.0, AimLeadRoundRules.tauScale(89.9), 1e-9);
+        assertEquals(AimLeadRoundRules.TAU_SCALE_TURNING, AimLeadRoundRules.tauScale(90.0), 1e-9);
+        assertEquals(AimLeadRoundRules.TAU_SCALE_TURNING, AimLeadRoundRules.tauScale(179.9), 1e-9);
+        assertEquals(AimLeadRoundRules.TAU_SCALE_CIRCLING, AimLeadRoundRules.tauScale(180.0), 1e-9);
+        assertEquals(AimLeadRoundRules.TAU_SCALE_CIRCLING, AimLeadRoundRules.tauScale(720.0), 1e-9);
+        assertTrue(AimLeadRoundRules.TAU_SCALE_CIRCLING < AimLeadRoundRules.TAU_SCALE_TURNING);
+    }
+
+    @Test
+    void circlingFlagMatchesTauScaleThreshold() {
+        assertFalse(AimLeadRoundRules.isCircling(179.9));
+        assertTrue(AimLeadRoundRules.isCircling(180.0));
+        assertTrue(AimLeadRoundRules.isCircling(900.0));
+    }
+
+    /* ---- 地形跟随 ---- */
+
+    /** 旧口径拿不到的上坡抬升，新口径要能触发查询。 */
+    @Test
+    void terrainClampTriggersOnRisingGround() {
+        // 怪站在 y=11 表面（脚底 11.0），前方台阶面高 12.0：预测点 11.2 在上坡上方
+        // → 旧口径（< floor+1 = 12.0）不查；新口径要查出来才能把框抬到台阶。
+        assertTrue(AimLeadRoundRules.groundClampNeeded(11.2, 11.0));
+        assertTrue(AimLeadRoundRules.needsTerrainClamp(11.2, 11.0));
+        // 预测点远高于脚下（> footY + 1.2）→ 地形查询无意义，跳过
+        assertFalse(AimLeadRoundRules.needsTerrainClamp(12.5, 11.0));
+        assertFalse(AimLeadRoundRules.needsTerrainClamp(20.0, 11.0));
+        // 下落怪（预测点远低于脚底）→ 查
+        assertTrue(AimLeadRoundRules.needsTerrainClamp(3.0, 11.0));
+    }
+
+    /** 面高够得着才允许抬升：台阶/半砖可以，两格墙不可以。 */
+    @Test
+    void surfaceRiseIsCappedToOneBlockRange() {
+        assertTrue(AimLeadRoundRules.withinFootRise(12.0, 11.0));    // 抬 1.0 格（台阶/半砖上沿）
+        assertTrue(AimLeadRoundRules.withinFootRise(11.5, 11.0));    // 半砖上沿
+        assertTrue(AimLeadRoundRules.withinFootRise(11.0, 11.0));    // 同高
+        assertTrue(AimLeadRoundRules.withinFootRise(10.0, 11.0));    // 落地
+        assertFalse(AimLeadRoundRules.withinFootRise(13.0, 11.0));   // 两格墙 → 不跟
+        assertFalse(AimLeadRoundRules.withinFootRise(20.0, 11.0));
+    }
+
+    /** 360° 环绕角度差。 */
+    @Test
+    void angleDeltaWrapsAt360() {
+        assertEquals(10.0, AimLeadRoundRules.angleDeltaDeg(0.0, 10.0), 1e-9);
+        assertEquals(-10.0, AimLeadRoundRules.angleDeltaDeg(-180.0, 170.0), 1e-9);
+        assertEquals(180.0, AimLeadRoundRules.angleDeltaDeg(0.0, 180.0), 1e-9);
+        assertEquals(0.0, AimLeadRoundRules.angleDeltaDeg(720.0, 0.0), 1e-9);
+    }
 }

@@ -59,7 +59,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>转向检测：新旧半窗 cos&lt;0.766 或速率比 &lt;0.4/&gt;2.5 → lowConf + 短窗响应。</li>
  *   <li>急停/停更：STOP_WINDOW 160ms 净位移 + 中位速度 → justStopped；
  *       SERVER_STALE 250ms + 慢速豁免 0.3 m/s → serverStale；shouldHoldBack 收缩。</li>
- *   <li>碰撞钳制（X/Z sweep，120ms 轨迹缓存）+ groundBelow 防穿地（300ms 缓存）。</li>
+ *   <li>碰撞钳制（X/Z sweep，120ms 轨迹缓存 + 脚底换列立即失效，贴脚下板）+ 地形跟随（落点面高夹取，300ms 缓存）。</li>
  *   <li>帧间平滑 rx/ry/rz：移动 0.78 / 收缩 0.92。</li>
  *   <li>渲染：L2 命中=绿(20% 填充)、正常=黄(11%)、lowConf=灰(5%)、L0 影子=青；
  *       绿点 HUD 以 fireNowAtMs 粘滞 120ms。</li>
@@ -108,6 +108,8 @@ public final class AimLeadModule implements Module {
     private volatile long fireNowAtMs = 0L;
     private final double[] pvx = new double[8], pvy = new double[8], pvz = new double[8];
     private final double[] medScratch = new double[8];
+    /** 转向角速度中位数暂存（TURN_WINDOW_PAIRS 对）。 */
+    private final double[] turnScratch = new double[AimLeadRoundRules.TURN_WINDOW_PAIRS];
 
     private AimLeadModule() {
         LevelRenderEvents.COLLECT_SUBMITS.register(this::collectSubmits);
@@ -281,6 +283,8 @@ public final class AimLeadModule implements Module {
                 }
             }
             track.add(now, pos.x, pos.y, pos.z);
+            // 提前量误差回检（渲染帧写预测、tick 里核对，避免渲染路径重复计算）
+            trackLeadError(living, track, now, tauMs());
         }
         // 2s 未见的轨迹清理
         tracks.entrySet().removeIf(entry ->
@@ -536,9 +540,38 @@ public final class AimLeadModule implements Module {
             vy = median(pvy, 0, m);
             vz = median(pvz, 0, m);
         }
+        // 转向检测 + τ 缩放：打转/转向中缩短提前量，但框照常显示（低速时命中门槛大，
+        // 把框甩在切线上反而必失）。角速度取最近 TURN_WINDOW_PAIRS 对的中位数抗噪；
+        // 全为无效对（停在原地）时视为未转向。
+        double turn = 0.0;
+        {
+            int m = Math.min(AimLeadRoundRules.TURN_WINDOW_PAIRS, pairs - 1);
+            if (m >= 1) {
+                double[] tr = turnScratch;
+                int tc = 0;
+                for (int k = 0; k + 2 < pairs && tc < m; k++) {
+                    int a = track.idx(k), b = track.idx(k + 1), c = track.idx(k + 2);
+                    double dtSeg = (track.ts[a] - track.ts[c]) / 1000.0;
+                    double r = AimLeadRoundRules.turnDegPerSec(pvx[k], pvz[k], pvx[k + 1], pvz[k + 1], dtSeg);
+                    if (r >= 0.0) {
+                        tr[tc] = r;
+                        tc++;
+                    }
+                }
+                if (tc > 0) {
+                    java.util.Arrays.sort(tr, 0, tc);
+                    turn = (tc & 1) == 1 ? tr[tc / 2] : (tr[tc / 2 - 1] + tr[tc / 2]) * 0.5;
+                }
+            }
+        }
         // 水平限幅（垂直不限：高空下落可达 60+）
         double horizSpeed = Math.sqrt(vx * vx + vz * vz);
         if (horizSpeed > MAX_SPEED) return null;
+
+        double tauScale = AimLeadRoundRules.tauScale(turn);
+        double effectiveTauS = tauS * tauScale;
+        track.turnDegPerSec = turn;
+        track.tauScale = tauScale;
 
         // 急停快路径：最近 STOP_WINDOW 内 3D 净位移 + 中位速度
         boolean justStopped = false;
@@ -579,49 +612,67 @@ public final class AimLeadModule implements Module {
             lp.lowConf = true;
             return lp;
         }
-        double leadX = vx * tauS;
-        double leadZ = vz * tauS;
-        // 碰撞夹取：结果按轨迹缓存 120ms
+        double leadX = vx * effectiveTauS;
+        double leadZ = vz * effectiveTauS;
+        double footY = track.ys[i0];
+        // 碰撞夹取：结果按轨迹缓存（120ms，或脚底换列立即失效——上台阶/贴墙时列变化最快）
+        int ax = (int) Math.floor(track.xs[i0]);
+        int az = (int) Math.floor(track.zs[i0]);
         double cdx, cdz;
-        if (now - track.clampAtMs > 120L) {
+        if (now - track.clampAtMs > 120L || ax != track.clAx || az != track.clAz) {
             double[] cl = clampLeadToCollision(entity,
-                    new Vec3(track.xs[i0], track.ys[i0], track.zs[i0]), leadX, leadZ);
+                    new Vec3(track.xs[i0], footY, track.zs[i0]), leadX, leadZ);
             track.clx = cl[0];
             track.clz = cl[1];
             track.clampAtMs = now;
+            track.clAx = ax;
+            track.clAz = az;
         }
         cdx = track.clx;
         cdz = track.clz;
         lp.x = track.xs[i0] + cdx;
         lp.z = track.zs[i0] + cdz;
-        double py = track.ys[i0] + vy * tauS;
-        // 防穿地：预测点低于脚下最近固体表面时钳制（300ms 缓存 + 方块列变化失效）
-        double footY = track.ys[i0];
-        if (AimLeadRoundRules.groundClampNeeded(py, footY)) {
-            int gx = (int) Math.floor(track.xs[i0]);
+        double py = footY + vy * effectiveTauS;
+        // 地形跟随：拿落点处方块的面高夹取预测 y —— 上下坡/台阶/半砖都跟着走。
+        // 落点面高高出脚下抬升上限（> footY + 1.2）时不是可站立地形（墙/两格台阶），
+        // 不夹取，交给 clampLeadToCollision 的水平截断处理。
+        if (AimLeadRoundRules.needsTerrainClamp(py, footY)) {
+            int gx = (int) Math.floor(track.xs[i0] + cdx);
+            int gz = (int) Math.floor(track.zs[i0] + cdz);
             int gy = (int) Math.floor(footY);
-            int gz = (int) Math.floor(track.zs[i0]);
-            if (now - track.grAtMs > 300L || track.grX != gx || track.grY0 != gy || track.grZ != gz) {
-                track.grGround = groundBelow(entity, new Vec3(track.xs[i0], footY, track.zs[i0]));
+            if (now - track.grAtMs > 300L
+                    || track.grX != gx || track.grY0 != gy || track.grZ != gz) {
+                track.grGround = surfaceAt(entity, gx, gz, gy);
                 track.grX = gx;
                 track.grY0 = gy;
                 track.grZ = gz;
                 track.grAtMs = now;
             }
-            if (py < track.grGround) py = track.grGround;
+            if (AimLeadRoundRules.withinFootRise(track.grGround, footY) && py < track.grGround) {
+                py = track.grGround;
+            }
         }
         lp.y = py;
         lp.lowConf = lowConf;
+        storeLeadPrediction(track, lp, now, tauS);
         return lp;
     }
 
-    /** 把水平外推位移按世界碰撞截断（X/Z 逐轴 sweep 近似）。异常回退为不截断。 */
+    /**
+     * 把水平外推位移按世界碰撞截断——怪不能穿墙/半砖/破窗。
+     *
+     * <p>碰撞箱用【贴脚下板】（脚底起 {@link #FOOT_SLAB_H} 高，而非全身高）：全身高箱会把
+     * 台阶、半砖当成墙提前截断，预测点卡在台阶下沿；脚下板贴合 MC 的台阶抬升语义——
+     * 半砖（0.5）/台阶（0.5~0.6）能上，墙/窗仍然挡。超过一格的方块由
+     * {@link #surfaceAt} 的面高判断拦下（面高超出抬升上限 → 不跟随）。
+     * 异常回退为不截断（宁可穿也不崩渲染）。
+     */
     private static double[] clampLeadToCollision(Entity entity, Vec3 origin, double dx, double dz) {
         try {
             Vec3 delta = new Vec3(dx, 0, dz);
             double w = entity.getBbWidth() * 0.5;
             AABB box = new AABB(origin.x - w, origin.y, origin.z - w,
-                    origin.x + w, origin.y + entity.getBbHeight(), origin.z + w);
+                    origin.x + w, origin.y + FOOT_SLAB_H, origin.z + w);
             Vec3 allowed = Entity.collideBoundingBox(entity, delta, box, entity.level(),
                     Entity.collectAllColliders(entity, entity.level(), box.expandTowards(delta)));
             return new double[]{allowed.x, allowed.z};
@@ -630,28 +681,124 @@ public final class AimLeadModule implements Module {
         }
     }
 
-    /** 预测点 y 下限：脚底向下 6 格内最近固体表面；找不到回退 -∞。 */
-    private static double groundBelow(Entity entity, Vec3 foot) {
+    /** 贴脚下板高度：只有脚底这一层参与水平碰撞，让框能跟着怪上台阶/上半砖/上坡。 */
+    private static final double FOOT_SLAB_H = 0.3;
+
+    /* ==================== 预测误差诊断（面板读数，不参与预测） ==================== */
+
+    /**
+     * 记录一次预测点，供 τ 后回检用。同一预测点在相邻帧重复出现时（预览帧与 Aimbot
+     * 路径各调一次）不重复入队。
+     */
+    private static void storeLeadPrediction(Track track, LeadPoint lp, long now, double tauS) {
+        if (now - track.lastPredRecordMs < 50L) return;
+        track.lastPredRecordMs = now;
+        int i = track.predCount % track.predAt.length;
+        track.predX[i] = lp.x;
+        track.predY[i] = lp.y;
+        track.predZ[i] = lp.z;
+        track.predAt[i] = now;
+        track.predCount++;
+    }
+
+    /**
+     * 回检：把 τ 前记录的预测位置与实体【当前】位置比对，得提前量误差（格）。
+     *
+     * <p>τ 就是"现在开枪、服务器结算时刻"的提前量，所以 τ 后实体所在位置才是正确落点；
+     * 偏差序列就是预测精度本身。窗口限制在 0.6τ~2.5τ：更早的样本对应的测速输入已过期，
+     * 更晚的没有意义。只保留最近 12 个样本。
+     */
+    private static void trackLeadError(LivingEntity entity, Track track, long now, double tauMs) {
+        for (int i = 0; i < track.predCount; i++) {
+            long at = track.predAt[i % track.predAt.length];
+            if (at <= 0L) continue;
+            long elapsed = now - at;
+            if (elapsed < tauMs * 0.6) continue;
+            if (elapsed > tauMs * 2.5) {
+                track.predAt[i % track.predAt.length] = 0L;   // 过期样本作废
+                continue;
+            }
+            if (entity.isRemoved()) continue;
+            double dx = entity.getX() - track.predX[i % track.predAt.length];
+            double dy = entity.getY() - track.predY[i % track.predAt.length];
+            double dz = entity.getZ() - track.predZ[i % track.predAt.length];
+            if (dx * dx + dy * dy + dz * dz > 4_000.0) {
+                track.predAt[i % track.predAt.length] = 0L;   // 传送毛刺不算误差样本
+                continue;
+            }
+            track.leadErrMs[track.leadErrIdx] = elapsed;
+            track.leadErrBlocks[track.leadErrIdx] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            track.leadErrIdx = (track.leadErrIdx + 1) % track.leadErrBlocks.length;
+            track.leadErrCount++;
+            track.predAt[i % track.predAt.length] = 0L;       // 一个样本只回检一次
+        }
+    }
+
+    /**
+     * 当前预测诊断快照（所有活跃轨迹的合并读数，面板显示用）。
+     * 提前量误差 = τ 前预测点与实体现状的距离中位数（格）；
+     * 角速度为场上最强转向目标的读数。
+     */
+    public LeadDiagnostics leadDiagnostics() {
+        int n = 0;
+        double bestTurn = 0.0;
+        double[] buf = new double[24];
+        for (Track track : tracks.values()) {
+            if (track.turnDegPerSec > bestTurn) bestTurn = track.turnDegPerSec;
+            int m = Math.min(track.leadErrCount, track.leadErrBlocks.length);
+            for (int i = 0; i < m && n < buf.length; i++) {
+                buf[n] = track.leadErrBlocks[i];
+                n++;
+            }
+        }
+        double err = Double.NaN;
+        if (n > 0) {
+            double[] sorted = java.util.Arrays.copyOf(buf, n);
+            java.util.Arrays.sort(sorted);
+            err = (n & 1) == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) * 0.5;
+        }
+        return new LeadDiagnostics(bestTurn, AimLeadRoundRules.isCircling(bestTurn), err, n);
+    }
+
+    /** 预测诊断（面板照实显示，不参与任何预测判断）。 */
+    public record LeadDiagnostics(double turnDegPerSec, boolean circling,
+                                  double leadErrBlocks, int leadErrSamples) {
+    }
+
+    /**
+     * 指定方块列的落点面高（可站立表面 y = 方块顶面）或 {@link Double#NEGATIVE_INFINITY}。
+     *
+     * <p>扫描区间：floor(脚底 y) 向下 {@link #SURFACE_SCAN_DOWN} 格、向上
+     * {@link #SURFACE_SCAN_UP} 格。向上要够到台阶/半砖（面高会高于脚底）；
+     * 向下要够到下落怪即将落地的面。命中层【上方仍为非空碰撞】时判定为方块内部/墙脚，
+     * 不是可站立面，返回 -∞ 不夹取（否则两格高的墙会把预测点抬到天上）。
+     */
+    private static double surfaceAt(LivingEntity entity, int x, int z, int y0) {
         try {
             var level = entity.level();
-            int x = (int) Math.floor(foot.x);
-            int z = (int) Math.floor(foot.z);
-            int y0 = (int) Math.floor(foot.y);
-            BlockPos pos = new BlockPos(x, 0, z);
-            for (int dy = 0; dy <= 6; dy++) {
-                int y = y0 - dy;
-                if (y < level.getMinY()) break;
-                pos = pos.atY(y);
+            int minY = level.getMinY();
+            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+            for (int y = y0 + SURFACE_SCAN_UP; y >= y0 - SURFACE_SCAN_DOWN; y--) {
+                if (y < minY) break;
+                pos.set(x, y, z);
                 var state = level.getBlockState(pos);
-                if (!state.getCollisionShape(level, pos).isEmpty()) {
-                    return y + 1.0;
+                if (state.getCollisionShape(level, pos).isEmpty()) continue;
+                BlockPos above = pos.above();
+                if (above.getY() <= level.getMaxY()
+                        && !level.getBlockState(above).getCollisionShape(level, above).isEmpty()) {
+                    return Double.NEGATIVE_INFINITY;
                 }
+                return y + 1.0;
             }
             return Double.NEGATIVE_INFINITY;
         } catch (RuntimeException ignored) {
             return Double.NEGATIVE_INFINITY;
         }
     }
+
+    /** 落点面高扫描区间（格）：上探台阶/半砖，下探落地。 */
+    private static final int SURFACE_SCAN_UP = 2;
+    private static final int SURFACE_SCAN_DOWN = 4;
 
     /** 公开预瞄点（Magnet 幽灵框重建用）：当前 τ 的预测位置或 null。 */
     public AABB leadBoxFor(LivingEntity entity) {
@@ -1112,9 +1259,26 @@ public final class AimLeadModule implements Module {
         long lvAt = 0L;
         double clx = 0.0, clz = 0.0;                 // 最近一次碰撞钳制增量
         long clampAtMs = 0L;
+        int clAx = Integer.MIN_VALUE, clAz = Integer.MIN_VALUE;   // 钳制缓存的脚底列（换列立即失效）
         int grX = Integer.MIN_VALUE, grY0 = Integer.MIN_VALUE, grZ = Integer.MIN_VALUE;
         double grGround = Double.NEGATIVE_INFINITY;
         long grAtMs = 0L;
+
+        /* ---- 转向检测（打转治乱）---- */
+        double turnDegPerSec = 0.0;                  // 最近一次算出的角速度（诊断）
+        double tauScale = 1.0;                       // 最近一次的提前量缩放
+
+        /* ---- 提前量误差诊断（预测点 vs τ 后的真实位置）---- */
+        final double[] leadErrMs = new double[12];
+        final double[] leadErrBlocks = new double[12];
+        int leadErrCount = 0;
+        int leadErrIdx = 0;
+        final double[] predX = new double[16];
+        final double[] predZ = new double[16];
+        final double[] predY = new double[16];
+        final long[] predAt = new long[16];
+        int predCount = 0;
+        long lastPredRecordMs = 0L;
 
         void add(long t, double x, double y, double z) {
             int i = count % SAMPLE_CAP;

@@ -124,6 +124,17 @@ public final class AimbotModule implements Module {
     private int bruteSweepHeldId = -1;
     private double bruteSweepPrevYawOff = Double.NaN;
     private long bruteSweepNextHopAtMs;
+    /**
+     * 扫射锥体锚定 yaw（激活瞬间锁定，用户定稿 2026-09-14）。
+     *
+     * <p>旧实现把 FOV 半角相对【当前准星】判定，而准星会被扫射本身带着走，
+     * 锥体跟着漂移 → 实际可扫范围无限扩张（能全图扫）。现在改为激活那一刻的
+     * 准星 yaw 作为固定中心，整个激活周期内 FOV 判定都用它，跨度恒定 2×FOV。
+     * NaN = 未锚定（激活瞬间由下一帧补锚）。
+     */
+    private double bruteSweepAnchorYaw = Double.NaN;
+    /** 激活态边沿检测：false→true 的那一帧重新锚定（松开右键 / 关闭 Aimbot 后再次激活）。 */
+    private boolean activeGateOpen;
 
     private double joyYawOff;
     private double joyPitchOff;
@@ -407,8 +418,15 @@ public final class AimbotModule implements Module {
         }
         removeExpiredThreats(now);
         if (!isActiveHere(client)) {
+            activeGateOpen = false;
             resetActiveGate();
             return;
+        }
+        // 激活边沿：本次「按住右键 / 开启 Aimbot」的起点，扫射锥体以此刻的准星为固定中心。
+        // 激活周期内不重锚（clearLock / 扫射换向都不动它），松开后再次激活才会换新中心。
+        if (!activeGateOpen) {
+            activeGateOpen = true;
+            bruteSweepAnchorYaw = client.player.getYRot();
         }
         if (!config.joystick) {
             joyYawOff = 0.0;
@@ -608,8 +626,11 @@ public final class AimbotModule implements Module {
             if (c.ignoreSlime && slime) continue;
             if (c.ignoreVerticalFall && isVerticalFalling(living)) continue;
             if (c.ignoreMidFall && isMidFallDrop(living)) continue;
-            if (!aboveExempt && c.ignoreAbovePlayer && !isGhast(living)
-                    && AimbotRules.isTooHighAbove(living.getY(), py, c.aboveHeightBlocks)) continue;
+            // 头顶高处（高度差 > aboveHeightBlocks，默认 5 格）：不再硬排除，改为降到
+            // 「普通怪之后」档——地面怪全部不可打时才锁它们（用户定稿 2026-09-14）。
+            // R21 仍整条豁免（aboveExempt）；恶魂是飞行怪，照旧不参与该判定。
+            boolean highAbove = !aboveExempt && c.ignoreAbovePlayer && !isGhast(living)
+                    && AimbotRules.isTooHighAbove(living.getY(), py, c.aboveHeightBlocks);
             double dx = living.getX() - px;
             double dy = living.getY() - client.player.getY();
             double dz = living.getZ() - pz;
@@ -630,6 +651,9 @@ public final class AimbotModule implements Module {
                     ? AimbotRules.instaGroupRank(baby, slime, babyFirst)
                     : AimbotRules.groupRank(c.prioClown, c.prioGiant, babyFirst,
                     baby, clown, giant);
+            if (highAbove) {
+                group = Math.min(group, AimbotRules.GROUP_HIGH_ABOVE);
+            }
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
                     Math.sqrt(distSq)));
         }
@@ -799,34 +823,32 @@ public final class AimbotModule implements Module {
     }
 
     /**
-     * BRUTE 选靶。默认取排序第一（排序已把 TOO/巨人放最前，再按转向角最小）。
+     * BRUTE 选靶。默认取排序第一（排序已把 TOO 放最前，再按转向角最小）。
      * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对准星的
      * signed yaw 从左到右排好，依次停留并完整瞄准每一个，停留 dwellMs 后再跳下一个；
      * 扫到最右端重新回到最左。不做连续扫描线，也不做 360° 乱扫。
-     * 候选中存在巨人时不扫射，退回排序第一集中先杀巨人。
+     *
+     * <p>用户定稿 2026-09-14（暴力模式）：<b>扫射不再因场上存在巨人而停掉</b>。
+     * 巨人已由 {@link AimbotRules#GROUP_GIANT_BACKUP} 降到末位档——有小怪时巨人
+     * 根本不进扫射池，火力自然集中在小怪上；小怪清完只剩巨人时才整池扫巨人。
      */
     private Scored bruteChoice(Minecraft client, Vec3 eye, List<Scored> scored, long now) {
         if (!bruteSweepActive()) {
             resetBruteSweep();
             return scored.get(0);
         }
-        // 场上有可打的巨人不扫射：扫射按从左到右逐个锁定，会无视「巨人优先」排序
-        // 浪费火力。此时直接锁排序第一（compareScored 已把巨人排最前）集中先杀巨人；
-        // 巨人死光或暂时不可打（候选被挡丢弃）才恢复从左到右扫射（用户定稿 2026-09-11）。
-        for (Scored value : scored) {
-            if (isGiant(value.entity)) {
-                resetBruteSweep();
-                return scored.get(0);
-            }
-        }
-        float currentYaw = client.player.getYRot();
+        // 锥体中心 = 激活瞬间锁定的锚定 yaw（不是当前准星——旧实现相对当前准星判定，
+        // 准星被扫射带着走后锥体漂移，实际能扫到全图；用户 2026-09-14 定稿改为固定锚定）。
+        float anchorYaw = Float.isNaN((float) bruteSweepAnchorYaw)
+                ? client.player.getYRot()
+                : (float) bruteSweepAnchorYaw;
         int size = scored.size();
         double[] yawOff = new double[size];
         int[] slot = new int[size];
         int count = 0;
         for (int i = 0; i < size; i++) {
             float[] angles = calculateYawPitch(eye, scored.get(i).point);
-            double off = AimbotRules.angleDelta(currentYaw, angles[0]);
+            double off = AimbotRules.angleDelta(anchorYaw, angles[0]);
             if (!AimbotRules.bruteSweepInFov(off, config.bruteSweepFovDeg)) continue;
             int k = count++;
             while (k > 0 && yawOff[k - 1] > off) {
@@ -846,6 +868,9 @@ public final class AimbotModule implements Module {
                 Scored value = scored.get(slot[k]);
                 if (value.entity.getId() == bruteSweepHeldId) return value;
             }
+            // 停留期间目标死掉 / 移出锥体就立刻推进：不等满 dwell。
+            // 暴力模式不需要对着尸体停顿（用户定稿 2026-09-14），换目标本身就是瞬转。
+            bruteSweepNextHopAtMs = 0L;
         }
         int pos = AimbotRules.bruteSweepAdvance(yawOff, bruteSweepPrevYawOff,
                 BRUTE_SWEEP_ADVANCE_EPS_DEG);
@@ -853,7 +878,9 @@ public final class AimbotModule implements Module {
         Scored pick = scored.get(slot[pos]);
         bruteSweepHeldId = pick.entity.getId();
         bruteSweepPrevYawOff = yawOff[pos];
-        bruteSweepNextHopAtMs = now + Math.max(40, config.bruteSweepDwellMs);
+        // 0 = 不限停留（只按「目标死/移出」推进）；>0 = 最长停留上限，避免卡在难杀的目标上
+        int dwellMs = Math.max(0, config.bruteSweepDwellMs);
+        bruteSweepNextHopAtMs = dwellMs == 0 ? Long.MAX_VALUE : now + dwellMs;
         return pick;
     }
 

@@ -45,7 +45,77 @@ public final class AimLeadRoundRules {
     public static final double VERTICAL_SHOW_LEAD_BLOCKS = 0.10;
     public static final double VERTICAL_HIDE_LEAD_BLOCKS = 0.04;
 
+    /* ---- 转向检测 + τ 缩放（打转怪治乱：转向中缩短提前量，框仍正常显示） ---- */
+
+    /** 角速度下限 (deg/s)：低于此值视为直行，提前量不缩放。 */
+    public static final double TURN_DEG_PER_SEC = 90.0;
+    /** 角速度上限 (deg/s)：超过视为打转/寻路失败（原地绕圈）。 */
+    public static final double CIRCLE_DEG_PER_SEC = 180.0;
+    /** 转向中的提前量缩放（方向未定，折中）。 */
+    public static final double TAU_SCALE_TURNING = 0.35;
+    /** 打转（原地绕圈）的提前量缩放：框贴本体，不再甩在切线上。 */
+    public static final double TAU_SCALE_CIRCLING = 0.15;
+    /** 转向检测取中位数的角速度样本对数。 */
+    public static final int TURN_WINDOW_PAIRS = 3;
+    /** 脚下抬升上限（格）：一个方块内的高差（台阶 0.6 / 半砖 / 上坡）都跟得住。 */
+    public static final double MAX_FOOT_RISE = 1.2;
+
     private AimLeadRoundRules() { }
+
+    /** 360° 内两角之差（度）。 */
+    public static double angleDeltaDeg(double fromDeg, double toDeg) {
+        double d = (toDeg - fromDeg) % 360.0;
+        if (d > 180.0) d -= 360.0;
+        if (d < -180.0) d += 360.0;
+        return d;
+    }
+
+    /**
+     * 相邻速度对的转向角速度 (deg/s)：|atan2 夹角| / 时间间隔。
+     * 任一端速度为 0（停在原地/样本重复）返回 -1 = 无效，由调用方忽略。
+     */
+    public static double turnDegPerSec(double vxa, double vza, double vxb, double vzb, double dtSec) {
+        double sa = Math.sqrt(vxa * vxa + vza * vza);
+        double sb = Math.sqrt(vxb * vxb + vzb * vzb);
+        if (dtSec <= 1.0e-4 || sa < 1.0e-3 || sb < 1.0e-3) return -1.0;
+        double cross = vxa * vzb - vza * vxb;
+        double dot = vxa * vxb + vza * vzb;
+        double deg = Math.toDegrees(Math.atan2(Math.abs(cross), dot));
+        return deg / dtSec;
+    }
+
+    /** 转向 → 提前量缩放：打转 ×0.15，转向中 ×0.35，直行/无效 ×1.0。 */
+    public static double tauScale(double turnDegPerSec) {
+        if (!(turnDegPerSec > 0.0)) return 1.0;
+        if (turnDegPerSec >= CIRCLE_DEG_PER_SEC) return TAU_SCALE_CIRCLING;
+        if (turnDegPerSec >= TURN_DEG_PER_SEC) return TAU_SCALE_TURNING;
+        return 1.0;
+    }
+
+    /** 打转判定（诊断显示，阈值与 {@link #tauScale} 一致）。 */
+    public static boolean isCircling(double turnDegPerSec) {
+        return turnDegPerSec >= CIRCLE_DEG_PER_SEC;
+    }
+
+    /**
+     * 是否需要在预测落点处查地面面高（地形跟随）。
+     *
+     * <p>与旧 groundClampNeeded 的差别：旧逻辑「预测点低于脚底才查」只防穿地；
+     * 地形跟随要处理上坡/上台阶/上半砖——落点面高会【高于】脚底，旧逻辑不触发
+     * → 框陷在台阶里。这里只要预测点够得着（面高可能落在 [py, footY+抬升上限]）就查，
+     * 真正的夹取在 surfaceAt。
+     */
+    public static boolean needsTerrainClamp(double predictedY, double footY) {
+        return predictedY < footY + MAX_FOOT_RISE;
+    }
+
+    /**
+     * 落点面高是否够得着（地形跟随的上限判断，surfaceAt / 夹取共用）。
+     * 高于脚下抬升上限的面（墙、两格台阶）= 不可站立，不能拿来当预测高度。
+     */
+    public static boolean withinFootRise(double surfaceY, double footY) {
+        return surfaceY <= footY + MAX_FOOT_RISE;
+    }
 
     /** 未解析到回合时保留现有行为；R1..R25 开启，R26+ 关闭。 */
     public static boolean activeForRound(int round) {
@@ -64,8 +134,9 @@ public final class AimLeadRoundRules {
     }
 
     /**
-     * 预测点是否需要查地面下限（性能）：groundBelow 从怪脚底向下扫，返回值
-     * ≤ floor(footY)+1。预测点 ≥ floor(footY)+1 时钳制数学上必无效——跳过世界方块查询。
+     * 预测点是否需要查地面下限（旧口径，保留供回归参考）：返回值 ≤ floor(footY)+1，
+     * 预测点 ≥ floor(footY)+1 时钳制数学上必无效。地形跟随已改用
+     * {@link #needsTerrainClamp}——旧口径拿不到上坡/台阶的面高抬升。
      */
     public static boolean groundClampNeeded(double predictedY, double footY) {
         return predictedY < Math.floor(footY) + 1.0;

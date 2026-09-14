@@ -73,6 +73,27 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
+        section(graphics, "DIAG / 预测诊断", y);
+        y += 20;
+        // 转向/打转状态 + 提前量误差（τ 前预测点与现状的中位距离）
+        AimLeadModule.LeadDiagnostics diag = module.leadDiagnostics();
+        boolean turning = diag.turnDegPerSec() >= AimLeadRoundRules.TURN_DEG_PER_SEC;
+        String turnLabel = diag.circling() ? "打转 · lead ×" + AimLeadRoundRules.TAU_SCALE_CIRCLING
+                : (turning ? "转向中 · lead ×" + AimLeadRoundRules.TAU_SCALE_TURNING : "直行");
+        graphics.text(font, "Turn Rate", contentLeft(), y + 4, TEXT);
+        graphics.text(font, Math.round(diag.turnDegPerSec()) + " °/s · " + turnLabel,
+                contentLeft() + 74, y + 4, TEXT_DIM);
+        y += 20;
+        graphics.text(font, "Lead Error", contentLeft(), y + 4, TEXT);
+        graphics.text(font, diag.leadErrSamples() > 0
+                        ? String.format(java.util.Locale.ROOT, "%.2f 格 · %d 样本",
+                            diag.leadErrBlocks(), diag.leadErrSamples())
+                        : "waiting",
+                contentLeft() + 74, y + 4, TEXT_DIM);
+        y += 28;
+
+        graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
+        y += 14;
         section(graphics, "DISPLAY / 显示", y);
         y += 20;
         graphics.text(font, "Ghost Box", contentLeft(), y + 4, TEXT);

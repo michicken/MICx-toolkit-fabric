@@ -394,12 +394,26 @@ class AimbotRulesTest {
                 AimbotRules.groupRank(false, false, true, true, false, false));
         assertEquals(AimbotRules.GROUP_PRIORITY,
                 AimbotRules.groupRank(true, false, false, false, true, false));
-        assertEquals(AimbotRules.GROUP_PRIORITY,
+        // 用户定稿 2026-09-14（暴力模式）：Prio Giant 不再把巨人提到优先组，
+        // 而是降到末位档——Clown 模式出现巨人时先清小怪，小怪全不可打才锁巨人。
+        assertEquals(AimbotRules.GROUP_GIANT_BACKUP,
                 AimbotRules.groupRank(false, true, false, false, false, true));
+        // 末位档排序：巨人 < 头顶高处 < baby < 普通怪（数值越小越晚锁）
+        assertTrue(AimbotRules.GROUP_GIANT_BACKUP < AimbotRules.GROUP_HIGH_ABOVE);
+        assertTrue(AimbotRules.GROUP_HIGH_ABOVE < AimbotRules.GROUP_DEPRIORITIZED);
         // 普通怪仍是 0，baby 降级后严格低于普通怪
         assertEquals(0, AimbotRules.groupRank(false, false, false, false, false, false));
         assertTrue(AimbotRules.groupRank(false, false, false, false, false, false)
                 > AimbotRules.groupRank(false, false, false, true, false, false));
+        // 头顶高处（调用方 Math.min 合入）：即使 baby 降级也不越过它
+        assertEquals(AimbotRules.GROUP_HIGH_ABOVE,
+                Math.min(AimbotRules.groupRank(false, false, false, false, false, false),
+                        AimbotRules.GROUP_HIGH_ABOVE));
+        assertEquals(AimbotRules.GROUP_HIGH_ABOVE,
+                Math.min(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.GROUP_HIGH_ABOVE));
+        // 巨人既是 Prio Giant 又高悬：取更晚的档
+        assertEquals(AimbotRules.GROUP_GIANT_BACKUP,
+                Math.min(AimbotRules.GROUP_GIANT_BACKUP, AimbotRules.GROUP_HIGH_ABOVE));
 
         assertFalse(AimbotRules.closestBetter(10.0, 13.0, 3.0));
         assertTrue(AimbotRules.closestBetter(10.0, 13.1, 3.0));

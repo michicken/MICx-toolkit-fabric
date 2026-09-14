@@ -171,11 +171,11 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "开启后提高 Clown 目标组优先级，并自动关闭 Giant 优先。 ");
         y = keyRow(graphics, mouseX, mouseY, "小丑快捷键 / Prio Clown Key", c::getPrioClownKey,
                 c::setPrioClownKey, y, "绑定后可快速切换小丑优先。 ");
-        y = toggleRow(graphics, mouseX, mouseY, "优先巨人 / Prio Giant", c.prioGiant,
+        y = toggleRow(graphics, mouseX, mouseY, "巨人末位 / Prio Giant", c.prioGiant,
                 () -> c.setPrioGiant(!c.prioGiant), y,
-                "开启后提高 Giant 目标组优先级，并自动关闭 Clown 优先。 ");
+                "开启后巨人降到末位档：先清小怪，小怪全不可打时才锁巨人（并自动关闭 Clown 优先）。暴力模式适用。 ");
         y = keyRow(graphics, mouseX, mouseY, "巨人快捷键 / Prio Giant Key", c::getPrioGiantKey,
-                c::setPrioGiantKey, y, "绑定后可快速切换巨人优先。 ");
+                c::setPrioGiantKey, y, "绑定后可快速切换巨人末位。 ");
         y = wrapped(graphics,
                 "Baby 僵尸已固定降到「普通怪之后」：优先打普通怪，只有场上再无别的可打目标时才锁 Baby（仅 BRUTE 扫射生效时恢复最高优先）。原 Prio Baby 开关已废弃移除。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
@@ -251,10 +251,10 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "仅在 BRUTE 模式生效：在 FOV 限幅内把目标按空间顺序逐个精准锁定并超快速切换，快速扫过一堆怪里的每一个；不是连续扫描线，也不会 360° 乱扫。");
         y = numberRow(graphics, "暴力扫射起始回合 / Brute Min Round", "1–200", bruteSweepMinRoundBox, y);
         y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
-        y = numberRow(graphics, "单目标停留 / Dwell", "40–600ms", bruteSweepDwellBox, y);
+        y = numberRow(graphics, "停留上限 / Dwell Max", "0–600ms", bruteSweepDwellBox, y);
         y = numberRow(graphics, "转头完成时间 / Turn Window", "5–50ms", bruteRotationWindowBox, y);
         y = wrapped(graphics,
-                "暴力扫射在起始回合之前完全不生效（只按 TOO/巨人 > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，停留时间越短切换越激进。Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
+                "暴力扫射在起始回合之前完全不生效（只按 TOO > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，锥体中心是【激活那一刻的准星】并固定——整个激活周期跨度恒为 2×FOV，不会随准星漂移；松开右键/关闭 Aimbot 后再次激活才换中心。停留上限只约束「最长停多久」，目标死亡/移出锥体立即推进——0（默认）表示不设上限、只按死亡推进，暴力模式不需要对着尸体停顿。场上有巨人不再停掉扫射——巨人已降到末位档，有小怪时根本不进扫射池。Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "JOYSTICK / 手动推偏", y);
@@ -447,7 +447,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.sweepMinRound = parseInt(sweepMinRoundBox, 1, 200, "Sweep Min Round");
             c.bruteSweepMinRound = parseInt(bruteSweepMinRoundBox, 1, 200, "Brute Sweep Min Round");
             c.bruteSweepFovDeg = parseDouble(bruteSweepFovBox, 5.0, 180.0, "Brute Sweep FOV");
-            c.bruteSweepDwellMs = parseInt(bruteSweepDwellBox, 40, 600, "Brute Sweep Dwell");
+            c.bruteSweepDwellMs = parseInt(bruteSweepDwellBox, 0, 600, "Brute Sweep Dwell");
             c.bruteRotationWindowMs = parseInt(bruteRotationWindowBox, 5, 50, "Brute Turn Window");
             c.save();
             super.saveAndClose();

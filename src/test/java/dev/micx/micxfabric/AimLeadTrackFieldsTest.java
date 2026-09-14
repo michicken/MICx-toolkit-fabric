@@ -29,7 +29,11 @@ class AimLeadTrackFieldsTest {
                 "showing",                            // 显示滞回
                 "lvx", "lvy", "lvz", "lvAt",          // 上个可信速度兜底
                 "clx", "clz", "clampAtMs",            // 碰撞钳制缓存（120ms）
-                "grX", "grY0", "grZ", "grGround", "grAtMs"));   // groundBelow 缓存（300ms）
+                "clAx", "clAz",                       // 钳制缓存失效锚点（脚底换列）
+                "turnDegPerSec", "tauScale",          // 转向检测（打转治乱）
+                "leadErrMs", "leadErrBlocks", "leadErrCount", "leadErrIdx",   // 提前量误差诊断
+                "predX", "predZ", "predY", "predAt", "predCount", "lastPredRecordMs",   // 预测回检队列
+                "grX", "grY0", "grZ", "grGround", "grAtMs"));   // 落点面高缓存（300ms）
         for (String name : required) {
             assertTrue(fields.contains(name), "Track missing field: " + name);
         }
