@@ -44,6 +44,7 @@ public final class ModuleRuntime {
         register(ToggleSprintModule.instance());
         register(WelcomeModule.instance());
         register(AutoTextModule.instance());
+        register(RankUpToolModule.instance());
         register(AutoHideVisualsModule.instance());
         register(ZombieFadeModule.instance());
         register(ReviveAuraModule.instance());

@@ -72,7 +72,8 @@ public final class ModulePanelRegistry {
         meta("chat_message_translate", GROUP_CHAT, 2);
         meta("chat_copy", GROUP_CHAT, 3);
         meta("auto_text", GROUP_CHAT, 4);
-        meta("welcome", GROUP_CHAT, 5);
+        meta("rank_up_tool", GROUP_CHAT, 5);
+        meta("welcome", GROUP_CHAT, 6);
         meta("zoom_scope", GROUP_MISC, 0);
         meta("view_hold", GROUP_MISC, 1);
         meta("toggle_sprint", GROUP_MISC, 2);
@@ -377,6 +378,9 @@ public final class ModulePanelRegistry {
                 "进服时在聊天里显示 MICx 提示与 /micx 入口", WelcomeModule.instance(), null);
         real("auto_text", "AutoText", "快捷文本", GROUP_MISC,
                 "绑定快捷键立即发送预设消息到聊天", AutoTextModule.instance(), AutoTextConfigScreen::new);
+        real("rank_up_tool", "RankUpTool", "求 Rank", GROUP_CHAT,
+                "定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）",
+                RankUpToolModule.instance(), RankUpToolConfigScreen::new);
         real("asr", "ASR", "语音输入", GROUP_MISC,
                 "按住 PTT 录音并将识别结果发送到聊天。", AsrModule.instance(), AsrConfigScreen::new);
         real("zombies_explorer", "ZombiesExplorer", "僵尸标记", GROUP_CORE,
