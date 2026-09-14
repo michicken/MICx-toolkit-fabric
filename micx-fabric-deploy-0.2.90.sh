@@ -42,10 +42,22 @@ printf '源 SHA-256: %s\n' "$SOURCE_SHA"
 
 mkdir -p "$BACKUP_ROOT"
 
-# 先落新 JAR：运行中的实例仍持有旧 JAR 的 inode，路径不会被提前断开。
+# 同名旧版（上一次部署的 0.2.90）会被 rename 覆盖，下面的归档循环又会跳过 TARGET，
+# 所以这里先单独留档，否则旧产物静默消失（2026-09-15 实际踩到）。
 TARGET="$MODS_DIR/micx-fabric-0.2.90.jar"
-cp -p "$JAR" "$TARGET"
-cmp -s "$JAR" "$TARGET"
+if [[ -f "$TARGET" ]]; then
+    cp -p "$TARGET" "$BACKUP_ROOT/micx-fabric-0.2.90.prev.jar"
+    printf '旧同版本留档: %s\n' "$BACKUP_ROOT/micx-fabric-0.2.90.prev.jar"
+fi
+
+# 原子换代：先写临时文件、比对无误后 rename 覆盖。
+# 运行中的实例持的是旧 JAR 的 inode，rename 之后它继续读旧 JAR，路径瞬时指向新文件；
+# 直接对目标 cp 是 O_TRUNC 原地截断同一个 inode（macOS 的 cp 不换 inode），
+# 边玩边覆盖会让 Fabric 类加载器读到半个 jar。
+TMP="$MODS_DIR/.micx-fabric-0.2.90.jar.new"
+cp -p "$JAR" "$TMP"
+cmp -s "$JAR" "$TMP"
+mv -f "$TMP" "$TARGET"
 TARGET_SHA=$(shasum -a 256 "$TARGET" | awk '{print $1}')
 [[ "$SOURCE_SHA" == "$TARGET_SHA" ]]
 printf '%s\n' '== Prism 部署完成 =='
