@@ -343,6 +343,29 @@ class AimbotRulesTest {
         assertEquals(-1, AimbotRules.bruteSweepAdvance(null, 0.0, 0.25));
     }
 
+    /**
+     * 2026-09-14 回归防护：目标死亡后必须沿锥体推进，不能卡在原地。
+     *
+     * <p>死因链路：锁定的目标死亡 → 下一帧不再命中保持分支 → 用上一落点推进。
+     * 若推进规则让游标退回同一只（或回绕到最左端反复选同一侧），
+     * 表现就是「完全不扫射」（用户 2026-09-14 实测）。
+     */
+    @Test
+    void bruteSweepCursorAdvancesPastDeadTargetInsteadOfReselecting() {
+        double[] yaw = {-30.0, -5.0, 12.0, 40.0};
+        double eps = 0.25;
+        // 0 号位（-30）死亡：prevYawOff = -30，advance 内部 +eps → 必须落到 1 号位
+        assertEquals(1, AimbotRules.bruteSweepAdvance(yaw, -30.0, eps));
+        // 1 号位死亡 → 落到 2 号位（不能停在 1）
+        assertEquals(2, AimbotRules.bruteSweepAdvance(yaw, -5.0, eps));
+        // 2 号位死亡 → 落到 3 号位
+        assertEquals(3, AimbotRules.bruteSweepAdvance(yaw, 12.0, eps));
+        // 最右端（3 号位）死亡 → 越过右端回绕到最左端，重新开始一轮
+        assertEquals(0, AimbotRules.bruteSweepAdvance(yaw, 40.0, eps));
+        // 游标在最小项之前（首个目标首次入选）→ 仍从最左端开始
+        assertEquals(0, AimbotRules.bruteSweepAdvance(yaw, -45.0, eps));
+    }
+
     @Test
     void threatMemoryAndCandidatePriorityMatchForgeRules() {
         long now = 10_000L;

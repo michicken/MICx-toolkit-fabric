@@ -123,7 +123,11 @@ public final class AimbotModule implements Module {
     /* BRUTE 扫射状态：在限定 FOV 内从左到右逐个精准锁定。 */
     private int bruteSweepHeldId = -1;
     private double bruteSweepPrevYawOff = Double.NaN;
-    private long bruteSweepNextHopAtMs;
+    /**
+     * 当前目标的停留截止时间。默认 {@code Long.MAX_VALUE} = 不限（目标一死就推进，
+     * 不主动等待）；{@code bruteSweepDwellMs > 0} 时作为安全阀，防止锁到打不死的怪僵住。
+     */
+    private long bruteSweepHoldUntilMs;
     /**
      * 扫射锥体锚定 yaw（激活瞬间锁定，用户定稿 2026-09-14）。
      *
@@ -863,24 +867,27 @@ public final class AimbotModule implements Module {
             resetBruteSweep();
             return scored.get(0);
         }
-        if (bruteSweepHeldId >= 0 && now < bruteSweepNextHopAtMs) {
+        // 保持当前目标：只要它还在锥内、还活着就继续锁它；一旦死了/移出，顺路往右推进。
+        // 目标列表来自 slot[]（= 本轮场上有可打目标），所以「还在」天然排除尸体。
+        if (bruteSweepHeldId >= 0 && now < bruteSweepHoldUntilMs) {
             for (int k = 0; k < count; k++) {
                 Scored value = scored.get(slot[k]);
                 if (value.entity.getId() == bruteSweepHeldId) return value;
             }
-            // 停留期间目标死掉 / 移出锥体就立刻推进：不等满 dwell。
-            // 暴力模式不需要对着尸体停顿（用户定稿 2026-09-14），换目标本身就是瞬转。
-            bruteSweepNextHopAtMs = 0L;
+            // 目标已不在（死亡/移出锥体/被挡）→ 立刻推进，不等上限到期。
         }
+        // 目标已不在（死亡/移出锥体/被挡）→ 顺路推进。bruteSweepAdvance 内部会 +eps，
+        // 保证不会重新选回同一只（选回同一只 = 扫射退化成单锁，用户 2026-09-14 实测）。
         int pos = AimbotRules.bruteSweepAdvance(yawOff, bruteSweepPrevYawOff,
                 BRUTE_SWEEP_ADVANCE_EPS_DEG);
         if (pos < 0) pos = 0;
         Scored pick = scored.get(slot[pos]);
         bruteSweepHeldId = pick.entity.getId();
         bruteSweepPrevYawOff = yawOff[pos];
-        // 0 = 不限停留（只按「目标死/移出」推进）；>0 = 最长停留上限，避免卡在难杀的目标上
+        // 停留上限（默认 0 = 不限）：唯一的用途是防止「锁到一只打不死的怪」时僵住；
+        // 正常情况都是目标一死就推进，不受这个值影响。
         int dwellMs = Math.max(0, config.bruteSweepDwellMs);
-        bruteSweepNextHopAtMs = dwellMs == 0 ? Long.MAX_VALUE : now + dwellMs;
+        bruteSweepHoldUntilMs = dwellMs == 0 ? Long.MAX_VALUE : now + dwellMs;
         return pick;
     }
 
@@ -895,7 +902,7 @@ public final class AimbotModule implements Module {
     private void resetBruteSweep() {
         bruteSweepHeldId = -1;
         bruteSweepPrevYawOff = Double.NaN;
-        bruteSweepNextHopAtMs = 0L;
+        bruteSweepHoldUntilMs = 0L;
     }
 
     /** Humanized target choice: sweep the crosshair cone instead of pinning one entity forever. */

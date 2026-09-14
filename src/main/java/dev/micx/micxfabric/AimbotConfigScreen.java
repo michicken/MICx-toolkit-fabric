@@ -251,10 +251,10 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "仅在 BRUTE 模式生效：在 FOV 限幅内把目标按空间顺序逐个精准锁定并超快速切换，快速扫过一堆怪里的每一个；不是连续扫描线，也不会 360° 乱扫。");
         y = numberRow(graphics, "暴力扫射起始回合 / Brute Min Round", "1–200", bruteSweepMinRoundBox, y);
         y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
-        y = numberRow(graphics, "停留上限 / Dwell Max", "0–600ms", bruteSweepDwellBox, y);
+        y = numberRow(graphics, "停留保护 / Dwell Guard", "0–600ms", bruteSweepDwellBox, y);
         y = numberRow(graphics, "转头完成时间 / Turn Window", "5–50ms", bruteRotationWindowBox, y);
         y = wrapped(graphics,
-                "暴力扫射在起始回合之前完全不生效（只按 TOO > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，锥体中心是【激活那一刻的准星】并固定——整个激活周期跨度恒为 2×FOV，不会随准星漂移；松开右键/关闭 Aimbot 后再次激活才换中心。停留上限只约束「最长停多久」，目标死亡/移出锥体立即推进——0（默认）表示不设上限、只按死亡推进，暴力模式不需要对着尸体停顿。场上有巨人不再停掉扫射——巨人已降到末位档，有小怪时根本不进扫射池。Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
+                "暴力扫射在起始回合之前完全不生效（只按 TOO > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射，锥体中心是【激活那一刻的准星】并固定——整个激活周期跨度恒为 2×FOV，不会随准星漂移；松开右键/关闭 Aimbot 后再次激活才换中心。锁住的目标一旦死亡/移出锥体就立刻沿锥体推进——不停顿，所以正常情况不用调 Dwell Guard；它只是防止锁到打不死的怪（装甲骷髅/巨人）时僵住，0（默认）= 不设保护。场上有巨人不再停掉扫射——巨人已降到末位档，有小怪时根本不进扫射池。Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         section(graphics, "JOYSTICK / 手动推偏", y);
