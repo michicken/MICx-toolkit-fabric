@@ -84,9 +84,37 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
             hits.add(new Hit(x, y, width, RANK_H, () -> module.setRank(label)));
         }
         y += RANK_H + 8;
-        graphics.text(font, "选中：" + rank + "　将发送：\"" + RankUpToolRules.message(rank) + "\"",
-                contentLeft(), y, TEXT_DIM);
+        graphics.text(font, "选中：" + rank, contentLeft(), y, TEXT_DIM);
         y += 18;
+
+        graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
+        y += 14;
+        section(graphics, "MESSAGE / 话术", y);
+        y += 20;
+        graphics.text(font, "固定文本 / Fixed", contentLeft(), y + 4, TEXT);
+        boolean fixedHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
+        drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.fixedText(), fixedHovered);
+        hits.add(new Hit(contentRight() - 44, y + 1, 44, 16,
+                () -> module.setFixedText(!module.fixedText())));
+        y += 24;
+        String preview = module.fixedText()
+                ? "固定文本：\"" + RankUpToolRules.message(rank) + "\""
+                : "变形句库：" + module.messageCount() + " 句，本轮还剩 " + module.remainingMessages()
+                        + " 句（一轮内不重复）";
+        graphics.text(font, preview, contentLeft(), y, module.fixedText() ? TEXT_DIM : ON);
+        y += 14;
+        if (!module.lastSentText().isEmpty()) {
+            y = wrapped(graphics, "上一条：「" + module.lastSentText() + "」",
+                    contentLeft(), y, TEXT_FAINT, contentWidth()) + 4;
+        }
+        int shuffleW = 92;
+        boolean shuffleHovered = isInside(mouseX, pointerY, contentLeft(), y, shuffleW, 18);
+        drawButton(graphics, "重洗句库", contentLeft(), y, shuffleW, 18, shuffleHovered);
+        hits.add(new Hit(contentLeft(), y, shuffleW, 18, module::reshuffleMessages));
+        y += 26;
+        y = wrapped(graphics, "关掉「固定文本」走变形句库：一轮 " + module.messageCount()
+                + " 句里每句只用一次，跨轮也不会让同一句连着出现两次；换世界会重新洗牌。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
@@ -97,8 +125,9 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
         intervalBox.setY(y);
         graphics.text(font, "秒", contentRight() - 12, y + 4, TEXT_FAINT);
         y += 26;
-        y = wrapped(graphics, "默认 3 秒。间隔越短越容易被 Hypixel 判成重复刷屏并 mute，1–2 秒属于高风险区；"
-                + "局内高频发送也容易挨队友骂——关掉模块或用 [模块快捷键] 一键停最省事。",
+        y = wrapped(graphics, "默认 3 秒。变形句只避开「同一句重复」这一类判定，拦不住「发送频率」本身——"
+                + "间隔越短越容易被 Hypixel 判成刷屏并 mute，1–2 秒属于高风险区；"
+                + "局内高频发送也容易挨队友骂，关掉模块或用 [模块快捷键] 一键停最省事。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         int sendW = 132;
         boolean sendHovered = isInside(mouseX, pointerY, contentLeft(), y, sendW, 18);

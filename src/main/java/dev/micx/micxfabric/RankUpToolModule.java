@@ -17,13 +17,18 @@ import java.util.Properties;
  */
 public final class RankUpToolModule implements Module {
     private static final RankUpToolModule INSTANCE = new RankUpToolModule();
+    private final RankUpToolDeck deck =
+            new RankUpToolDeck(RankUpToolMessages.size(), new java.util.Random());
     private String rank = RankUpToolRules.DEFAULT_RANK;
     private int intervalSeconds = RankUpToolRules.DEFAULT_INTERVAL_SECONDS;
+    /** 面板开关：true 时只发固定的「&lt;rank&gt; pls」，默认走变形句库。 */
+    private boolean fixedText;
     private boolean enabled;
     private boolean configLoaded;
     /** 上次发送时间；< 0 表示本次激活还没发过。 */
     private long lastSentMs = -1L;
     private int sentCount;
+    private String lastSentText = "";
 
     private RankUpToolModule() {
     }
@@ -68,7 +73,7 @@ public final class RankUpToolModule implements Module {
         if (client.isPaused() || client.gui.screen() != null) return;
         long now = System.currentTimeMillis();
         if (!RankUpToolRules.due(now, lastSentMs, RankUpToolRules.intervalMillis(intervalSeconds))) return;
-        send(client, now, RankUpToolRules.message(rank));
+        send(client, now, nextMessage());
     }
 
     /** 换世界/断线时重新计时，避免带着上一局的发条进新服。 */
@@ -76,6 +81,7 @@ public final class RankUpToolModule implements Module {
     public void resetState() {
         lastSentMs = -1L;
         sentCount = 0;
+        deck.reshuffle();
     }
 
     /** 面板「立即发一条」：只补发一条，不改变自动节奏。 */
@@ -83,10 +89,22 @@ public final class RankUpToolModule implements Module {
         loadConfig();
         if (client == null || client.player == null || client.level == null) return false;
         long now = System.currentTimeMillis();
-        if (!send(client, now, RankUpToolRules.message(rank))) return false;
+        if (!send(client, now, nextMessage())) return false;
         // 补发算一次落点，避免紧接着又自动发一条。
         lastSentMs = now;
         return true;
+    }
+
+    /**
+     * 下一条要发的文本：默认从变形句库里取（洗牌袋，一轮内不重复），
+     * 面板开了固定文本或句库为空时回落「&lt;档位&gt; pls」。
+     */
+    private String nextMessage() {
+        if (fixedText) return RankUpToolRules.message(rank);
+        int index = deck.next();
+        if (index < 0) return RankUpToolRules.message(rank);
+        String message = RankUpToolMessages.fill(RankUpToolMessages.template(index), rank);
+        return message.isEmpty() ? RankUpToolRules.message(rank) : message;
     }
 
     private boolean send(Minecraft client, long nowMs, String message) {
@@ -94,6 +112,7 @@ public final class RankUpToolModule implements Module {
         client.player.connection.sendChat(message);
         lastSentMs = nowMs;
         sentCount++;
+        lastSentText = message;
         return true;
     }
 
@@ -123,6 +142,38 @@ public final class RankUpToolModule implements Module {
         return sentCount;
     }
 
+    /** 上一条实际发出去的文本（面板显示用；还没发过为空串）。 */
+    public String lastSentText() {
+        return lastSentText;
+    }
+
+    /** 变形句库总句数。 */
+    public int messageCount() {
+        return RankUpToolMessages.size();
+    }
+
+    /** 本轮句库里还剩几句没发。 */
+    public int remainingMessages() {
+        return deck.remaining();
+    }
+
+    /** 面板开关：固定发「&lt;rank&gt; pls」，不开则走变形句库。 */
+    public boolean fixedText() {
+        loadConfig();
+        return fixedText;
+    }
+
+    public void setFixedText(boolean value) {
+        loadConfig();
+        fixedText = value;
+        saveConfig();
+    }
+
+    /** 面板「重洗句库」：下一句开始重新洗一轮。 */
+    public void reshuffleMessages() {
+        deck.reshuffle();
+    }
+
     /** 距下一条还有多少毫秒（面板倒计时）。 */
     public long remainingMillis() {
         loadConfig();
@@ -142,6 +193,7 @@ public final class RankUpToolModule implements Module {
         intervalSeconds = RankUpToolRules.clampIntervalSeconds(ConfigProperties.integer(properties,
                 "intervalSeconds", RankUpToolRules.DEFAULT_INTERVAL_SECONDS,
                 RankUpToolRules.MIN_INTERVAL_SECONDS, RankUpToolRules.MAX_INTERVAL_SECONDS));
+        fixedText = ConfigProperties.bool(properties, "fixedText", false);
     }
 
     private void saveConfig() {
@@ -149,6 +201,7 @@ public final class RankUpToolModule implements Module {
         Properties properties = new Properties();
         properties.setProperty("rank", rank);
         properties.setProperty("intervalSeconds", Integer.toString(intervalSeconds));
+        properties.setProperty("fixedText", Boolean.toString(fixedText));
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("rank-up-tool.properties"), properties,
                     "MICx RankUpTool configuration");
