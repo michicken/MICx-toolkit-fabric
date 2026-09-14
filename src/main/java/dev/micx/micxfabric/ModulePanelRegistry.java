@@ -379,7 +379,8 @@ public final class ModulePanelRegistry {
         real("auto_text", "AutoText", "快捷文本", GROUP_MISC,
                 "绑定快捷键立即发送预设消息到聊天", AutoTextModule.instance(), AutoTextConfigScreen::new);
         real("rank_up_tool", "RankUpTool", "求 Rank", GROUP_CHAT,
-                "定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）",
+                "定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）；"
+                        + "开启后打开书本界面会连响 1 分钟提醒，切到别的应用也不会自动暂停",
                 RankUpToolModule.instance(), RankUpToolConfigScreen::new);
         real("asr", "ASR", "语音输入", GROUP_MISC,
                 "按住 PTT 录音并将识别结果发送到聊天。", AsrModule.instance(), AsrConfigScreen::new);

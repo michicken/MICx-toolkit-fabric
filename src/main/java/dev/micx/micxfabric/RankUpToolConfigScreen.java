@@ -62,7 +62,16 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
                 : "已关闭";
         graphics.text(font, status, contentLeft(), y, module.enabled() ? ON : TEXT_DIM);
         y += 14;
-        y = wrapped(graphics, "任何界面打开时都不发送（含聊天栏输入和本面板）；换世界会重新计时。",
+        y = wrapped(graphics, "任何界面打开时都不发送（含聊天栏输入和本面板）；换世界会重新计时。"
+                + "模块开启时切到别的应用不会自动弹暂停界面，会一直照发。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+
+        graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
+        y += 14;
+        section(graphics, "BOOK ALERT / 书本警报", y);
+        y += 20;
+        y = wrapped(graphics, "打开成书 / 书与笔 / 签名页任一书本界面后，每 0.5 秒「叮」一声（音符盒铃铛音），"
+                + "最长响 1 分钟；书本界面一关立即安静，重新打开重新计时。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);

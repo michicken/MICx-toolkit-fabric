@@ -1,6 +1,12 @@
 package dev.micx.micxfabric;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.BookEditScreen;
+import net.minecraft.client.gui.screens.inventory.BookSignScreen;
+import net.minecraft.client.gui.screens.inventory.BookViewScreen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.sounds.SoundEvents;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -14,11 +20,19 @@ import java.util.Properties;
  * <p>安全边界：任何 Screen 打开时都不发（含本模块面板和聊天栏输入），世界未加载或暂停时不发；
  * 关闭模块会清掉计时，重新打开立刻发第一条。文本与节奏全在 {@link RankUpToolRules} 里，
  * 这里只管客户端状态。
+ *
+ * <p>追加定稿 2026-09-15：①书本界面（成书 / 书与笔 / 签名页）出现后每 0.5 秒「叮」一声、最长 60 秒，
+ * 关掉书本立即停（{@link RankUpToolBookAlert}）；②模块开启时窗口失焦不再自动弹暂停界面
+ * （{@link dev.micx.micxfabric.mixin.MixinMinecraftFocusPause}），所以切到别的应用也照发。
  */
 public final class RankUpToolModule implements Module {
     private static final RankUpToolModule INSTANCE = new RankUpToolModule();
+    /** 「叮」用音符盒铃铛音，音量按常规大小（用户定稿：不做超大声）。 */
+    private static final float BOOK_DING_PITCH = 1.5F;
+    private static final float BOOK_DING_VOLUME = 1.0F;
     private final RankUpToolDeck deck =
             new RankUpToolDeck(RankUpToolMessages.size(), new java.util.Random());
+    private final RankUpToolBookAlert bookAlert = new RankUpToolBookAlert();
     private String rank = RankUpToolRules.DEFAULT_RANK;
     private int intervalSeconds = RankUpToolRules.DEFAULT_INTERVAL_SECONDS;
     /** 面板开关：true 时只发固定的「&lt;rank&gt; pls」，默认走变形句库。 */
@@ -61,6 +75,8 @@ public final class RankUpToolModule implements Module {
             // 重新打开立刻发第一条，不用干等一个间隔。
             lastSentMs = -1L;
             sentCount = 0;
+        } else {
+            bookAlert.reset();
         }
         ModuleStateStore.put(id(), enabled);
     }
@@ -70,6 +86,8 @@ public final class RankUpToolModule implements Module {
         loadConfig();
         if (!enabled) return;
         if (client == null || client.player == null || client.level == null) return;
+        // 书本警报必须跑在下面「有界面就不发」之前：书本界面本身就是一个 Screen。
+        tickBookAlert(client);
         if (client.isPaused() || client.gui.screen() != null) return;
         long now = System.currentTimeMillis();
         if (!RankUpToolRules.due(now, lastSentMs, RankUpToolRules.intervalMillis(intervalSeconds))) return;
@@ -81,7 +99,32 @@ public final class RankUpToolModule implements Module {
     public void resetState() {
         lastSentMs = -1L;
         sentCount = 0;
+        bookAlert.reset();
         deck.reshuffle();
+    }
+
+    /** 书本界面（成书 / 书与笔 / 签名页）在屏幕上时就每 0.5 秒叮一声，最长 60 秒。 */
+    private void tickBookAlert(Minecraft client) {
+        if (bookAlert.tick(isBookScreen(client.gui.screen()), System.currentTimeMillis())) {
+            playBookDing();
+        }
+    }
+
+    private static boolean isBookScreen(Screen screen) {
+        return screen instanceof BookViewScreen
+                || screen instanceof BookEditScreen
+                || screen instanceof BookSignScreen;
+    }
+
+    private static void playBookDing() {
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.getSoundManager() == null) return;
+            client.getSoundManager().play(SimpleSoundInstance.forUI(
+                    SoundEvents.NOTE_BLOCK_PLING.value(), BOOK_DING_PITCH, BOOK_DING_VOLUME));
+        } catch (Throwable ignored) {
+            // 铃声只是提醒，音效引擎异常不该连累发送逻辑。
+        }
     }
 
     /** 面板「立即发一条」：只补发一条，不改变自动节奏。 */

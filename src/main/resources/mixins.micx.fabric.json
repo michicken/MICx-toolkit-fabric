@@ -8,6 +8,7 @@
     "MixinItemInHandRenderer",
     "MixinMinecraftAntiAxe",
     "MixinMinecraftEscape",
+    "MixinMinecraftFocusPause",
     "MixinMinecraftRightClicker",
     "RightClickDelayAccess",
     "MixinEntityRenderDispatcher",
