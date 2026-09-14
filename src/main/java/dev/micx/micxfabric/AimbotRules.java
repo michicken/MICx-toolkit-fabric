@@ -903,4 +903,90 @@ public final class AimbotRules {
         if (motionY >= -Math.abs(fallSpeed)) return false;
         return Math.abs(horizontalSpeed) <= Math.abs(maxHorizontal);
     }
+
+    /* ==================== BRUTE 扫射状态机（纯逻辑，可离线回归） ====================
+     *
+     * 扫射 = 「沿锥体从左到右逐个清」：锁定一只 → 打死 → 顺路推进到下一只 → …
+     * 这里把「保持 / 推进」的决策与状态迁移抽成纯函数，避免再出现
+     * 「在游戏里才能发现扫射其实没工作」的情况（2026-09-14 连续两次实测回归）。
+     */
+
+    /** 扫射选择结果：选中的目标 + 需要写回的状态。 */
+    public record BruteSweepPick(int entityId, double yawOff, long holdUntilMs, boolean advanced) { }
+
+    /** 空决策（锥体内没有可打目标；调用方应回落单锁）。 */
+    public static final BruteSweepPick BRUTE_SWEEP_NONE = new BruteSweepPick(-1, Double.NaN, 0L, false);
+
+    /** 停留保护：不限时长（只按「目标死亡 / 移出锥体」推进）。 */
+    public static final long BRUTE_HOLD_FOREVER = Long.MAX_VALUE;
+
+    /**
+     * 从「已按 signed yaw 升序排好的锥内候选」里选出本次锁定的目标。
+     *
+     * <p>语义（用户定稿 2026-09-14）：<b>目标一死就推进</b>，没有强制等待。
+     * {@code dwellMs} 只是安全阀——防止锁到一只打不死的怪（装甲骷髅/巨人）时僵住，
+     * 默认 0 = 不设上限。
+     *
+     * @param ids          锥内候选实体 id（与 yawOff 同序）
+     * @param yawOff       对应的 signed yaw 偏角（升序）
+     * @param heldId       当前锁定的实体 id，-1 表示无
+     * @param prevYawOff   上一次落点的偏角（NaN = 尚未落点）
+     * @param nowMs        当前时间
+     * @param holdUntilMs  当前目标的停留截止（{@link #BRUTE_HOLD_FOREVER} = 不限）
+     * @param dwellMs      停留上限（毫秒）；{@code <= 0} 表示不设上限
+     * @param eps          推进容差（度）
+     */
+    public static BruteSweepPick bruteSweepDecision(int[] ids, double[] yawOff,
+                                                    int heldId, double prevYawOff,
+                                                    long nowMs, long holdUntilMs,
+                                                    int dwellMs, double eps) {
+        if (ids == null || yawOff == null || ids.length == 0 || ids.length != yawOff.length) {
+            return BRUTE_SWEEP_NONE;
+        }
+        long limit = dwellMs <= 0 ? BRUTE_HOLD_FOREVER : nowMs + dwellMs;
+        // 保持：当前目标仍在锥内、且停留保护未到期 → 继续锁它（不换目标 = 不停顿）
+        if (heldId >= 0 && nowMs < holdUntilMs) {
+            for (int i = 0; i < ids.length; i++) {
+                if (ids[i] == heldId) {
+                    return new BruteSweepPick(heldId, yawOff[i], holdUntilMs, false);
+                }
+            }
+            // 目标已不在锥内（死亡 / 移出 / 被挡）→ 立刻推进，不等停留保护到期
+        }
+        // 推进：bruteSweepAdvance 内部 +eps，保证不会重新选回同一只
+        //（选回同一只 = 扫射退化成单锁，用户 2026-09-14 实测回归）
+        int pos = bruteSweepAdvance(yawOff, prevYawOff, eps);
+        if (pos < 0) pos = 0;
+        return new BruteSweepPick(ids[pos], yawOff[pos], limit, true);
+    }
+
+    /**
+     * 生成锚定锥体内的候选偏角（升序），返回排序后的下标。
+     *
+     * @param anchorYaw  激活瞬间锁定的锥体中心 yaw（不是当前准星——相对当前准星判定会让
+     *                   锥体被扫射带着漂移，实际能扫到全图）
+     * @param fovDeg     FOV 半角（度）
+     * @param targetYaw  各可打目标的瞄点 yaw（未过滤）
+     * @param outOffsets 输出用缓冲，长度必须 ≥ {@code targetYaw.length}；前 count 项为升序偏角
+     * @return 升序排列的 yaw 偏角数组下标（与 outOffsets 同序）；无候选返回空数组
+     */
+    public static int[] bruteSweepConeSlots(double anchorYaw, double fovDeg,
+                                            double[] targetYaw, double[] outOffsets) {
+        if (targetYaw == null || targetYaw.length == 0) return new int[0];
+        int[] slots = new int[targetYaw.length];
+        int count = 0;
+        for (int i = 0; i < targetYaw.length; i++) {
+            double off = angleDelta(anchorYaw, targetYaw[i]);
+            if (!bruteSweepInFov(off, fovDeg)) continue;
+            int k = count++;
+            while (k > 0 && outOffsets[k - 1] > off) {
+                outOffsets[k] = outOffsets[k - 1];
+                slots[k] = slots[k - 1];
+                k--;
+            }
+            outOffsets[k] = off;
+            slots[k] = i;
+        }
+        return java.util.Arrays.copyOf(slots, count);
+    }
 }

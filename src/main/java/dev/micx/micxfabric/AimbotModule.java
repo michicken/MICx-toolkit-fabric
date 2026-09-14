@@ -828,9 +828,12 @@ public final class AimbotModule implements Module {
 
     /**
      * BRUTE 选靶。默认取排序第一（排序已把 TOO 放最前，再按转向角最小）。
-     * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对准星的
-     * signed yaw 从左到右排好，依次停留并完整瞄准每一个，停留 dwellMs 后再跳下一个；
-     * 扫到最右端重新回到最左。不做连续扫描线，也不做 360° 乱扫。
+     * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对锚定准星的
+     * signed yaw 从左到右排好，锁定一只 → 打死 → 顺路推进到下一只 → …；扫到最右端重新回到
+     * 最左。不做连续扫描线，也不做 360° 乱扫。
+     *
+     * <p>保持/推进的全部语义在 {@link AimbotRules#bruteSweepDecision} 里（纯函数、有离线回归），
+     * 这里只负责把实体投成锥体候选、再把结果映射回 {@link Scored}。
      *
      * <p>用户定稿 2026-09-14（暴力模式）：<b>扫射不再因场上存在巨人而停掉</b>。
      * 巨人已由 {@link AimbotRules#GROUP_GIANT_BACKUP} 降到末位档——有小怪时巨人
@@ -847,48 +850,44 @@ public final class AimbotModule implements Module {
                 ? client.player.getYRot()
                 : (float) bruteSweepAnchorYaw;
         int size = scored.size();
-        double[] yawOff = new double[size];
-        int[] slot = new int[size];
-        int count = 0;
+        double[] targetYaw = new double[size];
         for (int i = 0; i < size; i++) {
-            float[] angles = calculateYawPitch(eye, scored.get(i).point);
-            double off = AimbotRules.angleDelta(anchorYaw, angles[0]);
-            if (!AimbotRules.bruteSweepInFov(off, config.bruteSweepFovDeg)) continue;
-            int k = count++;
-            while (k > 0 && yawOff[k - 1] > off) {
-                yawOff[k] = yawOff[k - 1];
-                slot[k] = slot[k - 1];
-                k--;
-            }
-            yawOff[k] = off;
-            slot[k] = i;
+            targetYaw[i] = calculateYawPitch(eye, scored.get(i).point)[0];
         }
+        double[] coneBuf = new double[size];
+        int[] slot = AimbotRules.bruteSweepConeSlots(anchorYaw, config.bruteSweepFovDeg,
+                targetYaw, coneBuf);
+        int count = slot.length;
         if (count == 0) {
             resetBruteSweep();
             return scored.get(0);
         }
-        // 保持当前目标：只要它还在锥内、还活着就继续锁它；一旦死了/移出，顺路往右推进。
-        // 目标列表来自 slot[]（= 本轮场上有可打目标），所以「还在」天然排除尸体。
-        if (bruteSweepHeldId >= 0 && now < bruteSweepHoldUntilMs) {
-            for (int k = 0; k < count; k++) {
-                Scored value = scored.get(slot[k]);
-                if (value.entity.getId() == bruteSweepHeldId) return value;
-            }
-            // 目标已不在（死亡/移出锥体/被挡）→ 立刻推进，不等上限到期。
+        double[] yawOff = java.util.Arrays.copyOf(coneBuf, count);
+        int[] ids = new int[count];
+        for (int k = 0; k < count; k++) {
+            ids[k] = scored.get(slot[k]).entity.getId();
         }
-        // 目标已不在（死亡/移出锥体/被挡）→ 顺路推进。bruteSweepAdvance 内部会 +eps，
-        // 保证不会重新选回同一只（选回同一只 = 扫射退化成单锁，用户 2026-09-14 实测）。
-        int pos = AimbotRules.bruteSweepAdvance(yawOff, bruteSweepPrevYawOff,
-                BRUTE_SWEEP_ADVANCE_EPS_DEG);
-        if (pos < 0) pos = 0;
-        Scored pick = scored.get(slot[pos]);
-        bruteSweepHeldId = pick.entity.getId();
-        bruteSweepPrevYawOff = yawOff[pos];
-        // 停留上限（默认 0 = 不限）：唯一的用途是防止「锁到一只打不死的怪」时僵住；
-        // 正常情况都是目标一死就推进，不受这个值影响。
-        int dwellMs = Math.max(0, config.bruteSweepDwellMs);
-        bruteSweepHoldUntilMs = dwellMs == 0 ? Long.MAX_VALUE : now + dwellMs;
-        return pick;
+        AimbotRules.BruteSweepPick pick = AimbotRules.bruteSweepDecision(ids, yawOff,
+                bruteSweepHeldId, bruteSweepPrevYawOff, now, bruteSweepHoldUntilMs,
+                config.bruteSweepDwellMs, BRUTE_SWEEP_ADVANCE_EPS_DEG);
+        Scored chosen = null;
+        for (int k = 0; k < count; k++) {
+            Scored value = scored.get(slot[k]);
+            if (value.entity.getId() == pick.entityId()) {
+                chosen = value;
+                break;
+            }
+        }
+        if (chosen == null) {
+            resetBruteSweep();
+            return scored.get(0);
+        }
+        if (pick.advanced()) {
+            bruteSweepHeldId = pick.entityId();
+            bruteSweepPrevYawOff = pick.yawOff();
+            bruteSweepHoldUntilMs = pick.holdUntilMs();
+        }
+        return chosen;
     }
 
     /** 暴力扫射是否生效：开关开启 + Zombies 局内 + 已达到起始回合（回合未知不门控）。 */

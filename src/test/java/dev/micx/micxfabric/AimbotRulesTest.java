@@ -343,6 +343,110 @@ class AimbotRulesTest {
         assertEquals(-1, AimbotRules.bruteSweepAdvance(null, 0.0, 0.25));
     }
 
+    /* ---- BRUTE 扫射状态机：这组是「用户实测两次回归」的离线护栏 ----
+     * 回归 1：扫射在游戏里其实没工作（锥体、保活、推进三者只要一处错就退化单锁）。
+     * 回归 2：目标死亡后用上一落点推进会把游标停在同一只上，扫射退化成单锁。
+     */
+
+    @Test
+    void bruteSweepDecisionHoldsLiveTargetThenAdvancesRightOnDeath() {
+        double eps = 0.25;
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-20.0, -2.0, 15.0};
+
+        // 目标还活着且在锥内 → 保持，不换目标
+        AimbotRules.BruteSweepPick held = AimbotRules.bruteSweepDecision(ids, yaw,
+                22, -2.0, 1_000L, AimbotRules.BRUTE_HOLD_FOREVER, 0, eps);
+        assertEquals(22, held.entityId());
+        assertFalse(held.advanced());
+        assertEquals(-2.0, held.yawOff(), 1.0E-9);
+
+        // 22 死亡（从候选里消失）→ 沿锥体往右推进到 33，绝不重新选回同一只
+        AimbotRules.BruteSweepPick next = AimbotRules.bruteSweepDecision(new int[]{11, 33},
+                new double[]{-20.0, 15.0}, 22, -2.0, 1_000L,
+                AimbotRules.BRUTE_HOLD_FOREVER, 0, eps);
+        assertEquals(33, next.entityId());
+        assertTrue(next.advanced());
+    }
+
+    @Test
+    void bruteSweepDecisionWrapsBackToLeftmostWhenNothingToTheRight() {
+        // 最右端那只死后没有更右的目标 → 回到锥体最左端（重新从左扫）
+        AimbotRules.BruteSweepPick pick = AimbotRules.bruteSweepDecision(new int[]{11},
+                new double[]{-20.0}, 33, 15.0, 5_000L, AimbotRules.BRUTE_HOLD_FOREVER, 0, 0.25);
+        assertEquals(11, pick.entityId());
+        assertEquals(-20.0, pick.yawOff(), 1.0E-9);
+        assertTrue(pick.advanced());
+    }
+
+    @Test
+    void bruteSweepDecisionHoldGuardIsSafeValveNotAWait() {
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-20.0, -2.0, 15.0};
+
+        // dwell=0（默认）：停留不设上限，保持分支一直有效
+        AimbotRules.BruteSweepPick unlimited = AimbotRules.bruteSweepDecision(ids, yaw,
+                22, -2.0, 60_000L, AimbotRules.BRUTE_HOLD_FOREVER, 0, 0.25);
+        assertEquals(22, unlimited.entityId());
+        assertFalse(unlimited.advanced());
+
+        // dwell=200ms 的安全阀：到期后即使目标还活着也换人（防僵在打不死的怪上）
+        AimbotRules.BruteSweepPick guard = AimbotRules.bruteSweepDecision(ids, yaw,
+                22, -2.0, 1_000L, 1_200L, 200, 0.25);
+        assertEquals(22, guard.entityId());
+        assertFalse(guard.advanced());
+
+        AimbotRules.BruteSweepPick expired = AimbotRules.bruteSweepDecision(ids, yaw,
+                22, -2.0, 1_300L, 1_200L, 200, 0.25);
+        assertEquals(33, expired.entityId());
+        assertTrue(expired.advanced());
+        assertEquals(1_500L, expired.holdUntilMs());
+
+        // dwell<=0 推进时重新签发的截止是「不限」
+        assertEquals(AimbotRules.BRUTE_HOLD_FOREVER,
+                AimbotRules.bruteSweepDecision(ids, yaw, -1, Double.NaN, 0L, 0L, 0, 0.25)
+                        .holdUntilMs());
+    }
+
+    @Test
+    void bruteSweepDecisionEmptyConeFallsBackToSingleLock() {
+        assertEquals(-1, AimbotRules.BRUTE_SWEEP_NONE.entityId());
+        assertFalse(AimbotRules.BRUTE_SWEEP_NONE.advanced());
+        assertFalse(AimbotRules.bruteSweepDecision(new int[0], new double[0],
+                5, 0.0, 0L, AimbotRules.BRUTE_HOLD_FOREVER, 0, 0.25).advanced());
+        assertFalse(AimbotRules.bruteSweepDecision(null, null,
+                5, 0.0, 0L, AimbotRules.BRUTE_HOLD_FOREVER, 0, 0.25).advanced());
+        // 长度不一致视为退化输入，不得越界
+        assertFalse(AimbotRules.bruteSweepDecision(new int[]{1, 2}, new double[]{1.0},
+                5, 0.0, 0L, AimbotRules.BRUTE_HOLD_FOREVER, 0, 0.25).advanced());
+    }
+
+    @Test
+    void bruteSweepConeSlotsFiltersByAnchorThenSortsAscending() {
+        double[] offsets = new double[8];
+        int[] slots = AimbotRules.bruteSweepConeSlots(0.0, 30.0,
+                new double[]{40.0, -10.0, 5.0, -50.0, 25.0}, offsets);
+        assertArrayEquals(new int[]{1, 2, 4}, slots);
+        assertEquals(-10.0, offsets[0], 1.0E-9);
+        assertEquals(5.0, offsets[1], 1.0E-9);
+        assertEquals(25.0, offsets[2], 1.0E-9);
+
+        // 跨 0°/360°：锚定 350° 时 349° 在左侧、1°/20° 在右侧
+        double[] wrapped = new double[3];
+        int[] wslots = AimbotRules.bruteSweepConeSlots(350.0, 30.0,
+                new double[]{349.0, 1.0, 20.0}, wrapped);
+        assertArrayEquals(new int[]{0, 1, 2}, wslots);
+        assertEquals(-1.0, wrapped[0], 1.0E-9);
+        assertEquals(11.0, wrapped[1], 1.0E-9);
+        assertEquals(30.0, wrapped[2], 1.0E-9);
+
+        // 空候选 / 全部落在锥体外 → 空结果（调用方回落到单锁）
+        assertEquals(0, AimbotRules.bruteSweepConeSlots(0.0, 30.0, new double[0],
+                new double[0]).length);
+        assertEquals(0, AimbotRules.bruteSweepConeSlots(0.0, 30.0,
+                new double[]{120.0, -120.0}, new double[2]).length);
+    }
+
     /**
      * 2026-09-14 回归防护：目标死亡后必须沿锥体推进，不能卡在原地。
      *
