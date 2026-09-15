@@ -13,6 +13,7 @@
     "MixinConnectionPacketLog",
     "MixinPlayerInteractionRange",
     "RightClickDelayAccess",
+    "KeyMappingAccess",
     "MixinEntityRenderDispatcher",
     "MixinLivingEntityRenderer",
     "MixinEquipmentLayerRenderer",

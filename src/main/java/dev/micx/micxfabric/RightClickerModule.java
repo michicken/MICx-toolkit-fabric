@@ -1,6 +1,7 @@
 package dev.micx.micxfabric;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.micx.micxfabric.mixin.KeyMappingAccess;
 import dev.micx.micxfabric.mixin.RightClickDelayAccess;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -118,9 +119,7 @@ public final class RightClickerModule implements Module {
         suppressVanilla(client);
         long now = System.currentTimeMillis();
         if (lastClickMs != 0L && (lastInjectTick == tickCounter || now - lastClickMs < nextDelayMs)) return;
-        KeyMapping keyUse = client.options.keyUse;
-        if (keyUse == null) return;
-        InputConstants.Key key = keyUse.getDefaultKey();
+        InputConstants.Key key = resolveUseKey(client.options.keyUse);
         if (key == null) return;
         KeyMapping.click(key);
         lastInjectTick = tickCounter;
@@ -179,6 +178,49 @@ public final class RightClickerModule implements Module {
     public boolean isSupplyingFire() {
         Minecraft client = Minecraft.getInstance();
         return shouldFire(client);
+    }
+
+    /**
+     * 连点该点哪个键：「使用键」当前绑定的那个键，未绑定返回 null。
+     *
+     * <p>不能用 {@code getDefaultKey()}：玩家把左右键互换后，默认右键在 {@code KeyMapping.MAP}
+     * 里已经属于 keyAttack，点它会打出平 A —— 连点变成 20 CPS 攻击（本次修的 bug）。
+     * 点当前绑定才等价于玩家自己按使用键，绑到键盘键时同样成立。
+     */
+    public static InputConstants.Key resolveUseKey(KeyMapping keyUse) {
+        if (keyUse == null || !UseClickRules.shouldInject(keyUse.isUnbound())) return null;
+        return currentUseKey(keyUse);
+    }
+
+    /** 读 protected 的当前绑定字段；accessor 未生效时退回默认键（正常构建走不到）。 */
+    public static InputConstants.Key currentUseKey(KeyMapping keyUse) {
+        if (keyUse == null) return null;
+        try {
+            InputConstants.Key current = ((KeyMappingAccess) (Object) keyUse).micx$currentKey();
+            if (current != null) return current;
+        } catch (Throwable ignored) {
+        }
+        return keyUse.getDefaultKey();
+    }
+
+    /** 面板状态行：连点当前实际点在哪个键上、是否已跟随改键。 */
+    public String useKeyStatus() {
+        Minecraft client = Minecraft.getInstance();
+        KeyMapping keyUse = client == null || client.options == null ? null : client.options.keyUse;
+        if (keyUse == null) return "未取到使用键";
+        boolean unbound = keyUse.isUnbound();
+        InputConstants.Key current = currentUseKey(keyUse);
+        InputConstants.Key vanilla = keyUse.getDefaultKey();
+        String label = "未绑定";
+        if (!unbound && current != null) {
+            label = current.getType() == InputConstants.Type.MOUSE
+                    ? UseClickRules.mouseName(current.getValue())
+                    : current.getDisplayName().getString();
+        }
+        boolean rebound = !unbound && current != null && vanilla != null
+                && current.getType() == vanilla.getType()
+                && UseClickRules.rebound(false, vanilla.getValue(), current.getValue());
+        return UseClickRules.status(unbound, label, rebound);
     }
 
     private boolean shouldFire(Minecraft client) {

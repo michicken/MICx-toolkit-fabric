@@ -2053,7 +2053,8 @@ public final class AimbotModule implements Module {
     private void fireUseKey(Minecraft client) {
         if (RightClickerModule.instance().isSupplyingFire()) return;
         if (client.options == null || client.options.keyUse == null) return;
-        InputConstants.Key key = client.options.keyUse.getDefaultKey();
+        // 与连点同源：按「使用键」当前绑定注入，玩家左右键互换后不能再用默认键（那是攻击键）
+        InputConstants.Key key = RightClickerModule.resolveUseKey(client.options.keyUse);
         if (key != null) KeyMapping.click(key);
     }
 

@@ -74,6 +74,12 @@ public final class RightClickerConfigScreen extends ModuleConfigScreen {
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 34;
+        y = wrapped(graphics, "连点目标：" + module.useKeyStatus(),
+                contentLeft(), y, AMBER, contentWidth());
+        y += 4;
+        y = wrapped(graphics, "按「使用键」当前绑定注入：改成左右键互换（左键=使用）后自动跟随改成左键连点，未绑定则不注入。",
+                contentLeft(), y, TEXT_DIM, contentWidth());
+        y += 4;
         y = wrapped(graphics, "区间可在 1-50 调节，Min>Max 会自动交换；与 SkillCast 互斥，不会叠加包。",
                 contentLeft(), y, TEXT_DIM, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
