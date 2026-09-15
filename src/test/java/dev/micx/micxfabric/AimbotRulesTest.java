@@ -299,6 +299,21 @@ class AimbotRulesTest {
     }
 
     @Test
+    void coneGoesStaleWhenTooFewTargetsOrTheCrosshairLeavesIt() {
+        // 0/1 只都没得扫（1 只时游标只有一个落点，推进也还是它）→ 过期
+        assertTrue(AimbotRules.bruteSweepConeStale(0, 2, 0.0, 45.0));
+        assertTrue(AimbotRules.bruteSweepConeStale(1, 2, 0.0, 45.0));
+        assertFalse(AimbotRules.bruteSweepConeStale(2, 2, 0.0, 45.0));
+        assertFalse(AimbotRules.bruteSweepConeStale(6, 2, 30.0, 45.0));
+        // 准星自己跑出锥体（玩家转身看别处）→ 过期；刚好压在边界不算
+        assertFalse(AimbotRules.bruteSweepConeStale(3, 2, 45.0, 45.0));
+        assertTrue(AimbotRules.bruteSweepConeStale(3, 2, 45.1, 45.0));
+        assertTrue(AimbotRules.bruteSweepConeStale(3, 2, 120.0, 45.0));
+        // 角度缺失（NaN）不算过期：宁可维持现状也不要因为一次坏数据把锥体重锚
+        assertFalse(AimbotRules.bruteSweepConeStale(3, 2, Double.NaN, 45.0));
+    }
+
+    @Test
     void bruteTurnWindowDrainsOneTickWithoutOvershooting() {
         final double tick = 1.0 / 20.0;
         final double window = 25.0 / 1000.0;

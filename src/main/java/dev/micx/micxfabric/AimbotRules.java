@@ -518,6 +518,25 @@ public final class AimbotRules {
         return round >= Math.max(1, minRound);
     }
 
+    /**
+     * 扫射锥体是否已「过期」——过期就该重锚到当前准星（0.2.99，用户定稿 2026-09-15）。
+     *
+     * <p>锚定不漂移只解决「扫射自己带偏准星导致锥体跟着漂」；它同时带来另一个后果：
+     * 玩家自己转身 / 换波之后，老角度里可能只剩 0~1 只怪，而只有 1 只时游标只有一个落点
+     * —— 表现就是「锁单只，完全不扫」。两种过期情形：
+     * <ul>
+     *   <li>{@code coneCount < minInCone}：锥内目标不够扫（0 只退化单锁、1 只无从推进）；</li>
+     *   <li>准星跑出锥体（{@code crosshairOffDeg > fovDeg}）：玩家已经刻意看向别处，
+     *       老锥体不再代表他想打的方向。</li>
+     * </ul>
+     * 只要满足其一即视为过期；调用方用「持续这么久才动手」的滞回来过滤甩枪抖动。
+     */
+    public static boolean bruteSweepConeStale(int coneCount, int minInCone,
+                                              double crosshairOffDeg, double fovDeg) {
+        if (coneCount < Math.max(1, minInCone)) return true;
+        return Double.isFinite(crosshairOffDeg) && crosshairOffDeg > Math.max(0.0, fovDeg);
+    }
+
     /** 只有落在限定 FOV 半角内的目标才参与暴力扫射（不做 360° 乱扫）。 */
     public static boolean bruteSweepInFov(double signedYawDeg, double fovDeg) {
         if (!Double.isFinite(signedYawDeg) || !Double.isFinite(fovDeg)) return false;
