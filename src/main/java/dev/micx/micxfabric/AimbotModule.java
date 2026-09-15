@@ -13,9 +13,21 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.golem.IronGolem;
+import net.minecraft.world.entity.animal.wolf.Wolf;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.Blaze;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Endermite;
+import net.minecraft.world.entity.monster.Ghast;
 import net.minecraft.world.entity.monster.Giant;
+import net.minecraft.world.entity.monster.Silverfish;
+import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.monster.cubemob.Slime;
+import net.minecraft.world.entity.monster.skeleton.Skeleton;
+import net.minecraft.world.entity.monster.skeleton.WitherSkeleton;
+import net.minecraft.world.entity.monster.spider.CaveSpider;
 import net.minecraft.world.entity.monster.zombie.Zombie;
+import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.SlabBlock;
@@ -708,75 +720,83 @@ public final class AimbotModule implements Module {
         AABB box = leadBox(meta.entity);
         if (box == null) return null;
         double height = box.maxY - box.minY;
-        Vec3 executablePoint = computeAimPoint(client, meta.entity);
-        boolean giant = isGiant(meta.entity);
-        // 巨人（首选 0.999）与 BadHeadShot（首选 0.65）都要有兜底：首选瞄点被挡时
-        // 不再整只丢怪，而是退到最接近该点的可见采样 —— 先往下，没有可见的下方
-        // 采样时再往上（双向兜底）。普通怪维持既有的「自上而下第一个可见」。
-        // 每层再做「无级」水平兜底：中线被挡时沿视线垂线滑动并二分逼近，
-        // 只要碰撞箱在该层有任一暴露面就能找到可打点（用户定稿 2026-09-11）。
-        boolean insta = !giant && instaActive();
-        boolean badHeadshot = !giant && !insta && isBadHeadshot(client, meta.entity);
-        boolean nearestPreferred = giant || insta || badHeadshot;
-        double preferredFrac = giant ? config.giantAimFrac
-                : insta ? AimbotRules.INSTA_AIM_FRAC
-                : badHeadshot ? config.badHeadshotFrac
-                : Double.NaN;
         double cx = (box.minX + box.maxX) * 0.5;
         double cz = (box.minZ + box.maxZ) * 0.5;
         double hx = (box.maxX - box.minX) * 0.5;
         double hz = (box.maxZ - box.minZ) * 0.5;
-        Vec3 fallbackPoint = null;
-        double fallbackScore = Double.POSITIVE_INFINITY;
-        for (int percent = 95; percent >= 0; percent -= 5) {
-            if (!giant && percent <= 80 && percent % 10 != 0) continue;
-            double frac = percent / 100.0;
-            double y = box.minY + height * frac;
-            Vec3 scanPoint = visibleScanPoint(client, eye, cx, cz, hx, hz, y);
-            if (scanPoint == null) continue;
-            double score = AimbotRules.bodyFallbackScore(frac, nearestPreferred, preferredFrac);
-            if (score < fallbackScore) {
-                fallbackScore = score;
-                fallbackPoint = scanPoint;
+        // 竖扫起点 = 首选高度（巨人专属 / Insta 腰腹 / 坏爆头躯干 / 常规 0.9+0.2×Crits，
+        // 已含 VCrits 的高低差压低与 Head Clamp）。
+        double fromY = Math.min(box.maxY, Math.max(box.minY,
+                box.minY + height * preferredFrac(client, meta.entity, box)));
+        // 自上而下每 0.05 格一层、首个可见点即停（OceanClient 口径）：永远取「能打中的
+        // 最高点」，而不是扫完整箱再比分数——后者步长粗（旧版僵尸身上 0.195 格/层）又贵。
+        // 每层先试中线；中线被挡时做水平兜底（垂线 ±45° 三方向 + 二分），但全箱最多
+        // AIM_FALLBACK_BUDGET 次，把整只被挡时的射线数钉死在预算内。
+        int layers = AimbotRules.scanLayerCount(fromY, box.minY, AimbotRules.AIM_SCAN_STEP,
+                AimbotRules.AIM_SCAN_MAX_LAYERS);
+        int fallbacksLeft = AimbotRules.AIM_FALLBACK_BUDGET;
+        for (int i = 0; i < layers; i++) {
+            double y = AimbotRules.scanLayerY(fromY, box.minY, i, AimbotRules.AIM_SCAN_STEP);
+            Vec3 center = new Vec3(cx, y, cz);
+            if (canWallShot(client, eye, center)) {
+                return scoredPoint(client, meta, eye, all, box, center);
             }
-            if (executablePoint != null) {
-                return scoredPoint(client, meta, eye, all, box, executablePoint);
+            if (fallbacksLeft <= 0) continue;
+            fallbacksLeft--;
+            Vec3 sideways = visibleScanPoint(client, eye, cx, cz, hx, hz, y);
+            if (sideways != null) {
+                return scoredPoint(client, meta, eye, all, box, sideways);
             }
         }
-        // The preferred head/critical point may be behind a block or outside
-        // the usable pitch window. Keep the nearest visible sample so a body
-        // hit remains possible instead of tracking empty air.
-        return fallbackPoint == null
-                ? null
-                : scoredPoint(client, meta, eye, all, box, fallbackPoint);
+        // 下方整段被挡时才回头往上找（巨人 / 坏爆头允许「上可用」，与旧版
+        // UPWARD_FALLBACK_PENALTY 的语义一致：下优先、上兜底）。
+        int upLayers = AimbotRules.upwardLayerCount(fromY, box.maxY, AimbotRules.AIM_SCAN_STEP,
+                AimbotRules.AIM_SCAN_MAX_LAYERS);
+        for (int i = 1; i <= upLayers; i++) {
+            double y = AimbotRules.upwardLayerY(fromY, box.maxY, i, AimbotRules.AIM_SCAN_STEP);
+            Vec3 point = new Vec3(cx, y, cz);
+            if (canWallShot(client, eye, point)) {
+                return scoredPoint(client, meta, eye, all, box, point);
+            }
+        }
+        return null;
     }
 
     /**
      * 同一高度层的「无级」水平兜底：只要碰撞箱在该层有任一暴露面，就返回该层上
      * 最靠中线的可打点；整层全被挡返回 null。
      *
-     * <p>顺序：① 试中线（常态 1 次射线，与旧行为开销一致）；② 被挡则沿<b>视线垂线</b>
-     * 方向滑到箱缘内侧各试一次 —— 遮挡物挡住的是沿视线方向的一条带，沿垂线滑动恰好
-     * 横穿遮挡带；③ 任一侧箱缘可见，则在「被挡的中线」与「可见的箱缘」之间二分
+     * <p>方向取三个（用户定稿 2026-09-15）：视线垂线，以及垂线向视线方向左右各转 45°。
+     * 只用垂线时，遮挡带的走向若与垂线平行（斜放的方块、墙角、并排的柱子）会整条被挡；
+     * 三个方向下只要该层还有暴露面就能捞到。每个方向内部：① 试中线；② 被挡则滑到箱缘
+     * 内侧各试一次；③ 任一侧箱缘可见，则在「被挡的中线」与「可见的箱缘」之间二分
      * {@link AimbotRules#HORIZONTAL_BISECT_STEPS} 次，收敛到最靠中线的可见点。
-     * 两侧箱缘都不可见时不再花射线二分（视为整层被挡）。
      */
     private Vec3 visibleScanPoint(Minecraft client, Vec3 eye,
                                   double cx, double cz, double hx, double hz, double y) {
-        Vec3 center = new Vec3(cx, y, cz);
-        if (canWallShot(client, eye, center)) return center;
         double dx = cx - eye.x;
         double dz = cz - eye.z;
         double len = Math.sqrt(dx * dx + dz * dz);
-        double nx;
-        double nz;
+        double vx;
+        double vz;
         if (len < 1.0E-6) {
-            nx = 1.0;
-            nz = 0.0;
+            vx = 0.0;
+            vz = 1.0;
         } else {
-            nx = -dz / len;
-            nz = dx / len;
+            vx = dx / len;
+            vz = dz / len;
         }
+        double[] dirs = AimbotRules.fallbackDirections(-vz, vx, vx, vz);
+        for (int i = 0; i + 1 < dirs.length; i += 2) {
+            Vec3 hit = slideVisibleScanPoint(client, eye, cx, cz, hx, hz, y, dirs[i], dirs[i + 1]);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    /** 单个水平方向的「滑到箱缘 + 二分逼近」，两个方向都不可见返回 null。 */
+    private Vec3 slideVisibleScanPoint(Minecraft client, Vec3 eye, double cx, double cz,
+                                       double hx, double hz, double y, double nx, double nz) {
         double sEdge = AimbotRules.slideHalfExtent(hx, hz, nx, nz)
                 * AimbotRules.HORIZONTAL_SCAN_KEEP;
         if (sEdge <= 0.0) return null;
@@ -1894,39 +1914,89 @@ public final class AimbotModule implements Module {
         if (!config.aimLead || client == null || client.player == null) return null;
         AABB box = leadBox(target);
         if (box == null) return null;
-        boolean giant = isGiant(target);
-        double frac;
-        if (giant) {
-            // 巨人专属系数：默认 0.999（脚上 11.988 / 箱高 12.0）。
-            // 与全局 Crits 解耦，不再被普通怪的爆头系数连带牵动。
-            frac = config.giantAimFrac;
-        } else if (instaActive()) {
-            // 秒杀窗口内一击必杀，爆头无收益，压到腰腹换最高命中率。
-            frac = AimbotRules.INSTA_AIM_FRAC;
-        } else if (isBadHeadshot(client, target)) {
-            // BadHeadShot 怪下压到躯干中上段：它们恒在玩家上方，幽灵框是预测位置，
-            // 瞄点越靠上越容易从头顶掠过。系数已配置化（默认见 AimbotRules）。
-            frac = config.badHeadshotFrac;
-        } else {
-            frac = 0.9 + 0.2 * config.crits;
-        }
-        // 巨人走专属系数、且其取值范围已是 [0.50, 1.00]，不再被 Head Clamp 二次夹取，
-        // 否则面板里填 0.999 会被静默压回 0.98。其余目标仍受 Head Clamp 约束。
-        if (!giant) {
-            frac = Math.max(0.05, Math.min(config.headFracMax, frac));
-        }
-        if (!giant && config.vcrits > 0.0) {
-            double lower = Math.min(0.5, config.vcrits * Math.abs(box.minY - client.player.getY()));
-            frac = Math.max(0.5, frac * (1.0 - lower));
-        }
+        double frac = preferredFrac(client, target, box);
         Vec3 point = new Vec3((box.minX + box.maxX) * 0.5,
                 box.minY + (box.maxY - box.minY) * frac,
                 (box.minZ + box.maxZ) * 0.5);
         return canWallShot(client, client.player.getEyePosition(1.0f), point) ? point : null;
     }
 
+    /**
+     * 首选瞄准高度系数（幽灵框内的归一化高度）。
+     *
+     * <p>优先级：巨人专属系数（默认 0.999，与 Crits 解耦、不受 Head Clamp 夹取）→
+     * Insta 窗口（腰腹 0.5，一击必杀时爆头无收益）→ 坏爆头怪（躯干中上段，默认 0.65）
+     * → 常规 {@code 0.9 + 0.2×Crits}。常规与坏爆头再受 Head Clamp 约束，并按 VCrits
+     * 做「目标高于你时压低瞄点」的修正（最多压低 50%，下限 0.5）。
+     */
+    private double preferredFrac(Minecraft client, LivingEntity target, AABB box) {
+        boolean giant = isGiant(target);
+        double frac;
+        if (giant) {
+            frac = config.giantAimFrac;
+        } else if (instaActive()) {
+            frac = AimbotRules.INSTA_AIM_FRAC;
+        } else if (isBadHeadshot(client, target)) {
+            frac = config.badHeadshotFrac;
+        } else {
+            frac = 0.9 + 0.2 * config.crits;
+        }
+        // 巨人取值范围已是 [0.50, 1.00]，不再被 Head Clamp 二次夹取，否则面板里
+        // 填 0.999 会被静默压回 0.98。
+        if (giant) return frac;
+        frac = Math.max(0.05, Math.min(config.headFracMax, frac));
+        if (config.vcrits > 0.0 && client != null && client.player != null) {
+            double lower = Math.min(0.5, config.vcrits * Math.abs(box.minY - client.player.getY()));
+            frac = Math.max(0.5, frac * (1.0 - lower));
+        }
+        return frac;
+    }
+
     private AABB leadBox(LivingEntity target) {
-        return AimLeadModule.instance().leadBoxFor(target);
+        return applyServerDims(target, AimLeadModule.instance().leadBoxFor(target));
+    }
+
+    /**
+     * 用服务端口径的命中箱替掉客户端 AABB（中心与脚底不动，只换三围）。
+     *
+     * <p>命中箱是<b>服务端</b>属性：Hypixel 的判定箱比客户端渲染盒宽（OceanClient 在 1.8
+     * 实测：僵尸 0.9 vs 原版 0.6、狼 1.5 vs 0.6、铁傀儡 1.8 vs 1.4），照客户端盒子算
+     * 会「看着打在头上、服务端判没中」。表值与全局缩放见 {@link AimTargetDims}。
+     */
+    private AABB applyServerDims(LivingEntity target, AABB box) {
+        if (box == null || !config.serverDims) return box;
+        AimTargetDims.Dims fallback = new AimTargetDims.Dims(box.maxX - box.minX,
+                box.maxY - box.minY, box.maxZ - box.minZ);
+        AimTargetDims.Dims dims = AimTargetDims.resolve(dimsKey(target), fallback,
+                config.serverDimsScale);
+        if (dims == null) return box;
+        double cx = (box.minX + box.maxX) * 0.5;
+        double cz = (box.minZ + box.maxZ) * 0.5;
+        double halfW = dims.width() * 0.5;
+        double halfD = dims.depth() * 0.5;
+        return new AABB(cx - halfW, box.minY, cz - halfD,
+                cx + halfW, box.minY + dims.height(), cz + halfD);
+    }
+
+    /** 命中箱表的查询键；表里没有的怪返回 null（保持客户端 AABB）。 */
+    private static String dimsKey(LivingEntity entity) {
+        if (entity instanceof Giant) return "giant";
+        if (entity instanceof ZombifiedPiglin piglin) return piglin.isBaby() ? "zombie_baby" : "zombified_piglin";
+        if (entity instanceof Zombie zombie) return zombie.isBaby() ? "zombie_baby" : "zombie";
+        if (entity instanceof WitherSkeleton) return "wither_skeleton";
+        if (entity instanceof Skeleton) return "skeleton";
+        if (entity instanceof Blaze) return "blaze";
+        if (entity instanceof Wolf wolf) return wolf.isBaby() ? "wolf_baby" : "wolf";
+        // 史莱姆与岩浆怪同表（后者继承前者）：边长随 size 变化。
+        if (entity instanceof Slime slime) return "slime:" + slime.getSize();
+        if (entity instanceof Witch) return "witch";
+        if (entity instanceof Creeper) return "creeper";
+        if (entity instanceof CaveSpider) return "cave_spider";
+        if (entity instanceof Silverfish) return "silverfish";
+        if (entity instanceof Endermite) return "endermite";
+        if (entity instanceof Ghast) return "ghast";
+        if (entity instanceof IronGolem) return "iron_golem";
+        return null;
     }
 
     /**

@@ -32,6 +32,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox headFracMaxBox;
     private EditBox badHeadshotFracBox;
     private EditBox giantAimFracBox;
+    private EditBox serverDimsScaleBox;
     private EditBox joystickSensitivityBox;
     private EditBox joystickSwitchBox;
     private EditBox flickSpeedBox;
@@ -69,6 +70,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         headFracMaxBox = box("headFracMax", Double.toString(c.headFracMax));
         badHeadshotFracBox = box("badHeadshotFrac", Double.toString(c.badHeadshotFrac));
         giantAimFracBox = box("giantAimFrac", Double.toString(c.giantAimFrac));
+        serverDimsScaleBox = box("serverDimsScale", Double.toString(c.serverDimsScale));
         joystickSensitivityBox = box("joystickSensitivity", Double.toString(c.joystickSensitivity));
         joystickSwitchBox = box("joystickSwitchDeg", Integer.toString(c.joystickSwitchDeg));
         flickSpeedBox = box("joystickFlickPxPerSec", Integer.toString(c.joystickFlickPxPerSec));
@@ -218,6 +220,20 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "巨人瞄点 / Giant Frac", "0.50–1.00", giantAimFracBox, y);
         y = wrapped(graphics,
                 "巨人专属瞄准高度系数，默认 0.999（脚上 11.988 / 箱高 12.0，比眼高高 1.548 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.999 时距箱顶仅 0.012 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+
+        section(graphics, "HITBOX / 命中口径", y);
+        y += 20;
+        y = toggleRow(graphics, mouseX, mouseY, "服务端命中箱 / Server Dims", c.serverDims,
+                () -> c.serverDims = !c.serverDims, y,
+                "用 Hypixel 服务端的判定箱替掉客户端 AABB 的宽高（中心与脚底不动）。默认开启：僵尸 0.9×2.0、骷髅 0.9×2.0、凋灵骷髅 1.0×2.6、狼 1.5×0.7、铁傀儡 1.8×2.7、巨人 3.9×12.0、烈焰人 0.9×2.0、史莱姆 0.51×size；表外的怪保持客户端盒子。数值来自 OceanClient 3.3.8 的 1.8.9 Hypixel 实测——判定箱是服务端属性，版本升级不变。关掉可回到纯客户端 AABB 做对照。 ");
+        y = numberRow(graphics, "箱体缩放 / Dims Scale", "0.50–1.50", serverDimsScaleBox, y);
+        y = wrapped(graphics,
+                "命中箱三围的全局缩放，1.00 = 表值原样。窄了会「看着打中其实没打中」，宽了瞄点会飘出真实判定箱（水平兜底最远滑到箱缘×0.95）；实测微调用。",
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+
+        y = wrapped(graphics,
+                "瞄准点竖扫：从首选高度起每 0.05 格往下找「能打中的最高点」，命中即停；中线被挡时在该层沿视线垂线及左右各 45° 三个方向滑到箱缘（单只目标最多 4 次），下方整段被挡再往上兜底。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
         y = wrapped(graphics,
                 "FOV 是相对当前视线的筛选角度，360° 表示不限制；Max Step 只影响 NORMAL，Brute Step 只在 BRUTE 生效。",
@@ -430,6 +446,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.headFracMax = parseDouble(headFracMaxBox, 0.01, 2.0, "Head Clamp");
             c.badHeadshotFrac = parseDouble(badHeadshotFracBox, 0.30, 0.95, "BadHS Frac");
             c.giantAimFrac = parseDouble(giantAimFracBox, 0.50, 1.00, "Giant Frac");
+            c.serverDimsScale = parseDouble(serverDimsScaleBox, 0.50, 1.50, "Dims Scale");
             c.joystickSensitivity = parseDouble(joystickSensitivityBox, 0.2, 3.0, "Sensitivity");
             c.joystickSwitchDeg = parseInt(joystickSwitchBox, 5, 60, "Switch Deg");
             c.joystickFlickPxPerSec = parseInt(flickSpeedBox, 300, 1500, "Flick Speed");

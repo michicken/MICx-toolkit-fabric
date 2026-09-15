@@ -839,4 +839,76 @@ class AimbotRulesTest {
         assertCells(AimbotRules.rayCells(-0.5, 0.5, 0.5, 1.5, 0.5, 0.5),
                 new int[][]{{-1, 0, 0}, {0, 0, 0}, {1, 0, 0}});
     }
+
+    // ---- 瞄准点竖扫（OceanClient 口径：0.05 格步长、自上而下首个可见即停）----
+
+    @Test
+    void downwardScanWalksEveryFiveCentimetres() {
+        // 僵尸幽灵框：脚 64.00，首选 0.9 → 65.80；0.05 步长一格格往下
+        int count = AimbotRules.scanLayerCount(65.80, 64.0, AimbotRules.AIM_SCAN_STEP, 999);
+        assertEquals(37, count);                       // (65.80-64.00)/0.05 + 1
+        assertEquals(65.80, AimbotRules.scanLayerY(65.80, 64.0, 0, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+        assertEquals(65.75, AimbotRules.scanLayerY(65.80, 64.0, 1, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+        assertEquals(64.00, AimbotRules.scanLayerY(65.80, 64.0, 36, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+    }
+
+    @Test
+    void downwardScanIsCappedByLayerBudget() {
+        // 完全遮挡时的射线护栏：层数不超过 AIM_SCAN_MAX_LAYERS
+        int count = AimbotRules.scanLayerCount(76.0, 64.0, AimbotRules.AIM_SCAN_STEP,
+                AimbotRules.AIM_SCAN_MAX_LAYERS);
+        assertEquals(AimbotRules.AIM_SCAN_MAX_LAYERS, count);
+    }
+
+    @Test
+    void downwardScanNeverLeavesTheBox() {
+        // 起点低于箱底（异常输入）时退化为单层，且层高不会穿到箱底以下
+        assertEquals(1, AimbotRules.scanLayerCount(64.0, 64.0, AimbotRules.AIM_SCAN_STEP, 48));
+        assertEquals(0, AimbotRules.scanLayerCount(63.9, 64.0, AimbotRules.AIM_SCAN_STEP, 48));
+        assertEquals(64.0, AimbotRules.scanLayerY(64.02, 64.0, 5, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+    }
+
+    @Test
+    void upwardFallbackStartsAboveThePreferredPointAndStopsAtBoxTop() {
+        // 坏爆头首选 0.65（脚 64.00 → 65.30）：上方最多 0.70 格可扫 = 14 层
+        assertEquals(14, AimbotRules.upwardLayerCount(65.30, 66.0, AimbotRules.AIM_SCAN_STEP, 48));
+        assertEquals(65.35, AimbotRules.upwardLayerY(65.30, 66.0, 1, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+        assertEquals(66.00, AimbotRules.upwardLayerY(65.30, 66.0, 99, AimbotRules.AIM_SCAN_STEP), 1.0e-9);
+        // 首选点已经贴箱顶（巨人 0.999）→ 没有上方兜底可言
+        assertEquals(0, AimbotRules.upwardLayerCount(75.98, 75.99, AimbotRules.AIM_SCAN_STEP, 48));
+    }
+
+    // ---- 水平兜底三方向（垂线 + 左右各 45°）----
+
+    @Test
+    void fallbackDirectionsAreThreeUnitVectorsFortyFiveDegreesApart() {
+        // 视线朝 +x，垂线取 (0,1)
+        double[] dirs = AimbotRules.fallbackDirections(0.0, 1.0, 1.0, 0.0);
+        assertEquals(6, dirs.length);
+        assertEquals(0.0, dirs[0], 1.0e-9);
+        assertEquals(1.0, dirs[1], 1.0e-9);
+        double half = Math.sqrt(0.5);
+        assertEquals(half, dirs[2], 1.0e-9);           // 垂线向视线方向转 45°
+        assertEquals(half, dirs[3], 1.0e-9);
+        assertEquals(-half, dirs[4], 1.0e-9);          // 另一侧 45°
+        assertEquals(half, dirs[5], 1.0e-9);
+        for (int i = 0; i + 1 < dirs.length; i += 2) {
+            assertEquals(1.0, Math.hypot(dirs[i], dirs[i + 1]), 1.0e-9,
+                    "第 " + (i / 2) + " 个方向应为单位向量");
+        }
+        assertEquals(Math.cos(Math.toRadians(45.0)), dirs[0] * dirs[2] + dirs[1] * dirs[3], 1.0e-9);
+    }
+
+    @Test
+    void fallbackDirectionsRotateWithTheViewDirection() {
+        // 视线朝 +z，垂线 (1,0)：两个 45° 方向落在 x±z 的对角线上
+        double[] dirs = AimbotRules.fallbackDirections(1.0, 0.0, 0.0, 1.0);
+        double half = Math.sqrt(0.5);
+        assertEquals(1.0, dirs[0], 1.0e-9);
+        assertEquals(0.0, dirs[1], 1.0e-9);
+        assertEquals(half, dirs[2], 1.0e-9);
+        assertEquals(half, dirs[3], 1.0e-9);
+        assertEquals(half, dirs[4], 1.0e-9);
+        assertEquals(-half, dirs[5], 1.0e-9);
+    }
 }

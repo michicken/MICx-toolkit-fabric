@@ -365,11 +365,86 @@ public final class AimbotRules {
     public static final int HORIZONTAL_BISECT_STEPS = 4;
 
     /**
+     * 瞄准点竖扫步长（格，绝对值）。移植 OceanClient 的 {@code Y_RES = 0.05}。
+     *
+     * <p>用户定稿 2026-09-15：原先按「箱子高度的百分比」分 12 层（僵尸身上约 0.195 格/步），
+     * 一条 0.1 格高的可见缝会被整层跳过；改成绝对 0.05 格后不漏缝，且「自上而下首个可见
+     * 即停」的语义让常态射线数反而更少（首选点可见时只打一发）。
+     */
+    public static final double AIM_SCAN_STEP = 0.05;
+
+    /** 竖扫层数上限：整只怪被完全遮挡时的射线数护栏（0.05 步长够扫 2.4 格）。 */
+    public static final int AIM_SCAN_MAX_LAYERS = 48;
+
+    /**
+     * 单只目标每 tick 允许做几次「水平兜底」（垂线 ±45° 三方向 + 二分，最贵 18 发射线）。
+     * 遮挡带一般都在高处，前几次兜底覆盖后，更低的层只试中线——把最坏情况钉在预算内。
+     */
+    public static final int AIM_FALLBACK_BUDGET = 4;
+
+    /**
+     * 水平兜底方向数：视线垂线、垂线向视线方向转 ±45°。
+     *
+     * <p>只用垂线时，遮挡带的走向若与垂线平行（斜放的方块、墙角）就会整条被挡；
+     * 加上左右 45° 后覆盖三个方向（用户 2026-09-15 定稿）。
+     */
+    public static final int HORIZONTAL_DIRECTIONS = 3;
+
+    /**
      * 轴对齐盒的支撑函数：箱体半宽 {@code (hx, hz)} 沿单位滑动方向 {@code (nx, nz)}
      * 的最大投影长度。中线沿 n 滑动 {@code ±slideHalfExtent} 恰好滑到箱缘。
      */
     public static double slideHalfExtent(double hx, double hz, double nx, double nz) {
         return hx * Math.abs(nx) + hz * Math.abs(nz);
+    }
+
+    /**
+     * 生成水平兜底方向表（3 个，已归一化）：{@code [垂线, 垂线+45°, 垂线-45°]}。
+     *
+     * <p>调用方保证 {@code (nx, nz)} 是单位向量、且 {@code (vx, vz)} 是与之垂直的单位
+     * 视线方向——垂线绕水平面转 ±45° 即 {@code (n ± v) / √2}，无需三角函数。
+     */
+    public static double[] fallbackDirections(double nx, double nz, double vx, double vz) {
+        double k = Math.sqrt(0.5);
+        return new double[]{
+                nx, nz,
+                (nx + vx) * k, (nz + vz) * k,
+                (nx - vx) * k, (nz - vz) * k,
+        };
+    }
+
+    /**
+     * 竖扫共有几层：从 {@code fromY} 起每 {@code step} 往下一层，直到 {@code minY}（含），
+     * 最多 {@code maxLayers} 层。
+     */
+    public static int scanLayerCount(double fromY, double minY, double step, int maxLayers) {
+        if (!(step > 0.0) || maxLayers <= 0 || !(fromY >= minY)) return fromY < minY ? 0 : 1;
+        double span = fromY - minY;
+        // 1e-9 的容差：1.80/0.05 在浮点下是 35.999…，不补这一下会少一层（比如正好贴着箱底）
+        int count = (int) Math.floor(span / step + 1.0e-9) + 1;
+        return Math.max(1, Math.min(maxLayers, count));
+    }
+
+    /** 竖扫第 {@code index} 层的高度（index 从 0 起，沿 y 向下）。 */
+    public static double scanLayerY(double fromY, double minY, int index, double step) {
+        if (index <= 0) return fromY;
+        return Math.max(minY, fromY - step * index);
+    }
+
+    /**
+     * 向上兜底共有几层：从 {@code fromY} 起每 {@code step} 往上一层，直到 {@code maxY}。
+     * index 从 1 起（第 1 层 = {@code fromY + step}），故层数不含起点本身。
+     */
+    public static int upwardLayerCount(double fromY, double maxY, double step, int maxLayers) {
+        if (!(step > 0.0) || maxLayers <= 0 || !(maxY > fromY)) return 0;
+        int count = (int) Math.floor((maxY - fromY) / step);
+        return Math.max(0, Math.min(maxLayers, count));
+    }
+
+    /** 向上兜底第 {@code index} 层的高度（index 从 1 起，沿 y 向上，封顶 maxY）。 */
+    public static double upwardLayerY(double fromY, double maxY, int index, double step) {
+        if (index <= 0) return fromY;
+        return Math.min(maxY, fromY + step * index);
     }
 
     /** Minecraft's yaw/pitch convention, used by the virtual joystick selector. */

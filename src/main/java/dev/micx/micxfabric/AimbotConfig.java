@@ -120,6 +120,14 @@ public final class AimbotConfig {
      */
     public double giantAimFrac = AimbotRules.GIANT_AIM_FRAC_DEFAULT;
 
+    /**
+     * 用服务端口径的命中箱（{@link AimTargetDims}）替掉客户端 AABB 的宽高。
+     * Hypixel 的判定箱比客户端渲染盒宽，照客户端盒子算瞄点会「看着打在头上、服务端判没中」。
+     */
+    public boolean serverDims = true;
+    /** 命中箱三围的全局缩放，1.0 = 表值原样；供实测微调（面板 0.50–1.50）。 */
+    public double serverDimsScale = 1.0;
+
     private boolean loaded;
     private int[] ignoreTooKey = KeyChord.EMPTY;
     private int[] ignoreGolemKey = KeyChord.EMPTY;
@@ -200,6 +208,8 @@ public final class AimbotConfig {
                 AimbotRules.BAD_HEADSHOT_BODY_FRAC_DEFAULT, 0.30, 0.95);
         giantAimFrac = ConfigProperties.real(p, "giantAimFrac",
                 AimbotRules.GIANT_AIM_FRAC_DEFAULT, 0.50, 1.00);
+        serverDims = ConfigProperties.bool(p, "serverDims", true);
+        serverDimsScale = ConfigProperties.real(p, "serverDimsScale", 1.0, 0.50, 1.50);
 
         ignoreTooKey = readKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode");
         ignoreGolemKey = readKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode");
@@ -272,6 +282,8 @@ public final class AimbotConfig {
         put(p, "headFracMax", clamp(headFracMax, 0.01, 2.0));
         put(p, "badHeadshotFrac", clamp(badHeadshotFrac, 0.30, 0.95));
         put(p, "giantAimFrac", clamp(giantAimFrac, 0.50, 1.00));
+        put(p, "serverDims", serverDims);
+        put(p, "serverDimsScale", clamp(serverDimsScale, 0.50, 1.50));
 
         writeKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode", ignoreTooKey);
         writeKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode", ignoreGolemKey);
