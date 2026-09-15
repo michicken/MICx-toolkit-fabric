@@ -121,6 +121,10 @@ public final class ModulePanelRegistry {
         real("auto_hide_visuals", "AutoHide Visuals", "自动隐藏", GROUP_DEBUG,
                 "对局结算 1 分钟藏 ESP/Chams/Outline/AimLead，R1/离图恢复。",
                 AutoHideVisualsModule.instance(), null);
+        real("packet_log", "PacketLog", "封包日志", GROUP_DEBUG,
+                "记录玩家自己这条连接的收发封包（出站交互/点格子/聊天/自定义通道，入站开界面/聊天/标题/拉回…）"
+                        + "，写 config/MICxToolkit/logs/ 下的日志文件；快捷键插标记线，用来查买弹到底走哪条通道",
+                PacketLogModule.instance(), PacketLogConfigScreen::new);
         real("zombie_fade", "ZombieFade", "僵尸淡化", GROUP_MISC,
                 "近距离敌对生物半透明淡化。",
                 ZombieFadeModule.instance(), parent -> new SimpleModuleScreen(parent,

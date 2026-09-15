@@ -46,6 +46,7 @@ public final class ModuleRuntime {
         register(AutoTextModule.instance());
         register(RankUpToolModule.instance());
         register(RemoteShopModule.instance());
+        register(PacketLogModule.instance());
         register(AutoHideVisualsModule.instance());
         register(ZombieFadeModule.instance());
         register(ReviveAuraModule.instance());

@@ -33,7 +33,9 @@ class RemoteShopRulesTest {
     @Test
     void rangeLimitSitsBelowTheServerCeiling() {
         assertTrue(RemoteShopRules.TRIGGER_LIMIT <= RemoteShopRules.SERVER_ENTITY_LIMIT);
-        assertTrue(RemoteShopRules.TRIGGER_LIMIT <= RemoteShopRules.SERVER_BLOCK_LIMIT);
+        // 触发阈值贴着实体闸门，但比方块闸门（1.8 rayTrace 4.5）松——方块型商店在 1.8 上摸不到 5 格
+        assertTrue(RemoteShopRules.TRIGGER_LIMIT <= RemoteShopRules.SERVER_ENTITY_LIMIT);
+        assertTrue(RemoteShopRules.TRIGGER_LIMIT > RemoteShopRules.SERVER_BLOCK_LIMIT);
         assertTrue(RemoteShopRules.withinTriggerRange(5.5));
         assertFalse(RemoteShopRules.withinTriggerRange(5.5001));
         assertFalse(RemoteShopRules.withinTriggerRange(-1.0));
@@ -41,10 +43,10 @@ class RemoteShopRulesTest {
 
     @Test
     void verdictTellsTheTruthAboutDistance() {
-        assertEquals("射程内", RemoteShopRules.distanceVerdict(3.0));
-        assertEquals("射程内", RemoteShopRules.distanceVerdict(5.5));
-        assertEquals("擦边（服务端上限 6 格）", RemoteShopRules.distanceVerdict(5.8));
-        assertEquals("超出服务端上限，发了也会被丢包", RemoteShopRules.distanceVerdict(9.3));
+        assertEquals("闸门内（方块 4.5 / 实体 6 格）", RemoteShopRules.distanceVerdict(3.0));
+        assertEquals("闸门内（方块 4.5 / 实体 6 格）", RemoteShopRules.distanceVerdict(4.5));
+        assertEquals("擦边（1.8 实体 6 格有视野，方块只到 4.5）", RemoteShopRules.distanceVerdict(5.8));
+        assertEquals("超出服务端闸门，原版通道会丢包", RemoteShopRules.distanceVerdict(9.3));
     }
 
     @Test

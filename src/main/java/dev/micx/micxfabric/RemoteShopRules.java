@@ -8,17 +8,19 @@ import java.util.Locale;
 /**
  * RemoteShop（远程商店 / 远程买弹）的纯逻辑：目标关键词匹配、距离判定、触发冷却。
  *
- * <p>服务端硬上限（26.2 原版字节码实测，2026-09-15）：眼球到实体碰撞箱 &lt; (3.0+3.0)² = 6 格，
- * 到方块 &lt; (4.5+1.0)² = 5.5 格；超出服务端直接丢包、插件收不到事件——所以「远程」的天花板
- * 就是这里，客户端再改也过不去。
+ * <p>服务端硬上限（2026-09-15 逐 jar 查证）：
+ * <b>1.8 引擎（Zombies 实际跑的那套）</b>右键实体走 {@code hasLineOfSight ? distSq<36 : distSq<9}
+ * （6 格有视野 / 3 格隔墙）；右键方块由服务端按朝眼<b>重新 rayTrace 校验</b>（生存 4.5 / 创造 5.0 格）。
+ * 26.2 原版是实体 6 格 / 方块 5.5 格。落在闸门外的包会被<b>静默丢弃</b>，插件连事件都收不到。
  *
- * <p>触发阈值取 5.5 格：留半格给移动与延迟，避免擦边丢包还以为是模块坏了。
+ * <p>触发阈值取 5.5 格：贴着实体闸门、留半格给移动与延迟；方块型商店在 1.8 上只到 4.5 格，
+ * 所以隔墙/超远都过不去——想更远只能换通道（先用 PacketLog 抓清楚它到底走哪条）。
  */
 public final class RemoteShopRules {
-    /** 服务端允许的最远实体交互距离（眼睛到碰撞箱）。 */
+    /** 服务端允许的最远实体交互距离（有视野）。 */
     public static final double SERVER_ENTITY_LIMIT = 6.0;
-    /** 服务端允许的最远方块交互距离。 */
-    public static final double SERVER_BLOCK_LIMIT = 5.5;
+    /** 服务端允许的最远方块交互距离（1.8：服务端 rayTrace，生存模式 4.5 格）。 */
+    public static final double SERVER_BLOCK_LIMIT = 4.5;
     /** 实际触发阈值：比服务端上限再收半格。 */
     public static final double TRIGGER_LIMIT = 5.5;
     /** 客户端射程抬高到的值（原版准星只有实体 3 格 / 方块 4.5 格）。 */
@@ -69,12 +71,12 @@ public final class RemoteShopRules {
         return distance >= 0.0 && distance <= TRIGGER_LIMIT;
     }
 
-    /** 面板上的距离判语。 */
+    /** 面板上的距离判语（按 1.8 闸门口径）。 */
     public static String distanceVerdict(double distance) {
         if (distance < 0.0 || Double.isNaN(distance)) return "无法测距";
-        if (distance <= TRIGGER_LIMIT) return "射程内";
-        if (distance <= SERVER_ENTITY_LIMIT) return "擦边（服务端上限 6 格）";
-        return "超出服务端上限，发了也会被丢包";
+        if (distance <= SERVER_BLOCK_LIMIT) return "闸门内（方块 4.5 / 实体 6 格）";
+        if (distance <= SERVER_ENTITY_LIMIT) return "擦边（1.8 实体 6 格有视野，方块只到 4.5）";
+        return "超出服务端闸门，原版通道会丢包";
     }
 
     /** 冷却是否走完（时钟被往回改时别卡死）。 */

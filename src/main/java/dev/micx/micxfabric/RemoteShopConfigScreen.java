@@ -63,9 +63,10 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
                         : "已关闭（射程是原版 3 / 4.5 格）",
                 contentLeft(), y, module.enabled() ? ON : TEXT_DIM);
         y += 14;
-        y = wrapped(graphics, "服务端硬上限：眼球到实体碰撞箱 6 格、到方块 5.5 格，超出直接丢包——"
-                + "「远程」最多就这么远，跟客户端怎么改无关。快捷键 "
-                + new InputBinding(module.bindingCode()).label() + " = 买一次。",
+        y = wrapped(graphics, "服务端闸门（1.8 引擎，Zombies 实际跑的那套）：右键实体 6 格有视野 / 3 格隔墙；"
+                + "右键方块由服务端按朝眼重新 rayTrace 校验，只到 4.5 格。落在闸门外的包会被静默丢弃。"
+                + "想知道买弹到底走哪条通道，开 PacketLog 抓一次。"
+                + "快捷键 " + new InputBinding(module.bindingCode()).label() + " = 买一次。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
