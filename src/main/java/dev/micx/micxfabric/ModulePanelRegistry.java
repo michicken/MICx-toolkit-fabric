@@ -45,6 +45,7 @@ public final class ModulePanelRegistry {
         meta("round_timer", GROUP_CORE, 11);
         meta("eco_rate", GROUP_CORE, 12);
         meta("window_spawn_counter", GROUP_CORE, 13);
+        meta("remote_shop", GROUP_CORE, 14);
         meta("esp", GROUP_VISION, 0);
         meta("spawn_marker", GROUP_VISION, 1);
         meta("golem_marker", GROUP_VISION, 2);
@@ -382,6 +383,10 @@ public final class ModulePanelRegistry {
                 "定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）；"
                         + "开启后打开书本界面会连响 1 分钟提醒，切到别的应用也不会自动暂停",
                 RankUpToolModule.instance(), RankUpToolConfigScreen::new);
+        real("remote_shop", "RemoteShop", "远程商店", GROUP_CORE,
+                "不开界面点到远处商店：客户端射程 3/4.5→5.5 格，面板可扫附近全息并「买一次」最近目标"
+                        + "（服务端硬上限实体 6 格/方块 5.5 格，超了丢包）",
+                RemoteShopModule.instance(), RemoteShopConfigScreen::new);
         real("asr", "ASR", "语音输入", GROUP_MISC,
                 "按住 PTT 录音并将识别结果发送到聊天。", AsrModule.instance(), AsrConfigScreen::new);
         real("zombies_explorer", "ZombiesExplorer", "僵尸标记", GROUP_CORE,
