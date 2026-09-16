@@ -170,14 +170,14 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = numberRow(graphics, "高度差阈值 / Above Height", "1–32 格", aboveHeightBox, y);
         y = toggleRow(graphics, mouseX, mouseY, "优先小丑 / Prio Clown", c.prioClown,
                 () -> c.setPrioClown(!c.prioClown), y,
-                "开启后提高 Clown 目标组优先级，并自动关闭 Giant 优先。 ");
+                "开启后小丑进首选档，同时把巨人压到末位档：先清小丑和小怪，小怪全不可打时才锁巨人（并自动关闭巨人优先）。 ");
         y = keyRow(graphics, mouseX, mouseY, "小丑快捷键 / Prio Clown Key", c::getPrioClownKey,
                 c::setPrioClownKey, y, "绑定后可快速切换小丑优先。 ");
-        y = toggleRow(graphics, mouseX, mouseY, "巨人末位 / Prio Giant", c.prioGiant,
+        y = toggleRow(graphics, mouseX, mouseY, "优先巨人 / Prio Giant", c.prioGiant,
                 () -> c.setPrioGiant(!c.prioGiant), y,
-                "开启后巨人降到末位档：先清小怪，小怪全不可打时才锁巨人（并自动关闭 Clown 优先）。暴力模式适用。 ");
+                "开启后巨人进首选档，场上有巨人就先锁巨人（并自动关闭 Clown 优先）。暴力模式适用。 ");
         y = keyRow(graphics, mouseX, mouseY, "巨人快捷键 / Prio Giant Key", c::getPrioGiantKey,
-                c::setPrioGiantKey, y, "绑定后可快速切换巨人末位。 ");
+                c::setPrioGiantKey, y, "绑定后可快速切换巨人优先。 ");
         y = wrapped(graphics,
                 "Baby 僵尸已固定降到「普通怪之后」：优先打普通怪，只有场上再无别的可打目标时才锁 Baby（仅 BRUTE 扫射生效时恢复最高优先）。原 Prio Baby 开关已废弃移除。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;

@@ -80,10 +80,11 @@ public final class AimbotRules {
     public static final int GROUP_HIGH_ABOVE = -2;
 
     /**
-     * 「巨人末位」档：Prio Giant 开启时的巨人组。
+     * 「巨人末位」档：<b>Clown 模式</b>（{@code prioClown}）打开时的巨人组。
      *
-     * <p>用户定稿 2026-09-14（暴力模式）：Clown 模式出现巨人时<b>先清小怪</b>，
-     * 巨人不抢优先权，小怪清完 / 全不可打时才锁巨人。
+     * <p>用户定稿 2026-09-16：两个优先级开关是各自管一侧的一对——Clown 模式先清小丑、
+     * 小怪，巨人不抢优先权，小怪全不可打时才锁它；Giant 模式则把巨人提到
+     * {@link #GROUP_PRIORITY}。
      */
     public static final int GROUP_GIANT_BACKUP = -3;
 
@@ -922,16 +923,24 @@ public final class AimbotRules {
      * {@link #GROUP_DEPRIORITIZED}（排在普通怪之后，只有再无别的可打目标时才锁），
      * 仅当 BRUTE 扫射生效（{@code babyFirst}）时恢复 {@link #GROUP_BABY_FIRST} 最高组。
      *
-     * <p>用户定稿 2026-09-14（暴力模式）：<b>Prio Giant 不再把巨人提到优先组</b>。
-     * Clown 模式下出现巨人时先清小怪、巨人留到最后——巨人降到
-     * {@link #GROUP_GIANT_BACKUP}，普通怪全不可打时才锁它。
-     * {@code prioClown}（小丑僵尸优先组）语义不变。
+     * <p>用户定稿 2026-09-16：两个优先级开关是<b>对称的一对</b>，各自把自己的目标提进
+     * 首选档、需要时把对方压下去（配置层保证二者互斥）：
+     * <ul>
+     *   <li>{@code prioClown}（Clown 模式）：小丑进 {@link #GROUP_PRIORITY}，
+     *       巨人降到 {@link #GROUP_GIANT_BACKUP}——先清小丑小怪，只剩巨人才锁它。</li>
+     *   <li>{@code prioGiant}（Giant 模式）：巨人进 {@link #GROUP_PRIORITY}，优先锁巨人。</li>
+     * </ul>
+     *
+     * <p>这里修掉 2026-09-14 的错挂：当时把巨人降档挂在 {@code prioGiant} 上，于是
+     * Clown 模式没人压得住巨人（留在组 0，靠同组内 TOO/巨人优先排序抢靶），
+     * Giant 模式反倒把巨人踢出首选池（{@code group < 0} 进降级池，普通怪能打就永远不锁）。
      */
     public static int groupRank(boolean prioClown, boolean prioGiant, boolean babyFirst,
                                 boolean baby, boolean clown, boolean giant) {
         if (babyFirst && baby) return GROUP_BABY_FIRST;
+        if (prioGiant && giant) return GROUP_PRIORITY;
         if (prioClown && clown) return GROUP_PRIORITY;
-        if (prioGiant && giant) return GROUP_GIANT_BACKUP;
+        if (prioClown && giant) return GROUP_GIANT_BACKUP;
         return baby ? GROUP_DEPRIORITIZED : 0;
     }
 
@@ -1017,9 +1026,10 @@ public final class AimbotRules {
     /**
      * 从「已按 signed yaw 升序排好的锥内候选」里选出本次锁定的目标。
      *
-     * <p>语义（用户定稿 2026-09-14）：<b>目标一死就推进</b>，没有强制等待。
-     * {@code dwellMs} 只是安全阀——防止锁到一只打不死的怪（装甲骷髅/巨人）时僵住，
-     * 默认 0 = 不设上限。
+     * <p>语义（用户定稿 2026-09-15）：<b>每只最多停留 {@code dwellMs} 就立刻切下一只，
+     * 不管有没有打死</b>——扫射的本体就是这个上限，默认 100ms。{@code dwellMs <= 0}
+     * 的「只按死亡/离锥推进、不设上限」分支仍被保留（纯函数兜底与离线回归用），
+     * 但配置层已把它夹到 40–600，游戏里不可达。
      *
      * @param ids          锥内候选实体 id（与 yawOff 同序）
      * @param yawOff       对应的 signed yaw 偏角（升序）

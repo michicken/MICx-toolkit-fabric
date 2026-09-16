@@ -8,6 +8,7 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AimbotRulesTest {
@@ -579,10 +580,10 @@ class AimbotRulesTest {
                 AimbotRules.groupRank(false, false, true, true, false, false));
         assertEquals(AimbotRules.GROUP_PRIORITY,
                 AimbotRules.groupRank(true, false, false, false, true, false));
-        // 用户定稿 2026-09-14（暴力模式）：Prio Giant 不再把巨人提到优先组，
-        // 而是降到末位档——Clown 模式出现巨人时先清小怪，小怪全不可打才锁巨人。
+        // 用户定稿 2026-09-16：巨人降档改挂 Clown 模式（两个模式的对称语义见
+        // clownAndGiantModesAreSymmetric）。
         assertEquals(AimbotRules.GROUP_GIANT_BACKUP,
-                AimbotRules.groupRank(false, true, false, false, false, true));
+                AimbotRules.groupRank(true, false, false, false, false, true));
         // 末位档排序：巨人 < 头顶高处 < baby < 普通怪（数值越小越晚锁）
         assertTrue(AimbotRules.GROUP_GIANT_BACKUP < AimbotRules.GROUP_HIGH_ABOVE);
         assertTrue(AimbotRules.GROUP_HIGH_ABOVE < AimbotRules.GROUP_DEPRIORITIZED);
@@ -596,13 +597,56 @@ class AimbotRulesTest {
                         AimbotRules.GROUP_HIGH_ABOVE));
         assertEquals(AimbotRules.GROUP_HIGH_ABOVE,
                 Math.min(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.GROUP_HIGH_ABOVE));
-        // 巨人既是 Prio Giant 又高悬：取更晚的档
+        // Clown 模式的末位巨人又高悬：取更晚的档
         assertEquals(AimbotRules.GROUP_GIANT_BACKUP,
                 Math.min(AimbotRules.GROUP_GIANT_BACKUP, AimbotRules.GROUP_HIGH_ABOVE));
 
         assertFalse(AimbotRules.closestBetter(10.0, 13.0, 3.0));
         assertTrue(AimbotRules.closestBetter(10.0, 13.1, 3.0));
         assertFalse(AimbotRules.closestBetter(12.0, 10.0, 3.0));
+    }
+
+    @Test
+    void clownAndGiantModesAreSymmetric() {
+        // 用户定稿 2026-09-16（实机反馈：Clown 模式锁巨人 / Giant 模式怎么都不锁巨人）。
+        // 两个开关各自管一侧：Clown 模式把小丑提进首选档、把巨人压到末位档；
+        // Giant 模式把巨人提进首选档。此前降档错挂在 prioGiant 上，两个症状正好互换。
+        //
+        // Giant 模式：巨人进首选档（group >= 0 才进首选池，才会被扫到）
+        assertEquals(AimbotRules.GROUP_PRIORITY,
+                AimbotRules.groupRank(false, true, false, false, false, true));
+        assertTrue(AimbotRules.groupRank(false, true, false, false, false, true) >= 0);
+        // Giant 模式不影响小丑，也不影响普通怪 / baby
+        assertEquals(0, AimbotRules.groupRank(false, true, false, false, true, false));
+        assertEquals(0, AimbotRules.groupRank(false, true, false, false, false, false));
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
+                AimbotRules.groupRank(false, true, false, true, false, false));
+        // Giant 模式下巨人不再是「末位」（末位档会让它被 preferred 池排除，永远不锁）
+        assertNotEquals(AimbotRules.GROUP_GIANT_BACKUP,
+                AimbotRules.groupRank(false, true, false, false, false, true));
+
+        // Clown 模式：小丑首选，同时巨人被压到末位档（< 0 = 只在首选池全不可打时才扫）
+        assertEquals(AimbotRules.GROUP_PRIORITY,
+                AimbotRules.groupRank(true, false, false, false, true, false));
+        int clownGiant = AimbotRules.groupRank(true, false, false, false, false, true);
+        assertEquals(AimbotRules.GROUP_GIANT_BACKUP, clownGiant);
+        assertTrue(clownGiant < 0, "Clown 模式下巨人必须落在降级池");
+        // Clown 模式不影响普通怪 / baby
+        assertEquals(0, AimbotRules.groupRank(true, false, false, false, false, false));
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
+                AimbotRules.groupRank(true, false, false, true, false, false));
+
+        // 两个都不开：巨人按普通档参与（既不提前也不降级）
+        assertEquals(0, AimbotRules.groupRank(false, false, false, false, false, true));
+
+        // BRUTE 扫射的 baby 最高组对两个模式都生效
+        assertEquals(AimbotRules.GROUP_BABY_FIRST,
+                AimbotRules.groupRank(true, false, true, true, false, false));
+        assertEquals(AimbotRules.GROUP_BABY_FIRST,
+                AimbotRules.groupRank(false, true, true, true, false, false));
+        // baby 与优先/降级目标同时在场时，扫射的 baby 仍压过巨人（扫射按空间顺序逐个清）
+        assertTrue(AimbotRules.groupRank(false, true, true, true, false, false)
+                > AimbotRules.groupRank(false, true, false, false, false, true));
     }
 
     @Test

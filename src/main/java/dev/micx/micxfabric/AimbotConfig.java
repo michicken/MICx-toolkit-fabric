@@ -89,7 +89,9 @@ public final class AimbotConfig {
     public boolean ignoreAbovePlayer = true;
     /** 高度差阈值（格）。超过这个高度差的目标不参与选靶（恶魂除外、R21 豁免）。 */
     public double aboveHeightBlocks = 5.0;
+    /** Clown 模式：小丑进首选档，同时把巨人压到末位档（先清小丑小怪，只剩巨人才锁它）。与下一项互斥。 */
     public boolean prioClown = false;
+    /** Giant 模式：巨人进首选档，有巨人就先锁巨人。与上一项互斥。 */
     public boolean prioGiant = false;
     public int fov = 360;
 

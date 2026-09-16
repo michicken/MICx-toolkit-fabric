@@ -878,8 +878,9 @@ public final class AimbotModule implements Module {
      * 这里只负责把实体投成锥体候选、再把结果映射回 {@link Scored}。
      *
      * <p>用户定稿 2026-09-14（暴力模式）：<b>扫射不再因场上存在巨人而停掉</b>。
-     * 巨人已由 {@link AimbotRules#GROUP_GIANT_BACKUP} 降到末位档——有小怪时巨人
-     * 根本不进扫射池，火力自然集中在小怪上；小怪清完只剩巨人时才整池扫巨人。
+     * 巨人进不进扫射池交给两个优先级开关（用户定稿 2026-09-16）：Clown 模式把巨人压到
+     * {@link AimbotRules#GROUP_GIANT_BACKUP}——有小怪时根本不进池，火力集中在小怪上；
+     * Giant 模式反过来把巨人提进首选档；两个都不开时巨人按普通档参与。
      */
     private Scored bruteChoice(Minecraft client, Vec3 eye, List<Scored> scored, long now) {
         if (!bruteSweepActive()) {
