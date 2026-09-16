@@ -385,6 +385,49 @@ class AimbotRulesTest {
     }
 
     @Test
+    void bruteSweepHopsToTheNextTargetEveryDwellRegardlessOfDeath() {
+        // 扫射的本义（用户 2026-09-15 定稿）：每只最多停 100ms，到点立刻换下一只，
+        // **不管有没有打死**；死亡/掉出锥体只是提前换。0.2.90 曾把默认改成
+        // 「0 = 只在死亡时推进」，扫射因此退化成锁单只（用户实测「完全不扫」）。
+        double eps = 0.25;
+        int dwell = 100;
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-20.0, -2.0, 15.0};
+
+        // t=0 首次决策 → 锁定最左那只，并给出停留截止
+        AimbotRules.BruteSweepPick first = AimbotRules.bruteSweepDecision(ids, yaw,
+                -1, Double.NaN, 0L, 0L, dwell, eps);
+        assertEquals(11, first.entityId());
+        assertTrue(first.advanced());
+        assertEquals(dwell, first.holdUntilMs());
+
+        // 未到期 → 保持（三只都还活着也一样）
+        AimbotRules.BruteSweepPick holding = AimbotRules.bruteSweepDecision(ids, yaw,
+                11, yaw[0], 50L, dwell, dwell, eps);
+        assertEquals(11, holding.entityId());
+        assertFalse(holding.advanced());
+
+        // 一到点 → 换下一只，与「有没有死」无关
+        AimbotRules.BruteSweepPick second = AimbotRules.bruteSweepDecision(ids, yaw,
+                11, yaw[0], dwell, dwell, dwell, eps);
+        assertEquals(22, second.entityId());
+        assertTrue(second.advanced());
+        assertEquals(2L * dwell, second.holdUntilMs());
+
+        // 继续到点 → 第三只
+        AimbotRules.BruteSweepPick third = AimbotRules.bruteSweepDecision(ids, yaw,
+                22, yaw[1], 2L * dwell, 2L * dwell, dwell, eps);
+        assertEquals(33, third.entityId());
+        assertTrue(third.advanced());
+
+        // 扫到最右端再到期 → 绕回最左，一圈一圈地扫
+        AimbotRules.BruteSweepPick wrapped = AimbotRules.bruteSweepDecision(ids, yaw,
+                33, yaw[2], 3L * dwell, 3L * dwell, dwell, eps);
+        assertEquals(11, wrapped.entityId());
+        assertTrue(wrapped.advanced());
+    }
+
+    @Test
     void bruteSweepDecisionWrapsBackToLeftmostWhenNothingToTheRight() {
         // 最右端那只死后没有更右的目标 → 回到锥体最左端（重新从左扫）
         AimbotRules.BruteSweepPick pick = AimbotRules.bruteSweepDecision(new int[]{11},

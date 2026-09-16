@@ -51,10 +51,13 @@ public final class AimbotConfig {
     /** BRUTE 扫射的 FOV 半角（°）：只有落在这个角范围内的目标才参与，不做 360° 乱扫。 */
     public double bruteSweepFovDeg = 45.0;
     /**
-     * BRUTE 扫射在每个目标上的<b>最长</b>停留（ms）。0 = 不设停留上限，只在
-     * 「目标死亡 / 移出锥体」时推进（暴力模式的默认语义：不对着尸体停顿）。
+     * BRUTE 扫射在每个目标上的停留时间（ms）——<b>扫射的本体就是这个</b>：
+     * 每只最多停这么久，到点立刻换下一只，<b>不管有没有打死</b>；目标提前死亡/掉出锥体
+     * 也会立刻换。0.2.69 引入时默认 120ms；0.2.90 曾被改成「0 = 只在死亡时推进」，
+     * 结果扫射退化成锁单只（2026-09-15 用户复现并定位），0.2.100 起把默认恢复成 100ms
+     * 并把下限抬到 40ms —— 「不换目标」不再是一个可选项，它只会让扫射不工作。
      */
-    public int bruteSweepDwellMs = 0;
+    public int bruteSweepDwellMs = 100;
     /**
      * BRUTE 旋转的渲染消耗窗口（ms）。控制器每 20 Hz 决策一次并给出「一整个 tick」的
      * 转向量，渲染层在这个窗口内把它消耗完。窗口越短转速越快：默认 25ms 表示一次
@@ -177,7 +180,7 @@ public final class AimbotConfig {
         bruteSweep = ConfigProperties.bool(p, "bruteSweep", true);
         bruteSweepMinRound = ConfigProperties.integer(p, "bruteSweepMinRound", 36, 1, 200);
         bruteSweepFovDeg = ConfigProperties.real(p, "bruteSweepFovDeg", 45.0, 5.0, 180.0);
-        bruteSweepDwellMs = ConfigProperties.integer(p, "bruteSweepDwellMs", 0, 0, 600);
+        bruteSweepDwellMs = ConfigProperties.integer(p, "bruteSweepDwellMs", 100, 40, 600);
         bruteRotationWindowMs = ConfigProperties.integer(p, "bruteRotationWindowMs", 25, 5, 50);
         pitchHorizonMarginDeg = ConfigProperties.real(p, "pitchHorizonMarginDeg", 3.0, 0.0, 8.0);
         pitchHoldToleranceDeg = ConfigProperties.real(p, "pitchHoldToleranceDeg", 2.0, 0.5, 8.0);
@@ -266,7 +269,7 @@ public final class AimbotConfig {
         put(p, "bruteSweep", bruteSweep);
         put(p, "bruteSweepMinRound", clamp(bruteSweepMinRound, 1, 200));
         put(p, "bruteSweepFovDeg", clamp(bruteSweepFovDeg, 5.0, 180.0));
-        put(p, "bruteSweepDwellMs", clamp(bruteSweepDwellMs, 0, 600));
+        put(p, "bruteSweepDwellMs", clamp(bruteSweepDwellMs, 40, 600));
         put(p, "bruteRotationWindowMs", clamp(bruteRotationWindowMs, 5, 50));
         put(p, "prioClown", prioClown);
         put(p, "prioGiant", prioGiant);
