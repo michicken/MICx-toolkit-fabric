@@ -86,6 +86,16 @@ final class LrIndicatorState {
         return maxPlayers > 0 ? Math.min(n, maxPlayers) : 0;
     }
 
+    /**
+     * 最近 {@code windowMs} 内是否释放过 LR（供无敌怪判定门控联动，用户定稿 2026-09-16）。
+     *
+     * <p>只看真实记录进 {@link #releases} 的释放（去重/爆发抑制掉的不算）。
+     */
+    boolean releasedWithin(long now, long windowMs) {
+        prune(now);
+        return !releases.isEmpty() && now - releases.peekFirst() <= windowMs;
+    }
+
     void reset() {
         releases.clear(); burstEvents.clear(); golemJoins.clear();
         maxPlayers = 0; bossFirstConsumed = false; rotationCounter = 0; lastGreenAtMs = -1;

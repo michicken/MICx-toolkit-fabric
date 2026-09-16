@@ -618,6 +618,10 @@ public final class AimbotModule implements Module {
         boolean babyFirst = bruteSweepActive();
         // R21 豁免「忽略头顶高处」：该回合飞碟/高处投放的怪密集，全跳过会无人可打。
         boolean aboveExempt = AimbotRules.aboveHeightExemptRound(round);
+        // 无敌怪判定的 LR 门控（用户定稿 2026-09-16）：只有 LR 会造成无敌怪，所以窗口外不判定。
+        // 破窗的怪与靠近扔炸弹的 Clown 都是「站着不动 + 长时间不吃真实伤害」，窗口一关就判不出来。
+        boolean lrWindow = !c.immortalLrGate
+                || LrIndicatorModule.lrReleasedWithin(now, c.immortalLrWindowMs());
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity living) || !isAliveTarget(living)
                     || living == client.player || living.getId() < 0) continue;
@@ -625,6 +629,7 @@ public final class AimbotModule implements Module {
             if (!AimLeadModule.isTarget(living)) continue;
             // 无敌怪两层追踪（含巨人）：①跨回合存活（永不复原）②被动行为判定（5s 可逆/10s 不可逆，
             // 被左键激怒后仍保持排除）。追踪在 ignore 开关之前，保证不断档。
+            // ②只在 LR 窗口内判定（用户定稿 2026-09-16）：窗口外破窗怪/扔炸弹 Clown 不再误判。
             Player nearestPlayer = null;
             double nearestPlayerDistSq = Double.MAX_VALUE;
             for (Player p : client.level.players()) {
@@ -641,7 +646,7 @@ public final class AimbotModule implements Module {
                 double yawTo = Math.toDegrees(Math.atan2(dz, dx)) - 90.0;
                 float lookDelta = Math.abs(Mth.wrapDegrees(living.getYHeadRot() - (float) yawTo));
                 int passiveEvent = passiveImmortals.assessTick(living.getId(), living.getX(), living.getZ(),
-                        nearestPlayer.getX(), nearestPlayer.getZ(), nearestPlayerDistSq, lookDelta, now);
+                        nearestPlayer.getX(), nearestPlayer.getZ(), nearestPlayerDistSq, lookDelta, now, lrWindow);
                 if (passiveEvent == 1) {
                     client.player.sendSystemMessage(ChatMessageStyles.notice(
                             "疑似无敌怪 #" + living.getId() + "（5s 被动·可逆）"));

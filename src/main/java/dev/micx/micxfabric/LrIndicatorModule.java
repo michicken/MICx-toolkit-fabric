@@ -74,6 +74,17 @@ public final class LrIndicatorModule implements Module {
         state.onGolemJoin(now, x, y, z);
     }
 
+    /**
+     * 最近 {@code windowMs} 内是否释放过 LR——无敌怪判定的门控信号（用户定稿 2026-09-16：
+     * 只有 LR 会造成无敌怪，所以没有 LR 窗口时不判定）。
+     *
+     * <p>模块关闭时返回 false（释放时刻由本模块记录，关掉就没人记了）。
+     */
+    public static boolean lrReleasedWithin(long nowMs, long windowMs) {
+        LrIndicatorModule m = INSTANCE;
+        return m.enabled && m.state.releasedWithin(nowMs, windowMs);
+    }
+
     public void onSound(String soundId, float pitch, double x, double y, double z, long now) {
         if (!enabled || soundId == null) return;
         String id = soundId.toLowerCase(java.util.Locale.ROOT);

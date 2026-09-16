@@ -20,7 +20,7 @@ class PassiveImmortalTrackerTest {
     private static final double PZ = 0.0;
 
     private void passiveTick(PassiveImmortalTracker t, int id, double x, long now) {
-        t.assessTick(id, x, 0.0, PX, PZ, 9.0, 180.0f, now);
+        t.assessTick(id, x, 0.0, PX, PZ, 9.0, 180.0f, now, true);
     }
 
     @Test
@@ -35,7 +35,7 @@ class PassiveImmortalTrackerTest {
     }
 
     private int passiveTickR(PassiveImmortalTracker t, int id, long now) {
-        return t.assessTick(id, 0.0, 0.0, PX, PZ, 9.0, 180.0f, now);
+        return t.assessTick(id, 0.0, 0.0, PX, PZ, 9.0, 180.0f, now, true);
     }
 
     @Test
@@ -102,7 +102,7 @@ class PassiveImmortalTrackerTest {
         PassiveImmortalTracker t = new PassiveImmortalTracker();
         // 追踪中：每 100ms 向玩家方向移动 0.08 格、看着玩家；起点 x=-3，60 tick 后 x=1.8 不会越过玩家
         for (int i = 0; i < 60; i++) {
-            int ev = t.assessTick(42, -3.0 + i * 0.08, 0.0, PX, PZ, 9.0, 10.0f, T0 + i * 100);
+            int ev = t.assessTick(42, -3.0 + i * 0.08, 0.0, PX, PZ, 9.0, 10.0f, T0 + i * 100, true);
             assertEquals(0, ev, "chasing mob must not be judged at i=" + i);
         }
         assertFalse(t.isExcluded(42));
@@ -113,7 +113,7 @@ class PassiveImmortalTrackerTest {
         PassiveImmortalTracker t = new PassiveImmortalTracker();
         // 站位不动、一直看着玩家：不算锁敌（缺移动），判定照常进行
         for (int i = 0; i < 55; i++) {
-            int ev = t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 10.0f, T0 + i * 100);
+            int ev = t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 10.0f, T0 + i * 100, true);
             if (i == 50) assertEquals(1, ev, "5s 静止+看着 ≠ 锁敌，应判可逆");
         }
         assertTrue(t.isExcluded(42));
@@ -127,7 +127,7 @@ class PassiveImmortalTrackerTest {
         assertTrue(t.isExcluded(42));
         // 粘性：之后开始锁敌（追踪）也保持排除
         for (int i = 0; i < 12; i++) {
-            t.assessTick(42, -1.0 + i * 0.15, 0.0, PX, PZ, 9.0, 10.0f, T0 + 6_000 + i * 100);
+            t.assessTick(42, -1.0 + i * 0.15, 0.0, PX, PZ, 9.0, 10.0f, T0 + 6_000 + i * 100, true);
         }
         assertTrue(t.isExcluded(42));
         // 真实伤害 → 复原
@@ -155,7 +155,7 @@ class PassiveImmortalTrackerTest {
         PassiveImmortalTracker t = new PassiveImmortalTracker();
         // distSq=36 > 25：永不出判定
         for (int i = 0; i < 130; i++) {
-            assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 36.0, 180.0f, T0 + i * 100));
+            assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 36.0, 180.0f, T0 + i * 100, true));
         }
         assertFalse(t.isExcluded(42));
     }
@@ -169,5 +169,43 @@ class PassiveImmortalTrackerTest {
         t.reset();
         assertFalse(t.isExcluded(42));
         assertEquals(0, t.trackedCount());
+    }
+
+    @Test
+    void lrGateClosedNeverJudges() {
+        // 用户定稿 2026-09-16：只有 LR 会造成无敌怪 → 窗口外一律不判定。
+        // 破窗的怪（站着不动）与靠近扔炸弹的 Clown（同样不动、长期不吃真实伤害）
+        // 以前 10 秒就会被判成不可逆无敌怪，门控后 20 秒也不判。
+        PassiveImmortalTracker t = new PassiveImmortalTracker();
+        for (int i = 0; i <= 200; i++) {
+            assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + i * 100L, false));
+        }
+        assertFalse(t.isExcluded(42));
+        assertEquals(PassiveImmortalTracker.TIER_NONE, t.tierOf(42));
+    }
+
+    @Test
+    void lrGateOnlyCountsCalmTimeInsideTheWindow() {
+        PassiveImmortalTracker t = new PassiveImmortalTracker();
+        // 窗口外站 20 秒（不攒证据）
+        for (int i = 0; i <= 200; i++) {
+            assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + i * 100L, false));
+        }
+        // 窗口一开，平静时长从这一刻重新攒：4.9s 不判、5.0s 判可逆层
+        assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + 20_100L, true));
+        assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + 24_900L, true));
+        assertEquals(1, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + 25_000L, true));
+        assertTrue(t.isExcluded(42));
+    }
+
+    @Test
+    void lrGateDoesNotReviveAnAlreadyConfirmedImmortal() {
+        // 已经在窗口内判定过的不可逆层不受门控影响：窗口关了依旧排除，也不重复报事件。
+        PassiveImmortalTracker t = new PassiveImmortalTracker();
+        t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0, true);
+        assertEquals(2, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + 10_000L, true));
+        assertEquals(0, t.assessTick(42, 0.0, 0.0, PX, PZ, 9.0, 180.0f, T0 + 11_000L, false));
+        assertTrue(t.isExcluded(42));
+        assertEquals(PassiveImmortalTracker.TIER_PERMANENT, t.tierOf(42));
     }
 }

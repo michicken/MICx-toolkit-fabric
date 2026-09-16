@@ -28,6 +28,12 @@ import java.util.Map;
  * → {@link #AGGRO_HOLD_MS} 内视为锁敌，期间不判定。怪物打窗户/障碍（站位不动、不看玩家）
  * 不算锁敌，由真实伤害计时兜底防误判。
  *
+ * <p><b>LR 窗口门控（用户定稿 2026-09-16）</b>：只有 LR 会造成无敌怪，所以只有最近窗口
+ * （Aimbot 配置 {@code immortalLrWindowSec}，默认 15 秒）内释放过 LR 才判定；窗口外把
+ * 「无真实伤害」计时压回当前时刻，窗口外的平静时段不计入证据。破窗的怪、靠近准备扔炸弹的
+ * Clown 都是「站着不动又长时间不吃真实伤害」，不门控就会被误判成不可逆无敌怪。
+ * 释放时刻由 {@link LrIndicatorModule}（LR Indicator 模块，雷声识别）记录。
+ *
  * <p>与 {@link ImmortalMobTracker}（跨回合存活=100% 确定的永久无敌怪）分层互补，
  * 两层任一命中即从 Aimbot 排除。回合回退（同世界新局重开）整体清空（实体 id 会被服务端复用）。
  */
@@ -134,12 +140,14 @@ final class PassiveImmortalTracker {
      *
      * @param distSqToNearestPlayer 怪到最近存活玩家的距离平方
      * @param headYawDeltaDeg       怪头部朝向与「指向该玩家」方位角之差（绝对值）
+     * @param lrWindowOpen          最近窗口内有 LR 释放（用户定稿 2026-09-16：只有 LR 会造成
+     *                              无敌怪，所以窗口外一律不判定）
      * @return 0=无事件；1=新判定可逆层；2=新判定不可逆层
      */
     int assessTick(int mobId, double x, double z,
                    double nearestPlayerX, double nearestPlayerZ,
                    double distSqToNearestPlayer, float headYawDeltaDeg,
-                   long now) {
+                   long now, boolean lrWindowOpen) {
         Mob m = mobs.get(mobId);
         if (m == null) {
             m = new Mob();
@@ -158,6 +166,13 @@ final class PassiveImmortalTracker {
         if (m.tier == TIER_PERMANENT) return 0;
         if (distSqToNearestPlayer > RANGE_SQ) return 0;
         if (now < m.aggroUntilMs) return 0;
+        // LR 窗口外不判定（用户定稿 2026-09-16）：破窗的怪、靠近准备扔炸弹的 Clown 都会
+        // 站着不动且长时间不吃真实伤害，会被误判成「不可逆无敌怪」。只有 LR 会造成无敌怪，
+        // 所以窗口外的平静时段不能攒成证据——这里把计时压回当前时刻，判定只吃窗口内的时间。
+        if (!lrWindowOpen) {
+            m.lastRealDamageMs = now;
+            return 0;
+        }
         long calm = now - m.lastRealDamageMs;
         if (calm >= PERMANENT_MS) {
             m.tier = TIER_PERMANENT;

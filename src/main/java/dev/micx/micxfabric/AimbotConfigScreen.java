@@ -33,6 +33,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox badHeadshotFracBox;
     private EditBox giantAimFracBox;
     private EditBox serverDimsScaleBox;
+    private EditBox immortalLrWindowBox;
     private EditBox joystickSensitivityBox;
     private EditBox joystickSwitchBox;
     private EditBox flickSpeedBox;
@@ -71,6 +72,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         badHeadshotFracBox = box("badHeadshotFrac", Double.toString(c.badHeadshotFrac));
         giantAimFracBox = box("giantAimFrac", Double.toString(c.giantAimFrac));
         serverDimsScaleBox = box("serverDimsScale", Double.toString(c.serverDimsScale));
+        immortalLrWindowBox = box("immortalLrWindowSec", Integer.toString(c.immortalLrWindowSec));
         joystickSensitivityBox = box("joystickSensitivity", Double.toString(c.joystickSensitivity));
         joystickSwitchBox = box("joystickSwitchDeg", Integer.toString(c.joystickSwitchDeg));
         flickSpeedBox = box("joystickFlickPxPerSec", Integer.toString(c.joystickFlickPxPerSec));
@@ -168,6 +170,11 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 () -> c.ignoreAbovePlayer = !c.ignoreAbovePlayer, y,
                 "开启后跳过脚底比玩家高出阈值以上的目标（高台、屋顶、轨道上够不着的怪）。恶魂 Ghast 是飞行怪，一律豁免不受此限；第 21 回合整条豁免（飞碟/高处投放怪密集），阈值不变。 ");
         y = numberRow(graphics, "高度差阈值 / Above Height", "1–32 格", aboveHeightBox, y);
+        y = toggleRow(graphics, mouseX, mouseY, "无敌怪需 LR 窗口 / Immortal Needs LR", c.immortalLrGate,
+                () -> c.immortalLrGate = !c.immortalLrGate, y,
+                "只有 LR 会造成无敌怪：开启后仅在最近一段时间内释放过 LR 时才判定无敌怪——"
+                        + "破窗的怪、靠近准备扔炸弹的 Clown 都是「站着不动又长时间不吃真实伤害」，不会再被误判成不可逆无敌怪。需要 LR Indicator 模块开着（释放时刻由它记录）。 ");
+        y = numberRow(graphics, "LR 判定窗口 / LR Window", "5–30 秒", immortalLrWindowBox, y);
         y = toggleRow(graphics, mouseX, mouseY, "优先小丑 / Prio Clown", c.prioClown,
                 () -> c.setPrioClown(!c.prioClown), y,
                 "开启后小丑进首选档，同时把巨人压到末位档：先清小丑和小怪，小怪全不可打时才锁巨人（并自动关闭巨人优先）。 ");
@@ -459,6 +466,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.badHeadshotFrac = parseDouble(badHeadshotFracBox, 0.30, 0.95, "BadHS Frac");
             c.giantAimFrac = parseDouble(giantAimFracBox, 0.50, 1.00, "Giant Frac");
             c.serverDimsScale = parseDouble(serverDimsScaleBox, 0.50, 1.50, "Dims Scale");
+            c.immortalLrWindowSec = parseInt(immortalLrWindowBox, 5, 30, "LR Window");
             c.joystickSensitivity = parseDouble(joystickSensitivityBox, 0.2, 3.0, "Sensitivity");
             c.joystickSwitchDeg = parseInt(joystickSwitchBox, 5, 60, "Switch Deg");
             c.joystickFlickPxPerSec = parseInt(flickSpeedBox, 300, 1500, "Flick Speed");

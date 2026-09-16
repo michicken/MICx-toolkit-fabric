@@ -89,6 +89,16 @@ public final class AimbotConfig {
     public boolean ignoreAbovePlayer = true;
     /** 高度差阈值（格）。超过这个高度差的目标不参与选靶（恶魂除外、R21 豁免）。 */
     public double aboveHeightBlocks = 5.0;
+    /**
+     * 无敌怪判定的 LR 门控（用户定稿 2026-09-16）：只有 LR 会造成无敌怪，所以只有最近
+     * {@link #immortalLrWindowSec} 秒内释放过 LR 才做被动判定。关掉=恢复旧行为（一直可判定）。
+     */
+    public boolean immortalLrGate = true;
+    /** LR 门控窗口（秒），默认 15。窗口外的「无真实伤害」时长不计入判定证据。 */
+    public int immortalLrWindowSec = 15;
+
+    /** LR 门控窗口（毫秒）。 */
+    public long immortalLrWindowMs() { return immortalLrWindowSec * 1000L; }
     /** Clown 模式：小丑进首选档，同时把巨人压到末位档（先清小丑小怪，只剩巨人才锁它）。与下一项互斥。 */
     public boolean prioClown = false;
     /** Giant 模式：巨人进首选档，有巨人就先锁巨人。与上一项互斥。 */
@@ -204,6 +214,8 @@ public final class AimbotConfig {
         showHud = ConfigProperties.bool(p, "showHud", true);
         showKeyHints = ConfigProperties.bool(p, "showKeyHints", true);
         hudHideOnGameOver = ConfigProperties.bool(p, "hudHideOnGameOver", true);
+        immortalLrGate = ConfigProperties.bool(p, "immortalLrGate", true);
+        immortalLrWindowSec = ConfigProperties.integer(p, "immortalLrWindowSec", 15, 5, 30);
         closest = ConfigProperties.bool(p, "closest", false);
         holdLock = ConfigProperties.bool(p, "holdLock", false);
 
@@ -282,6 +294,8 @@ public final class AimbotConfig {
         put(p, "showHud", showHud);
         put(p, "showKeyHints", showKeyHints);
         put(p, "hudHideOnGameOver", hudHideOnGameOver);
+        put(p, "immortalLrGate", immortalLrGate);
+        put(p, "immortalLrWindowSec", clamp(immortalLrWindowSec, 5, 30));
         put(p, "closest", closest);
         put(p, "holdLock", holdLock);
         put(p, "insta", insta);
