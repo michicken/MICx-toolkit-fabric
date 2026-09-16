@@ -202,6 +202,90 @@ class AimbotRulesTest {
     }
 
     @Test
+    void nonPenetrableStairsAndIronTrapdoorBlockTheWholeCell() {
+        // 用户口径 2026-09-16：不可穿透方块挡整格 1×1×1 —— 楼梯是 L 形，台阶右上角是空的，
+        // 按真实碰撞形状判会让射线从空角钻过去锁到实际打不到的目标（P4 那圈楼梯的根因）。
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("dark_oak_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("spruce_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("oak_stairs", false, true));
+        // 去皮木种此前被木种前缀表漏掉，等于当成了可穿 —— 一并锁死。
+        assertEquals(AimbotRules.CELL_BLOCK,
+                AimbotRules.cellVerdict("stripped_dark_oak_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK,
+                AimbotRules.cellVerdict("stripped_spruce_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK,
+                AimbotRules.cellVerdict("sandstone_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK,
+                AimbotRules.cellVerdict("smooth_sandstone_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK,
+                AimbotRules.cellVerdict("nether_brick_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("iron_trapdoor", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("oak_fence_gate", false, true));
+        // 非木质楼梯默认仍是可穿（wsStair 开着）；关掉本开关才整格挡。
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("stone_brick_stairs", false, true));
+        assertEquals(AimbotRules.CELL_BLOCK, AimbotRules.cellVerdict("stone_brick_stairs", false, false));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("quartz_stairs", false, true));
+    }
+
+    @Test
+    void smallShapedBlocksStayShapeJudgedAndPenetrable() {
+        // 用户口径 2026-09-16：草 / 花 / 火把 / 地毯这类小形状方块不受整格口径影响，照旧可穿；
+        // 半砖只把「可穿」那一半写死，其余半砖继续按真实形状判。
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("short_grass", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("dandelion", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("torch", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("red_carpet", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("spruce_slab", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("double_oak_slab", true, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("oak_slab", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("stone_brick_slab", false, true));
+        // 白名单方块与整格实心的未列名方块各归各位
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("iron_bars", false, true));
+        assertEquals(AimbotRules.CELL_PASS,
+                AimbotRules.cellVerdict("white_stained_glass", false, true));
+        assertEquals(AimbotRules.CELL_PASS,
+                AimbotRules.cellVerdict("white_stained_glass_pane", false, true));
+        // 注意（既有缺口，本次不动）：无前缀的 glass / glass_pane 匹配不上 *_glass 后缀，
+        // 与旧实现一致地落到「按真实形状判」—— 要不要把它们也算可穿需用户拍板。
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("glass", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("glass_pane", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("dark_oak_fence", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("cobblestone_wall", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("oak_door", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("oak_trapdoor", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("oak_planks", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("stone", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("oak_log", false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict(null, false, true));
+        assertEquals(AimbotRules.CELL_SHAPE, AimbotRules.cellVerdict("", false, true));
+    }
+
+    @Test
+    void woodStairDetectionCoversStrippedSpecies() {
+        assertTrue(AimbotRules.isWoodStairPath("dark_oak_stairs"));
+        assertTrue(AimbotRules.isWoodStairPath("stripped_oak_stairs"));
+        assertTrue(AimbotRules.isWoodStairPath("stripped_crimson_stairs"));
+        assertTrue(AimbotRules.isWoodStairPath("pale_oak_stairs"));
+        assertFalse(AimbotRules.isWoodStairPath("stone_brick_stairs"));
+        assertFalse(AimbotRules.isWoodStairPath("sandstone_stairs"));
+        assertFalse(AimbotRules.isWoodStairPath("dark_oak_planks"));
+        assertFalse(AimbotRules.isWoodStairPath("stripped_oak_log"));
+        assertFalse(AimbotRules.isWoodStairPath(null));
+    }
+
+    @Test
+    void laterPenetrableCellMustNotOpenEarlierBlockingOne() {
+        // 用户口径 2026-09-16 前半句「有一格能穿，它后面的方块全穿」只对**排在它后面**的方块成立：
+        // 判据是格子结论本身，能不能把整条射线放行由 canWallShot 按格序决定（射线级，这里锁住
+        // cellVerdict 的三种结论取值，防止有人把 CELL_BLOCK 与 CELL_PASS 弄反）。
+        assertEquals(0, AimbotRules.CELL_SHAPE);
+        assertEquals(1, AimbotRules.CELL_PASS);
+        assertEquals(2, AimbotRules.CELL_BLOCK);
+        assertNotEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("dark_oak_stairs", false, true));
+        assertEquals(AimbotRules.CELL_PASS, AimbotRules.cellVerdict("iron_bars", false, true));
+    }
+
+    @Test
     void allLeavesAreHardSolidsThatBlockShots() {
         // 全木种树叶 + azalea 系（均以 _leaves 结尾）
         assertTrue(AimbotRules.isHardSolidPath("oak_leaves"));

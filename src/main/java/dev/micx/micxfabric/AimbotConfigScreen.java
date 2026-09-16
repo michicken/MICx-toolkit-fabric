@@ -208,7 +208,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 y, "读取 AimLead 的预测 AABB 和攻击点；关闭、没有有效轨迹或预测点不可见时不会瞄准。 ");
         y = toggleRow(graphics, mouseX, mouseY, "楼梯穿透 / WS Stair", c.wsStair,
                 () -> c.wsStair = !c.wsStair, y,
-                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。注意：橡木栅栏门（oak_fence_gate）、铁活板门（iron_trapdoor）、黏土块（clay）与树叶（*_leaves）已固定为不可穿透，本开关不影响它们；木种楼梯（含云杉木）本来就不在穿透白名单里，且 P4 刷怪点半径 8 格内的云杉木楼梯额外按硬挡处理。不可穿透方块按整格（1×1×1）遮挡弹道：即使活板门薄板只占格子一小部分，整格都挡；起点格若为可穿透方块（如铁栏杆）则整条射线放行。 ");
+                "控制墙体检测是否允许楼梯类方块作为可穿透路径；半砖规则仍单独处理。注意：橡木栅栏门（oak_fence_gate）、铁活板门（iron_trapdoor）、黏土块（clay）与树叶（*_leaves）已固定为不可穿透，本开关不影响它们；木种楼梯（含去皮 stripped_*）与砂岩系、地狱砖楼梯同样固定不可穿透。不可穿透的方块都按整格（1×1×1）遮挡弹道：楼梯是 L 形、台阶右上角是空的，按形状判会让射线从空角钻过去锁到实际打不到的目标，所以直接整格挡，铁活板门薄板同理；草 / 花 / 火把 / 地毯这类小形状方块不在此列，照旧可穿。射线只要碰到一个可穿透格，它后面的方块（哪怕本身不可穿）也一并放行。 ");
         y = numberRow(graphics, "视野范围 / FOV", "30–360°", fovBox, y);
         y = numberRow(graphics, "普通步长 / Max Step", "5–90°/tick", maxStepBox, y);
         y = numberRow(graphics, "暴力步长 / Brute Step", "30–180°/tick", bruteMaxStepBox, y);

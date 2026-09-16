@@ -240,7 +240,8 @@ public final class AimbotRules {
      * 不依赖真实碰撞 shape（铁活板门 1×3/16×1 的薄板上方空隙同样挡弹）。路径遍历用
      * {@link #rayCells} 按格序判定 first colliding。
      *
-     * <p>理由（用户口径 2026-09-11）：{@code isAllowedFirstSolid} 默认把 {@code *_fence_gate}
+     * <p>理由（用户口径 2026-09-11；当时判据还叫 {@code isAllowedFirstSolid}，现已并入
+     * {@link #cellVerdict}）：可穿名单默认把 {@code *_fence_gate}
      * 与 {@code *_trapdoor} 都视为可穿透，但其中
      * <ul>
      *   <li>{@code oak_fence_gate}（橡木栅栏门）关闭时是一片实心门板，理应挡枪；</li>
@@ -261,6 +262,79 @@ public final class AimbotRules {
         if (registryPath == null) return false;
         return "oak_fence_gate".equals(registryPath) || "iron_trapdoor".equals(registryPath)
                 || "clay".equals(registryPath) || registryPath.endsWith("_leaves");
+    }
+
+    /** 整格口径：未列名方块 —— 挡不挡由<b>真实碰撞形状</b>决定（整格实心的自然挡得住）。 */
+    public static final int CELL_SHAPE = 0;
+
+    /**
+     * 整格口径：明确可穿。命中即让<b>它后面</b>的整条射线一并放行 —— 用户口径 2026-09-16：
+     * 「只要有一个格子能穿透，那后面遇到的所有方块都能穿，即便后面的方块本身不可穿」。
+     */
+    public static final int CELL_PASS = 1;
+
+    /** 整格口径：明确不可穿 —— 按整格 1×1×1 体积挡弹，不看真实形状留下的空角。 */
+    public static final int CELL_BLOCK = 2;
+
+    /** 木质楼梯（含 {@code stripped_*} 去皮木种）。 */
+    public static boolean isWoodStairPath(String registryPath) {
+        if (registryPath == null || !registryPath.endsWith("_stairs")) return false;
+        String species = registryPath.startsWith("stripped_")
+                ? registryPath.substring("stripped_".length()) : registryPath;
+        return species.startsWith("oak_") || species.startsWith("spruce_")
+                || species.startsWith("birch_") || species.startsWith("jungle_")
+                || species.startsWith("acacia_") || species.startsWith("dark_oak_")
+                || species.startsWith("mangrove_") || species.startsWith("cherry_")
+                || species.startsWith("bamboo_") || species.startsWith("crimson_")
+                || species.startsWith("warped_") || species.startsWith("pale_oak_");
+    }
+
+    /**
+     * 方块在「能不能打到」判定里的整格口径（用户口径 2026-09-16）。
+     *
+     * <p>为什么需要它：逐格扫描原本只把「整格口径」用在硬名单上，其余方块退回<b>真实碰撞
+     * 形状</b>判定。但木楼梯这类方块是 L 形 —— 台阶右上角是空的，射线从空角钻过去就被判成
+     * 「能打到」，而实际挡的是<b>整格 1×1×1</b> 体积（用户 2026-09-16 实测；此前把 P4 那圈
+     * 楼梯当成云杉、又疑成深色橡木，其实与木种无关，是空角漏过去的）。名单里明确判过
+     * 「不可穿」的方块必须整格挡枪，不能再让形状去赌空角。
+     *
+     * <p>三类结论（只对「名单里有明确结论」的方块给结论，其余一律 {@link #CELL_SHAPE}）：
+     * <ul>
+     *   <li>{@link #CELL_BLOCK}：硬名单（橡木栅栏门 / <b>铁活板门</b> / 黏土 / 树叶）与
+     *       <b>不可穿透的楼梯</b>（木质楼梯含 {@code stripped_*} 全木种、砂岩系、地狱砖、
+     *       以及 {@code wsStair} 关掉时的非木质楼梯）；</li>
+     *   <li>{@link #CELL_PASS}：玻璃 / 铁栏杆 / 栅栏 / 墙 / 门 / 普通活板门 / 告示牌 / 屏障、
+     *       白名单单半砖（{@code stone_brick_slab} / {@code oak_slab}）、以及
+     *       {@code wsStair} 打开时的非木质楼梯；</li>
+     *   <li>{@link #CELL_SHAPE}：其余未列名方块 —— 石头 / 木板 / 原木等整格实心（形状本来就挡），
+     *       以及草 / 花 / 火把 / 地毯 / 非白名单半砖这类小形状方块（照旧可穿）。</li>
+     * </ul>
+     *
+     * <p><b>整格判定目前只落在铁活板门与楼梯两类</b>（用户口径 2026-09-16：原则上「所有不可穿透
+     * 方块都挡整格」，但实际会影响自瞄的就是这两个，其余方块形状复杂、先不铺开）。
+     *
+     * @param doubleSlab 该半砖格是否为双半砖（{@code double_*} 或 BlockState 的 DOUBLE）
+     */
+    public static int cellVerdict(String registryPath, boolean doubleSlab, boolean wsStair) {
+        if (registryPath == null || registryPath.isEmpty()) return CELL_SHAPE;
+        if (isHardSolidPath(registryPath)) return CELL_BLOCK;
+        if (registryPath.endsWith("_slab")) {
+            // 半砖只把「可穿」那一半写死；其余半砖继续按真实形状判 —— 半格空腔射线本就过得去，
+            // 与楼梯 L 形空角被服务端整格挡掉不是一回事。
+            return isAllowedSingleSlab(registryPath, doubleSlab) ? CELL_PASS : CELL_SHAPE;
+        }
+        if (registryPath.endsWith("_door") || registryPath.endsWith("_trapdoor")) return CELL_PASS;
+        if ("iron_bars".equals(registryPath) || registryPath.endsWith("_glass")
+                || registryPath.endsWith("_glass_pane") || "barrier".equals(registryPath)
+                || registryPath.contains("sign")) return CELL_PASS;
+        if (registryPath.endsWith("_fence") || registryPath.endsWith("_fence_gate")
+                || registryPath.endsWith("_wall")) return CELL_PASS;
+        if (registryPath.endsWith("_stairs")) {
+            if (registryPath.contains("sandstone") || "nether_brick_stairs".equals(registryPath)
+                    || isWoodStairPath(registryPath)) return CELL_BLOCK;
+            return wsStair ? CELL_PASS : CELL_BLOCK;
+        }
+        return CELL_SHAPE;
     }
 
     /**

@@ -36,8 +36,7 @@ public final class SpawnMarkerModule implements Module {
             {  22.0, 72.0,  14.0 },   // p5 传送点
             { -22.0, 72.0,  10.0 },   // p3 传送点
             // p4 传送点（真刷怪点 -10.5,-5.5；此前改到 -14,-0.5 属误判，整框压在练习区上）。
-            // 坐标与 SpawnWallRules 同源：那 8 格内的云杉木楼梯按不可穿透处理。
-            { SpawnWallRules.P4_X, SpawnWallRules.P4_Y, SpawnWallRules.P4_Z },
+            { -10.0, 72.0,  -6.0 },
             {  28.0, 72.0,  32.0 },   // ult 终极机器角
             { -28.0, 72.0,  28.0 },   // rc_back
             {  18.0, 72.0,  44.0 },   // alt 摩天轮角

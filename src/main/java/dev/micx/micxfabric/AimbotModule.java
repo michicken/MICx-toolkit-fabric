@@ -2107,87 +2107,70 @@ public final class AimbotModule implements Module {
     /**
      * 1.8.9 wall policy: the first colliding block decides —— 接触判定升级为「整格」口径
      * （用户定稿 2026-09-11）：一个方块是 1×1×1 的格，铁活板门 1×3/16×1 的薄板也遮挡它
-     * 所在整格体积的子弹。按格序沿射线找第一个被整格接触的白名单/硬名单方块：
+     * 所在整格体积的子弹。按格序沿射线逐格判定（{@link AimbotRules#cellVerdict}）：
      * <ul>
-     *   <li>白名单可穿透（玻璃/铁栏杆/普通活板门等；含起点格 —— 玩家站在铁栏杆等可站入的
-     *       可穿透方块格内时，子弹出发即接触它，first colliding 已放行）→ 整条射线放行，
-     *       <b>后续遇到的硬名单方块也不再判定</b>；</li>
-     *   <li>硬名单（橡木栅栏门/铁活板门/黏土块）→ 挡枪，不依赖真实碰撞 shape；</li>
-     *   <li>两者都不是（含空气/无碰撞 shape 的草等）→ 继续下一格；路径查完落回原
-     *       clip shape 判定（普通实心挡枪 / MISS 放行）。</li>
+     *   <li>整格可穿（玻璃/铁栏杆/普通活板门等，{@link AimbotRules#CELL_PASS}）→ 整条射线
+     *       放行，<b>它后面的方块（哪怕本身不可穿）也一并放行</b> —— 用户口径 2026-09-16
+     *       实机确认；含起点格：玩家站在铁栏杆等可站入的可穿格内时子弹出发即已放行；</li>
+     *   <li>整格不可穿（硬名单含<b>铁活板门</b> / <b>不可穿透的楼梯</b>，
+     *       {@link AimbotRules#CELL_BLOCK}）→ 挡枪，<b>不看真实碰撞 shape 的空角</b>：木楼梯
+     *       是 L 形，台阶右上角是空的，按形状判会让射线从空角钻过去锁到打不到的目标
+     *       （用户实测 2026-09-16，与木种无关）；铁活板门同一口径；</li>
+     *   <li>未列名方块（{@link AimbotRules#CELL_SHAPE}：石头/木板/原木等）→ 整格口径给不出
+     *       结论，交给真实碰撞形状；但 shape 的第一次命中<b>按格序</b>生效，排在它后面的可穿格
+     *       不能再把整条射线放行。</li>
      * </ul>
      */
     private boolean canWallShot(Minecraft client, Vec3 start, Vec3 end) {
         try {
             int[] cells = AimbotRules.rayCells(start.x, start.y, start.z, end.x, end.y, end.z);
+            BlockHitResult hit = null;
+            boolean hitResolved = false;
             for (int i = 0; i + 2 < cells.length; i += 3) {
-                BlockState state = client.level.getBlockState(
-                        new BlockPos(cells[i], cells[i + 1], cells[i + 2]));
+                int bx = cells[i];
+                int by = cells[i + 1];
+                int bz = cells[i + 2];
+                BlockState state = client.level.getBlockState(new BlockPos(bx, by, bz));
                 if (state.isAir()) continue;
                 var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
                 String path = key == null ? "" : key.getPath();
-                if (AimbotRules.isHardSolidPath(path)) return false;
-                // P4 半径 8 格内的云杉木楼梯 = 立即挡枪的实心格（用户定稿 2026-09-16）：
-                // 木楼梯本就不在穿透白名单里，但"不在白名单"只是被略过、不中断逐格扫描，
-                // 同一格序上还有半砖/玻璃/铁栏杆时整条射线仍会被放行——这里改成硬挡。
-                if (SpawnWallRules.isP4ImpenetrableStair(path, cells[i], cells[i + 1], cells[i + 2])) {
+                int verdict = cellVerdict(state, path);
+                if (verdict == AimbotRules.CELL_BLOCK) return false;
+                if (verdict == AimbotRules.CELL_PASS) return true;
+                // 未列名方块：先取整条射线的第一次真实碰撞（与旧兜底同源，只算一次），
+                // 再看它是不是当前格 —— 是才挡枪；不是说明这一格只是被射线擦过（空角）。
+                if (!hitResolved) {
+                    hit = client.level.clip(new ClipContext(start, end,
+                            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
+                    hitResolved = true;
+                }
+                if (hit.getType() != HitResult.Type.MISS
+                        && hit.getBlockPos().getX() == bx
+                        && hit.getBlockPos().getY() == by
+                        && hit.getBlockPos().getZ() == bz) {
                     return false;
                 }
-                if (isAllowedFirstSolid(state, path)) return true;
             }
-            BlockHitResult hit = client.level.clip(new ClipContext(start, end,
-                    ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
-            if (hit.getType() == HitResult.Type.MISS) return true;
-            var state = client.level.getBlockState(hit.getBlockPos());
-            if (state.getCollisionShape(client.level, hit.getBlockPos()).isEmpty()) return true;
+            if (hit == null || hit.getType() == HitResult.Type.MISS) return true;
+            // 兜底：DDA 在格角并列的极端情形下可能没把 clip 命中的格排进序列，仍按老口径判。
+            BlockPos pos = hit.getBlockPos();
+            BlockState state = client.level.getBlockState(pos);
+            if (state.getCollisionShape(client.level, pos).isEmpty()) return true;
             var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             String path = key == null ? "" : key.getPath();
-            // 兜底 clip 路径同样处理 P4 周边的云杉木楼梯（射线停在它身上 = 被挡）。
-            if (SpawnWallRules.isP4ImpenetrableStair(path, hit.getBlockPos().getX(),
-                    hit.getBlockPos().getY(), hit.getBlockPos().getZ())) {
-                return false;
-            }
-            return isAllowedFirstSolid(state, path);
+            return cellVerdict(state, path) == AimbotRules.CELL_PASS;
         } catch (RuntimeException ignored) {
             return false;
         }
     }
 
-    /** Mirrors the old Block/BlockSlab/BlockStairs whitelist on modern registry paths. */
-    private boolean isAllowedFirstSolid(BlockState state, String path) {
-        if (path == null || path.isEmpty()) return false;
-        // 硬实心例外：橡木栅栏门 / 铁活板门必须真正挡枪，不能被 *_fence_gate / *_trapdoor
-        // 后缀规则放进可穿透名单（其余木种/活板门不受影响）。
-        if (AimbotRules.isHardSolidPath(path)) return false;
-        if (path.endsWith("_slab")) {
-            boolean doubleSlab = path.startsWith("double_");
-            if (!doubleSlab && state != null && state.getBlock() instanceof SlabBlock) {
-                doubleSlab = state.getValue(SlabBlock.TYPE) == SlabType.DOUBLE;
-            }
-            return AimbotRules.isAllowedSingleSlab(path, doubleSlab);
+    /** {@link AimbotRules#cellVerdict} 的 BlockState 适配层：双半砖只有 BlockState 知道。 */
+    private int cellVerdict(BlockState state, String path) {
+        boolean doubleSlab = path != null && path.startsWith("double_");
+        if (!doubleSlab && state != null && state.getBlock() instanceof SlabBlock) {
+            doubleSlab = state.getValue(SlabBlock.TYPE) == SlabType.DOUBLE;
         }
-        if (path.endsWith("_door") || path.endsWith("_trapdoor")) return true;
-        if (path.equals("iron_bars") || path.endsWith("_glass") || path.endsWith("_glass_pane")
-                || path.equals("barrier") || path.contains("sign")) return true;
-        if (path.endsWith("_fence") || path.endsWith("_fence_gate") || path.endsWith("_wall")) {
-            return true;
-        }
-        if (path.endsWith("_stairs")) {
-            if (path.contains("sandstone") || path.equals("nether_brick_stairs")
-                    || isWoodStairPath(path)) return false;
-            return config.wsStair;
-        }
-        return false;
-    }
-
-    private static boolean isWoodStairPath(String path) {
-        return path.endsWith("_stairs") && (path.startsWith("oak_")
-                || path.startsWith("spruce_") || path.startsWith("birch_")
-                || path.startsWith("jungle_") || path.startsWith("acacia_")
-                || path.startsWith("dark_oak_") || path.startsWith("mangrove_")
-                || path.startsWith("cherry_") || path.startsWith("bamboo_")
-                || path.startsWith("crimson_") || path.startsWith("warped_")
-                || path.startsWith("pale_oak_"));
+        return AimbotRules.cellVerdict(path, doubleSlab, config.wsStair);
     }
 
     private void fireUseKey(Minecraft client) {
