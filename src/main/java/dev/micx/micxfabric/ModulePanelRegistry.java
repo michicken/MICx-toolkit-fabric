@@ -142,14 +142,19 @@ public final class ModulePanelRegistry {
                 "屏蔽所有粒子效果（爆炸/破坏等一切），匹配 1.8.9 的完全关闭语义。",
                 ParticleFreeModule.instance(), null);
         real("revive_aura", "ReviveAura", "自动救人", GROUP_CORE,
-                "队友倒地睡在附近时自动发送救援交互包（每人每次倒地一包，多目标同 tick 并行，范围可配）。",
+                "队友倒地睡在附近时自动发救援交互包：每人每次倒地一包，发包按间隔节流，"
+                        + "多个倒地队友轮换着点（先 1 号、间隔到了点 2 号，不会对着同一只连打）。",
                 ReviveAuraModule.instance(), parent -> new SimpleModuleScreen(parent,
                         ReviveAuraModule.instance(), "ReviveAura", "自动救援发包",
                         List.of(
                                 SimpleModuleScreen.Row.decimal("Range 范围",
                                         ReviveAuraModule.instance()::getRange,
                                         ReviveAuraModule.instance()::setRange, 1, 10,
-                                        "与倒地队友的最大救援距离（格）。"))));
+                                        "与倒地队友的最大救援距离（格）。"),
+                                SimpleModuleScreen.Row.decimal("Interval 间隔(ms)",
+                                        ReviveAuraModule.instance()::getIntervalMs,
+                                        ReviveAuraModule.instance()::setIntervalMs, 50, 1000,
+                                        "两次救援发包的最小间隔（毫秒），多目标时按这个节奏轮换着点。"))));
         real("last_mobs", "LastMobs", "残怪连线", GROUP_INFO,
                 "回合剩余怪 ≤N 时，准心向每只残怪拉黄色指示线（计分板权威计数）。",
                 LastMobsModule.instance(), parent -> new SimpleModuleScreen(parent,
