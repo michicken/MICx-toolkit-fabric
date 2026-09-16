@@ -92,18 +92,6 @@ public final class AimbotModule implements Module {
     private static final double TRACKING_CORRECTION_CAP_DEG = 12.0;
     /** 手动 A/D 横移时的目标切换滞回，避免同级目标在准心两侧来回抢锁。 */
     private static final double STRAFE_TARGET_SWITCH_MARGIN_DEG = 2.0;
-    /** BRUTE 扫射的空间推进容差：signed yaw 必须比上一个目标大出这个量才认作「下一个」。 */
-    private static final double BRUTE_SWEEP_ADVANCE_EPS_DEG = 0.25;
-    /**
-     * 锥内至少要有这么多目标才算「能扫」——只有 1 只时游标只有一个落点，
-     * 无论怎么推进都是同一只（表现就是锁单只、不扫）。
-     */
-    private static final int BRUTE_SWEEP_MIN_IN_CONE = 2;
-    /**
-     * 锥体过期多久就重锚。太短会在玩家小幅甩枪时反复重锚（锥体等于没固定），
-     * 太长则转身后半天不恢复扫射；0.8s 是「明确换了朝向」的量级。
-     */
-    private static final long BRUTE_SWEEP_REANCHOR_GRACE_MS = 800L;
     /**
      * AA 地面层 y≈72（实测 71~75）。高于此值才算"尚未落地"；
      * 窗户下落的怪贴地生成（y≤74 且只掉 1~2 格），会被这条排除。
@@ -142,33 +130,18 @@ public final class AimbotModule implements Module {
     private Vec3 lastLockedDir;
     private Object lastLevel;
 
-    /* BRUTE 扫射状态：在限定 FOV 内从左到右逐个精准锁定。 */
+    /* BRUTE 链式扫射状态：只在「与当前目标夹角 ≤ 链角」的邻接怪之间推进（用户定稿 2026-09-17）。 */
     private int bruteSweepHeldId = -1;
-    private double bruteSweepPrevYawOff = Double.NaN;
+    /** 当前目标的瞄点 yaw（游标；NaN = 尚无）。链的推进与翻向都以它为基准。 */
+    private double bruteSweepCurYaw = Double.NaN;
+    /** 当前扫射方向：{@link AimbotRules#BRUTE_DIR_RIGHT}=从左到右，{@link AimbotRules#BRUTE_DIR_LEFT}=从右到左。 */
+    private int bruteSweepDirection = AimbotRules.BRUTE_DIR_RIGHT;
     /**
      * 当前目标的停留截止时间。默认 {@code Long.MAX_VALUE} = 不限（目标一死就推进，
      * 不主动等待）；{@code bruteSweepDwellMs > 0} 时作为安全阀，防止锁到打不死的怪僵住。
      */
     private long bruteSweepHoldUntilMs;
-    /**
-     * 扫射锥体锚定 yaw（激活瞬间锁定，用户定稿 2026-09-14）。
-     *
-     * <p>旧实现把 FOV 半角相对【当前准星】判定，而准星会被扫射本身带着走，
-     * 锥体跟着漂移 → 实际可扫范围无限扩张（能全图扫）。现在改为激活那一刻的
-     * 准星 yaw 作为固定中心，整个激活周期内 FOV 判定都用它，跨度恒定 2×FOV。
-     * NaN = 未锚定（激活瞬间由下一帧补锚）。
-     *
-     * <p><b>过期重锚（0.2.99，用户定稿 2026-09-15）</b>：固定不漂移只对「扫射自己带偏准星」
-     * 有意义；玩家自己转身走开、或换波之后，老角度会让锥内只剩 0~1 只怪，扫射退化成单锁
-     * （用户实测「完全不扫」）。所以锥体持续"过期"就重锚到当前准星，并清空换向游标
-     * （yaw 偏移是相对锚点算的，换了锚点旧游标没有意义）。
-     */
-    private double bruteSweepAnchorYaw = Double.NaN;
-    /** 锥体过期计时起点；0 = 当前不处于过期状态。 */
-    private long bruteSweepStaleSinceMs;
-    /** 换回合强制重锚标志（波次换了，怪的方向也换了）。 */
-    private boolean bruteSweepRoundDirty;
-    /** 激活态边沿检测：false→true 的那一帧重新锚定（松开右键 / 关闭 Aimbot 后再次激活）。 */
+    /** 激活态边沿检测：false→true 的那一帧重置链式游标（松开右键 / 关闭 Aimbot 后再次激活）。 */
     private boolean activeGateOpen;
 
     private double joyYawOff;
@@ -430,8 +403,8 @@ public final class AimbotModule implements Module {
             INSTANCE.passiveImmortals.reset();
         }
         if (round > 0) lastSeenRound = round;
-        // 换波次 → 怪的方向整批换掉，老锚点必然过期（0.2.99）。
-        if (round > 0) INSTANCE.bruteSweepRoundDirty = true;
+        // 换波次 → 怪的位置整批换掉，链式游标作废，从当前最优目标重新起链（0.2.107）。
+        if (round > 0) INSTANCE.resetBruteSweep();
     }
 
     @Override
@@ -459,12 +432,11 @@ public final class AimbotModule implements Module {
             resetActiveGate();
             return;
         }
-        // 激活边沿：本次「按住右键 / 开启 Aimbot」的起点，扫射锥体以此刻的准星为固定中心。
-        // 激活周期内不重锚（clearLock / 扫射换向都不动它），松开后再次激活才会换新中心；
-        // 唯一例外是锥体过期重锚（见 bruteSweepAnchorYaw 注释）。
+        // 激活边沿：本次「按住右键 / 开启 Aimbot」的起点。链式扫射没有锚定锥体，
+        // 这里只把链式游标清空（下一帧从当前最优目标起链、方向从左到右）。
         if (!activeGateOpen) {
             activeGateOpen = true;
-            reanchorBruteSweep(client.player.getYRot());
+            resetBruteSweep();
         }
         if (!config.joystick) {
             joyYawOff = 0.0;
@@ -875,12 +847,13 @@ public final class AimbotModule implements Module {
 
     /**
      * BRUTE 选靶。默认取排序第一（排序已把 TOO 放最前，再按转向角最小）。
-     * 暴力扫射生效时改为「逐个精准锁定 + 超快速切换」：把限定 FOV 内的目标按相对锚定准星的
-     * signed yaw 从左到右排好，锁定一只 → 打死 → 顺路推进到下一只 → …；扫到最右端重新回到
-     * 最左。不做连续扫描线，也不做 360° 乱扫。
+     * 暴力扫射生效时改为**链式扫射**（用户定稿 2026-09-17）：锁定一只 → 停满
+     * {@code bruteSweepDwellMs} 就换下一只 → 只换到「与当前这只夹角 ≤ 链角」的邻接怪 →
+     * 当前方向没有邻接怪就翻向（从左到右 ↔ 从右到左）→ 两个方向都没有就停住锁当前，
+     * 等新怪进入邻接区自动续链。链的断口就是停止点，不再有锚定锥体/重锚那套全图漂移。
      *
-     * <p>保持/推进的全部语义在 {@link AimbotRules#bruteSweepDecision} 里（纯函数、有离线回归），
-     * 这里只负责把实体投成锥体候选、再把结果映射回 {@link Scored}。
+     * <p>保持/推进的全部语义在 {@link AimbotRules#bruteChainDecision} 里（纯函数、有离线回归），
+     * 这里只负责把实体投成候选、再把结果映射回 {@link Scored}。
      *
      * <p>用户定稿 2026-09-14（暴力模式）：<b>扫射不再因场上存在巨人而停掉</b>。
      * 巨人进不进扫射池交给两个优先级开关（用户定稿 2026-09-16）：Clown 模式把巨人压到
@@ -892,54 +865,23 @@ public final class AimbotModule implements Module {
             resetBruteSweep();
             return scored.get(0);
         }
-        // 换波次后立刻重锚一次（不等过期计时）。
-        if (bruteSweepRoundDirty || Double.isNaN(bruteSweepAnchorYaw)) {
-            reanchorBruteSweep(client.player.getYRot());
-        }
-        // 锥体中心 = 激活瞬间锁定的锚定 yaw（不是当前准星——旧实现相对当前准星判定，
-        // 准星被扫射带着走后锥体漂移，实际能扫到全图；用户 2026-09-14 定稿改为固定锚定）。
-        float anchorYaw = Float.isNaN((float) bruteSweepAnchorYaw)
-                ? client.player.getYRot()
-                : (float) bruteSweepAnchorYaw;
         int size = scored.size();
-        double[] targetYaw = new double[size];
+        int[] ids = new int[size];
+        double[] yaw = new double[size];
         for (int i = 0; i < size; i++) {
-            targetYaw[i] = calculateYawPitch(eye, scored.get(i).point)[0];
+            ids[i] = scored.get(i).entity.getId();
+            yaw[i] = calculateYawPitch(eye, scored.get(i).point)[0];
         }
-        double[] coneBuf = new double[size];
-        int[] slot = AimbotRules.bruteSweepConeSlots(anchorYaw, config.bruteSweepFovDeg,
-                targetYaw, coneBuf);
-        int count = slot.length;
-        // 锥体过期 → 重锚到当前准星（细节与理由见 bruteSweepAnchorYaw 注释）。
-        double crosshairOff = Math.abs(AimbotRules.angleDelta(anchorYaw, client.player.getYRot()));
-        if (AimbotRules.bruteSweepConeStale(count, BRUTE_SWEEP_MIN_IN_CONE, crosshairOff,
-                config.bruteSweepFovDeg)) {
-            if (bruteSweepStaleSinceMs == 0L) {
-                bruteSweepStaleSinceMs = now;
-            } else if (now - bruteSweepStaleSinceMs >= BRUTE_SWEEP_REANCHOR_GRACE_MS) {
-                reanchorBruteSweep(client.player.getYRot());
-                // 重锚后按新锚点重算一次锥体。递归深度恒为 1：重锚把计时清 0，
-                // 下一轮要么通过（计时刚起步）要么直接走正常路径，不会再进这个分支。
-                return bruteChoice(client, eye, scored, now);
-            }
-        } else {
-            bruteSweepStaleSinceMs = 0L;
-        }
-        if (count == 0) {
+        AimbotRules.BruteChainPick pick = AimbotRules.bruteChainDecision(ids, yaw,
+                bruteSweepHeldId, bruteSweepCurYaw, bruteSweepDirection,
+                config.bruteSweepChainDeg, now, bruteSweepHoldUntilMs, config.bruteSweepDwellMs);
+        if (pick.entityId() < 0) {
+            // 链断且当前目标已不在池内（死亡/被挡）→ 回落到普通最优选择，下一帧从它起链。
             resetBruteSweep();
             return scored.get(0);
         }
-        double[] yawOff = java.util.Arrays.copyOf(coneBuf, count);
-        int[] ids = new int[count];
-        for (int k = 0; k < count; k++) {
-            ids[k] = scored.get(slot[k]).entity.getId();
-        }
-        AimbotRules.BruteSweepPick pick = AimbotRules.bruteSweepDecision(ids, yawOff,
-                bruteSweepHeldId, bruteSweepPrevYawOff, now, bruteSweepHoldUntilMs,
-                config.bruteSweepDwellMs, BRUTE_SWEEP_ADVANCE_EPS_DEG);
         Scored chosen = null;
-        for (int k = 0; k < count; k++) {
-            Scored value = scored.get(slot[k]);
+        for (Scored value : scored) {
             if (value.entity.getId() == pick.entityId()) {
                 chosen = value;
                 break;
@@ -949,11 +891,10 @@ public final class AimbotModule implements Module {
             resetBruteSweep();
             return scored.get(0);
         }
-        if (pick.advanced()) {
-            bruteSweepHeldId = pick.entityId();
-            bruteSweepPrevYawOff = pick.yawOff();
-            bruteSweepHoldUntilMs = pick.holdUntilMs();
-        }
+        bruteSweepHeldId = pick.entityId();
+        bruteSweepCurYaw = pick.yaw();
+        bruteSweepDirection = pick.direction();
+        bruteSweepHoldUntilMs = pick.holdUntilMs();
         return chosen;
     }
 
@@ -965,22 +906,12 @@ public final class AimbotModule implements Module {
         return round <= 0 || AimbotRules.bruteSweepAllowed(round, config.bruteSweepMinRound);
     }
 
+    /** 清空链式游标：链从头起（当前最优目标），方向回到从左到右。 */
     private void resetBruteSweep() {
         bruteSweepHeldId = -1;
-        bruteSweepPrevYawOff = Double.NaN;
+        bruteSweepCurYaw = Double.NaN;
+        bruteSweepDirection = AimbotRules.BRUTE_DIR_RIGHT;
         bruteSweepHoldUntilMs = 0L;
-    }
-
-    /**
-     * 重锚扫射锥体到指定准星 yaw，并清空换向游标 —— yaw 偏移是相对锚点算的，
-     * 换了锚点旧游标（prevyawOff）就失去意义，留着会让 {@link AimbotRules#bruteSweepAdvance}
-     * 在一套坐标里比另一套坐标的值。
-     */
-    private void reanchorBruteSweep(float yaw) {
-        bruteSweepAnchorYaw = yaw;
-        bruteSweepStaleSinceMs = 0L;
-        bruteSweepRoundDirty = false;
-        resetBruteSweep();
     }
 
     /** Humanized target choice: sweep the crosshair cone instead of pinning one entity forever. */

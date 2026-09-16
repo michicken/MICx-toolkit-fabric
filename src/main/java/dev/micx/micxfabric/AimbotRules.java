@@ -593,46 +593,11 @@ public final class AimbotRules {
         return round >= Math.max(1, minRound);
     }
 
-    /**
-     * 扫射锥体是否已「过期」——过期就该重锚到当前准星（0.2.99，用户定稿 2026-09-15）。
-     *
-     * <p>锚定不漂移只解决「扫射自己带偏准星导致锥体跟着漂」；它同时带来另一个后果：
-     * 玩家自己转身 / 换波之后，老角度里可能只剩 0~1 只怪，而只有 1 只时游标只有一个落点
-     * —— 表现就是「锁单只，完全不扫」。两种过期情形：
-     * <ul>
-     *   <li>{@code coneCount < minInCone}：锥内目标不够扫（0 只退化单锁、1 只无从推进）；</li>
-     *   <li>准星跑出锥体（{@code crosshairOffDeg > fovDeg}）：玩家已经刻意看向别处，
-     *       老锥体不再代表他想打的方向。</li>
-     * </ul>
-     * 只要满足其一即视为过期；调用方用「持续这么久才动手」的滞回来过滤甩枪抖动。
-     */
-    public static boolean bruteSweepConeStale(int coneCount, int minInCone,
-                                              double crosshairOffDeg, double fovDeg) {
-        if (coneCount < Math.max(1, minInCone)) return true;
-        return Double.isFinite(crosshairOffDeg) && crosshairOffDeg > Math.max(0.0, fovDeg);
-    }
+    // 2026-09-17：扫射从「锚定锥体 + 升序推进到头绕回 + 锥体过期重锚到准星」改为**链式推进**
+    // （见下方 BRUTE 扫射状态机区块的 bruteChainDecision）。锥体/重锚那套就是「扫着扫着几乎
+    // 扫遍全图」的来源，已整体删除；旧的 bruteSweepConeStale / bruteSweepInFov /
+    // bruteSweepAdvance 三个纯函数随之移除。
 
-    /** 只有落在限定 FOV 半角内的目标才参与暴力扫射（不做 360° 乱扫）。 */
-    public static boolean bruteSweepInFov(double signedYawDeg, double fovDeg) {
-        if (!Double.isFinite(signedYawDeg) || !Double.isFinite(fovDeg)) return false;
-        return Math.abs(signedYawDeg) <= Math.abs(fovDeg);
-    }
-
-    /**
-     * 空间顺序推进：给出按 signed yaw 升序排列的候选偏角，返回第一个
-     * 严格大于 `prevYawOff + eps` 的下标；若已扫到最右端则回到 0（重新从左开始）。
-     * `prevYawOff` 不是有限值时也从 0 开始。
-     *
-     * @return 下标；数组为空返回 -1
-     */
-    public static int bruteSweepAdvance(double[] yawOffAscending, double prevYawOff, double eps) {
-        if (yawOffAscending == null || yawOffAscending.length == 0) return -1;
-        double start = Double.isFinite(prevYawOff) ? prevYawOff + Math.max(0.0, eps) : Double.NEGATIVE_INFINITY;
-        for (int i = 0; i < yawOffAscending.length; i++) {
-            if (yawOffAscending[i] > start) return i;
-        }
-        return 0;
-    }
 
     /* ---- Humanize target sweep and rotation model, ported from the final 1.8.9 rules ---- */
 
@@ -1103,88 +1068,134 @@ public final class AimbotRules {
 
     /* ==================== BRUTE 扫射状态机（纯逻辑，可离线回归） ====================
      *
-     * 扫射 = 「沿锥体从左到右逐个清」：锁定一只 → 打死 → 顺路推进到下一只 → …
+     * 扫射 = **链式扫**：锁定一只 → 停满 dwell 就换下一只 → 只换到「与本只夹角 ≤ 链角」的
+     * 邻接怪（用户定稿 2026-09-17）→ 当前方向没有邻接怪就翻向（从左到右 ↔ 从右到左）→
+     * 两个方向都没有就停住锁当前，等新怪进入邻接区自动续链。
+     *
      * 这里把「保持 / 推进」的决策与状态迁移抽成纯函数，避免再出现
      * 「在游戏里才能发现扫射其实没工作」的情况（2026-09-14 连续两次实测回归）。
      */
 
-    /** 扫射选择结果：选中的目标 + 需要写回的状态。 */
-    public record BruteSweepPick(int entityId, double yawOff, long holdUntilMs, boolean advanced) { }
+    /** 扫射方向：从左到右（yaw 递增）。MC 里 yaw 增大 = 准星向右转。 */
+    public static final int BRUTE_DIR_RIGHT = 1;
+    /** 扫射方向：从右到左（yaw 递减）。 */
+    public static final int BRUTE_DIR_LEFT = -1;
 
-    /** 空决策（锥体内没有可打目标；调用方应回落单锁）。 */
-    public static final BruteSweepPick BRUTE_SWEEP_NONE = new BruteSweepPick(-1, Double.NaN, 0L, false);
+    /**
+     * 链式扫射的选择结果。
+     *
+     * @param entityId    本次应锁定的实体 id，-1 = 链已断且当前目标也没了（调用方回落普通选择）
+     * @param yaw         该目标的瞄点 yaw（写回游标；{@code entityId < 0} 时无意义）
+     * @param direction   写回的扫射方向（到头翻向时与入参不同）
+     * @param holdUntilMs 该目标的停留截止（{@link #BRUTE_HOLD_FOREVER} = 不限）
+     * @param moved       本次是否发生了换目标（false = 保持/停住锁当前）
+     */
+    public record BruteChainPick(int entityId, double yaw, int direction,
+                                 long holdUntilMs, boolean moved) { }
 
-    /** 停留保护：不限时长（只按「目标死亡 / 移出锥体」推进）。 */
+    /** 空决策（池内无目标，或链断且当前目标已不在池内）。 */
+    public static final BruteChainPick BRUTE_CHAIN_NONE =
+            new BruteChainPick(-1, Double.NaN, BRUTE_DIR_RIGHT, 0L, false);
+
+    /** 停留保护：不限时长（只按「目标死亡 / 链断」推进）。 */
     public static final long BRUTE_HOLD_FOREVER = Long.MAX_VALUE;
 
     /**
-     * 从「已按 signed yaw 升序排好的锥内候选」里选出本次锁定的目标。
+     * 链式扫射决策（用户定稿 2026-09-17）。
      *
-     * <p>语义（用户定稿 2026-09-15）：<b>每只最多停留 {@code dwellMs} 就立刻切下一只，
-     * 不管有没有打死</b>——扫射的本体就是这个上限，默认 100ms。{@code dwellMs <= 0}
-     * 的「只按死亡/离锥推进、不设上限」分支仍被保留（纯函数兜底与离线回归用），
-     * 但配置层已把它夹到 40–600，游戏里不可达。
+     * <p>语义：
+     * <ol>
+     *   <li><b>保持</b>：当前目标还在池内且停留保护未到期 → 继续锁它（{@code moved=false}）；</li>
+     *   <li><b>推进</b>：在本方向找「与当前目标夹角 ≤ {@code chainDeg}」的<b>最近</b>邻接怪，
+     *       换过去（{@code moved=true}，停留计时重置为 {@code now + dwellMs}）；</li>
+     *   <li><b>翻向</b>：本方向没有邻接怪 → 反方向同样找一次，找到就翻向换过去；</li>
+     *   <li><b>停住</b>：两个方向都没有邻接怪 → 停住锁当前（保留扫射状态，等新怪进邻接区
+     *       自动续链）；此时若当前目标已不在池内，返回 {@link #BRUTE_CHAIN_NONE} 让调用方回落。</li>
+     * </ol>
      *
-     * @param ids          锥内候选实体 id（与 yawOff 同序）
-     * @param yawOff       对应的 signed yaw 偏角（升序）
-     * @param heldId       当前锁定的实体 id，-1 表示无
-     * @param prevYawOff   上一次落点的偏角（NaN = 尚未落点）
+     * <p>不再有「锚定锥体」和「锥体过期重锚」——那是 2026-09-17 之前「扫着扫着几乎扫遍全图」
+     * 的来源。链的断口（两只间隔 &gt; {@code chainDeg}）就是停止点。
+     *
+     * @param ids          可打目标实体 id（任意序；已由调用方做过视线/优先级筛选）
+     * @param yaw          对应的瞄点 yaw（与 ids 同序）
+     * @param heldId       当前锁定的目标 id，-1 = 无
+     * @param curYaw       当前目标的瞄点 yaw（NaN = 尚无游标，此时用 heldId 在池内查一次）
+     * @param direction    当前扫射方向（{@link #BRUTE_DIR_RIGHT} / {@link #BRUTE_DIR_LEFT}）
+     * @param chainDeg     邻接夹角上限（度）；{@code <= 0} 视为不限制方向即无邻接怪
      * @param nowMs        当前时间
      * @param holdUntilMs  当前目标的停留截止（{@link #BRUTE_HOLD_FOREVER} = 不限）
      * @param dwellMs      停留上限（毫秒）；{@code <= 0} 表示不设上限
-     * @param eps          推进容差（度）
      */
-    public static BruteSweepPick bruteSweepDecision(int[] ids, double[] yawOff,
-                                                    int heldId, double prevYawOff,
-                                                    long nowMs, long holdUntilMs,
-                                                    int dwellMs, double eps) {
-        if (ids == null || yawOff == null || ids.length == 0 || ids.length != yawOff.length) {
-            return BRUTE_SWEEP_NONE;
+    public static BruteChainPick bruteChainDecision(int[] ids, double[] yaw,
+                                                    int heldId, double curYaw, int direction,
+                                                    double chainDeg,
+                                                    long nowMs, long holdUntilMs, int dwellMs) {
+        int dir = direction < 0 ? BRUTE_DIR_LEFT : BRUTE_DIR_RIGHT;
+        if (ids == null || yaw == null || ids.length == 0 || ids.length != yaw.length) {
+            return BRUTE_CHAIN_NONE;
         }
-        long limit = dwellMs <= 0 ? BRUTE_HOLD_FOREVER : nowMs + dwellMs;
-        // 保持：当前目标仍在锥内、且停留保护未到期 → 继续锁它（不换目标 = 不停顿）
+        // 1) 保持：当前目标仍在池内、停留保护未到期 → 不换目标（不换 = 不停顿）
         if (heldId >= 0 && nowMs < holdUntilMs) {
             for (int i = 0; i < ids.length; i++) {
                 if (ids[i] == heldId) {
-                    return new BruteSweepPick(heldId, yawOff[i], holdUntilMs, false);
+                    return new BruteChainPick(heldId, yaw[i], dir, holdUntilMs, false);
                 }
             }
-            // 目标已不在锥内（死亡 / 移出 / 被挡）→ 立刻推进，不等停留保护到期
+            // 目标已不在池内（死亡 / 被挡 / 移出）→ 立刻续链，不等停留保护到期
         }
-        // 推进：bruteSweepAdvance 内部 +eps，保证不会重新选回同一只
-        //（选回同一只 = 扫射退化成单锁，用户 2026-09-14 实测回归）
-        int pos = bruteSweepAdvance(yawOff, prevYawOff, eps);
-        if (pos < 0) pos = 0;
-        return new BruteSweepPick(ids[pos], yawOff[pos], limit, true);
+        // 当前目标没了时游标可能还是旧的（curYaw 有限即可用；NaN 才去池里回查）
+        double reference = Double.isFinite(curYaw) ? curYaw : yawOf(ids, yaw, heldId);
+        long limit = dwellMs <= 0 ? BRUTE_HOLD_FOREVER : nowMs + dwellMs;
+        // 2) 本方向的最近邻接怪
+        int hop = nearestChainNeighbor(yaw, reference, dir, chainDeg);
+        int usedDir = dir;
+        if (hop < 0) {
+            // 3) 本方向到头 → 翻向再来一次（从右到左 ↔ 从左到右）
+            hop = nearestChainNeighbor(yaw, reference, -dir, chainDeg);
+            usedDir = -dir;
+        }
+        if (hop >= 0) {
+            return new BruteChainPick(ids[hop], yaw[hop], usedDir, limit, true);
+        }
+        // 4) 两个方向都没有邻接怪 → 停住锁当前（当前还在池内才留得住）
+        if (heldId >= 0 && yawOf(ids, yaw, heldId) != null) {
+            long until = nowMs < holdUntilMs ? holdUntilMs : limit;
+            return new BruteChainPick(heldId, reference, dir, until, false);
+        }
+        return BRUTE_CHAIN_NONE;
+    }
+
+    /** 池内的瞄点 yaw；不在池内返回 {@code null}。 */
+    private static Double yawOf(int[] ids, double[] yaw, int entityId) {
+        if (entityId < 0) return null;
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == entityId) return yaw[i];
+        }
+        return null;
     }
 
     /**
-     * 生成锚定锥体内的候选偏角（升序），返回排序后的下标。
+     * 指定方向上的最近邻接怪：夹角（{@link #angleDelta}，MC 里 yaw 增大 = 向右）必须落在
+     * 该方向且绝对值 ≤ {@code chainDeg}，取夹角最小的那只。
      *
-     * @param anchorYaw  激活瞬间锁定的锥体中心 yaw（不是当前准星——相对当前准星判定会让
-     *                   锥体被扫射带着漂移，实际能扫到全图）
-     * @param fovDeg     FOV 半角（度）
-     * @param targetYaw  各可打目标的瞄点 yaw（未过滤）
-     * @param outOffsets 输出用缓冲，长度必须 ≥ {@code targetYaw.length}；前 count 项为升序偏角
-     * @return 升序排列的 yaw 偏角数组下标（与 outOffsets 同序）；无候选返回空数组
+     * @return 池内下标；没有邻接怪返回 -1
      */
-    public static int[] bruteSweepConeSlots(double anchorYaw, double fovDeg,
-                                            double[] targetYaw, double[] outOffsets) {
-        if (targetYaw == null || targetYaw.length == 0) return new int[0];
-        int[] slots = new int[targetYaw.length];
-        int count = 0;
-        for (int i = 0; i < targetYaw.length; i++) {
-            double off = angleDelta(anchorYaw, targetYaw[i]);
-            if (!bruteSweepInFov(off, fovDeg)) continue;
-            int k = count++;
-            while (k > 0 && outOffsets[k - 1] > off) {
-                outOffsets[k] = outOffsets[k - 1];
-                slots[k] = slots[k - 1];
-                k--;
+    private static int nearestChainNeighbor(double[] yaw, double reference,
+                                            int direction, double chainDeg) {
+        if (!Double.isFinite(reference) || !(chainDeg > 0.0)) return -1;
+        double best = Double.MAX_VALUE;
+        int bestIdx = -1;
+        for (int i = 0; i < yaw.length; i++) {
+            if (!Double.isFinite(yaw[i])) continue;
+            double delta = angleDelta(reference, yaw[i]);
+            if (direction < 0 ? delta >= 0.0 : delta <= 0.0) continue;
+            double span = Math.abs(delta);
+            if (span > chainDeg) continue;
+            if (span < best) {
+                best = span;
+                bestIdx = i;
             }
-            outOffsets[k] = off;
-            slots[k] = i;
         }
-        return java.util.Arrays.copyOf(slots, count);
+        return bestIdx;
     }
 }

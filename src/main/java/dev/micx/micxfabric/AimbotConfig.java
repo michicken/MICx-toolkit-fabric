@@ -42,14 +42,19 @@ public final class AimbotConfig {
     public int sweepMinRound = 49;
 
     /**
-     * BRUTE（暴力）模式专用扫射：在限定 FOV 内逐个精准锁定 + 超快速切换，
-     * 快速扫过一堆怪里的每一个目标（与 Humanize 的连续扫描线不同）。
+     * BRUTE（暴力）模式专用扫射：**链式**逐个精准锁定 + 超快速切换，快速扫过一堆怪里的
+     * 每一个目标（与 Humanize 的连续扫描线不同）；只换到链角范围内的邻接怪。
      */
     public boolean bruteSweep = true;
     /** BRUTE 扫射的起始回合（用户定稿 36）；回合未知时不门控。 */
     public int bruteSweepMinRound = 36;
-    /** BRUTE 扫射的 FOV 半角（°）：只有落在这个角范围内的目标才参与，不做 360° 乱扫。 */
-    public double bruteSweepFovDeg = 45.0;
+    /**
+     * BRUTE 扫射的**链角**（°，用户定稿 2026-09-17）：只换到「与当前这只夹角 ≤ 链角」的
+     * 邻接怪；当前方向没有邻接怪就翻向（从左到右 ↔ 从右到左），两个方向都没有就停住锁当前。
+     * 链的断口 = 停止点，不再有锚定锥体/重锚那套「扫着扫着扫遍全图」。
+     * （旧名 bruteSweepFovDeg / "扫射 FOV 半角"，语义由「窗口半角」改为「邻接夹角上限」。）
+     */
+    public double bruteSweepChainDeg = 45.0;
     /**
      * BRUTE 扫射在每个目标上的停留时间（ms）——<b>扫射的本体就是这个</b>：
      * 每只最多停这么久，到点立刻换下一只，<b>不管有没有打死</b>；目标提前死亡/掉出锥体
@@ -193,7 +198,7 @@ public final class AimbotConfig {
         sweepMinRound = ConfigProperties.integer(p, "sweepMinRound", 49, 1, 200);
         bruteSweep = ConfigProperties.bool(p, "bruteSweep", true);
         bruteSweepMinRound = ConfigProperties.integer(p, "bruteSweepMinRound", 36, 1, 200);
-        bruteSweepFovDeg = ConfigProperties.real(p, "bruteSweepFovDeg", 45.0, 5.0, 180.0);
+        bruteSweepChainDeg = ConfigProperties.real(p, "bruteSweepChainDeg", 45.0, 5.0, 180.0);
         bruteSweepDwellMs = ConfigProperties.integer(p, "bruteSweepDwellMs", 100, 40, 600);
         bruteRotationWindowMs = ConfigProperties.integer(p, "bruteRotationWindowMs", 25, 5, 50);
         pitchHorizonMarginDeg = ConfigProperties.real(p, "pitchHorizonMarginDeg", 3.0, 0.0, 8.0);
@@ -285,7 +290,7 @@ public final class AimbotConfig {
         put(p, "sweepMinRound", clamp(sweepMinRound, 1, 200));
         put(p, "bruteSweep", bruteSweep);
         put(p, "bruteSweepMinRound", clamp(bruteSweepMinRound, 1, 200));
-        put(p, "bruteSweepFovDeg", clamp(bruteSweepFovDeg, 5.0, 180.0));
+        put(p, "bruteSweepChainDeg", clamp(bruteSweepChainDeg, 5.0, 180.0));
         put(p, "bruteSweepDwellMs", clamp(bruteSweepDwellMs, 40, 600));
         put(p, "bruteRotationWindowMs", clamp(bruteRotationWindowMs, 5, 50));
         put(p, "prioClown", prioClown);

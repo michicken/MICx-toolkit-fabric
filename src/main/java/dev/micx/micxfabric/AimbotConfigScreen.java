@@ -50,7 +50,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox aboveHeightBox;
     private EditBox sweepMinRoundBox;
     private EditBox bruteSweepMinRoundBox;
-    private EditBox bruteSweepFovBox;
+    private EditBox bruteSweepChainBox;
     private EditBox bruteSweepDwellBox;
     private EditBox bruteRotationWindowBox;
 
@@ -89,7 +89,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         aboveHeightBox = box("aboveHeightBlocks", Double.toString(c.aboveHeightBlocks));
         sweepMinRoundBox = box("sweepMinRound", Integer.toString(c.sweepMinRound));
         bruteSweepMinRoundBox = box("bruteSweepMinRound", Integer.toString(c.bruteSweepMinRound));
-        bruteSweepFovBox = box("bruteSweepFov", Double.toString(c.bruteSweepFovDeg));
+        bruteSweepChainBox = box("bruteSweepChain", Double.toString(c.bruteSweepChainDeg));
         bruteSweepDwellBox = box("bruteSweepDwell", Integer.toString(c.bruteSweepDwellMs));
         bruteRotationWindowBox = box("bruteRotationWindow", Integer.toString(c.bruteRotationWindowMs));
     }
@@ -271,19 +271,20 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "暴力扫射 / Brute Sweep", c.bruteSweep,
                 () -> c.bruteSweep = !c.bruteSweep, y,
-                "仅在 BRUTE 模式生效：在 FOV 限幅内把目标按空间顺序逐个精准锁定并超快速切换，快速扫过一堆怪里的每一个；不是连续扫描线，也不会 360° 乱扫。");
+                "仅在 BRUTE 模式生效：链式逐个精准锁定并超快速切换——只换到「与当前这只夹角 ≤ 链角」的邻接怪，当前方向没有就近怪就翻向，两个方向都没有就停住锁当前。不是连续扫描线，也不会 360° 乱扫。");
         y = numberRow(graphics, "暴力扫射起始回合 / Brute Min Round", "1–200", bruteSweepMinRoundBox, y);
-        y = numberRow(graphics, "扫射 FOV 半角 / Sweep FOV", "5–180°", bruteSweepFovBox, y);
+        y = numberRow(graphics, "扫射链角 / Sweep Chain", "5–180°", bruteSweepChainBox, y);
         y = numberRow(graphics, "每只停留 / Switch Dwell", "40–600ms", bruteSweepDwellBox, y);
         y = numberRow(graphics, "转头完成时间 / Turn Window", "5–50ms", bruteRotationWindowBox, y);
         y = wrapped(graphics,
-                "暴力扫射在起始回合之前完全不生效（只按 TOO > 转向角最小 锁单只）；FOV 半角决定哪些目标参与扫射。"
+                "暴力扫射在起始回合之前完全不生效（只按 TOO > 转向角最小 锁单只）；链角决定「下一只能有多远」。"
                         + "【每只停留】就是扫射的本体：每只最多停这么久，到点立刻换下一只——不管有没有打死；"
-                        + "目标提前死亡/掉出锥体也会立刻换。默认 100ms，一圈扫完从最左重新开始。"
-                        + "锥体中心是【激活那一刻的准星】——整个激活周期跨度恒为 2×FOV，不会随准星被扫射带动而漂移；"
-                        + "松开右键/关闭 Aimbot 后再次激活才换中心。锥体【过期重锚】（0.2.99）：锥内目标少于 2 只、"
-                        + "或准星自己跑出锥体范围，持续 0.8 秒就重锚到当前准星并清空换向游标——换波也会立刻重锚。"
-                        + "场上有巨人不再停掉扫射——巨人已降到末位档，有小怪时根本不进扫射池。"
+                        + "目标提前死亡/被挡住也会立刻续链。默认 100ms。"
+                        + "【链式推进】（0.2.107，用户定稿 2026-09-17）：从当前这只出发，只换到夹角在链角以内的最近邻接怪，"
+                        + "先从左到右（yaw 递增），当前方向没有邻接怪了就翻向从右到左，两个方向都没有就停住锁当前这只，"
+                        + "等新怪走进邻接区会自动接着扫。链的断口就是停止点——"
+                        + "旧的「锚定锥体 + 锥体过期重锚到准星」已整体删除（那套会越扫越偏，几乎扫遍全图）。"
+                        + "场上有巨人不再停掉扫射——按 Clown/Giant 两个优先级开关决定它进不进扫射池。"
                         + "Turn Window 是 BRUTE 把「一次决策的转向量」消耗完所需的时间：控制器只有 20 Hz，"
                         + "这个值越短越接近瞬时转头，默认 25ms 表示半个 tick 内到位，留出更多时间压在目标上；"
                         + "调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
@@ -483,7 +484,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
             c.aboveHeightBlocks = parseDouble(aboveHeightBox, 1.0, 32.0, "Above Height");
             c.sweepMinRound = parseInt(sweepMinRoundBox, 1, 200, "Sweep Min Round");
             c.bruteSweepMinRound = parseInt(bruteSweepMinRoundBox, 1, 200, "Brute Sweep Min Round");
-            c.bruteSweepFovDeg = parseDouble(bruteSweepFovBox, 5.0, 180.0, "Brute Sweep FOV");
+            c.bruteSweepChainDeg = parseDouble(bruteSweepChainBox, 5.0, 180.0, "Brute Sweep Chain");
             c.bruteSweepDwellMs = parseInt(bruteSweepDwellBox, 0, 600, "Brute Sweep Dwell");
             c.bruteRotationWindowMs = parseInt(bruteRotationWindowBox, 5, 50, "Brute Turn Window");
             c.save();
