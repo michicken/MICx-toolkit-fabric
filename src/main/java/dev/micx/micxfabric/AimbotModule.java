@@ -2127,6 +2127,12 @@ public final class AimbotModule implements Module {
                 var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
                 String path = key == null ? "" : key.getPath();
                 if (AimbotRules.isHardSolidPath(path)) return false;
+                // P4 半径 8 格内的云杉木楼梯 = 立即挡枪的实心格（用户定稿 2026-09-16）：
+                // 木楼梯本就不在穿透白名单里，但"不在白名单"只是被略过、不中断逐格扫描，
+                // 同一格序上还有半砖/玻璃/铁栏杆时整条射线仍会被放行——这里改成硬挡。
+                if (SpawnWallRules.isP4ImpenetrableStair(path, cells[i], cells[i + 1], cells[i + 2])) {
+                    return false;
+                }
                 if (isAllowedFirstSolid(state, path)) return true;
             }
             BlockHitResult hit = client.level.clip(new ClipContext(start, end,
@@ -2136,6 +2142,11 @@ public final class AimbotModule implements Module {
             if (state.getCollisionShape(client.level, hit.getBlockPos()).isEmpty()) return true;
             var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             String path = key == null ? "" : key.getPath();
+            // 兜底 clip 路径同样处理 P4 周边的云杉木楼梯（射线停在它身上 = 被挡）。
+            if (SpawnWallRules.isP4ImpenetrableStair(path, hit.getBlockPos().getX(),
+                    hit.getBlockPos().getY(), hit.getBlockPos().getZ())) {
+                return false;
+            }
             return isAllowedFirstSolid(state, path);
         } catch (RuntimeException ignored) {
             return false;
