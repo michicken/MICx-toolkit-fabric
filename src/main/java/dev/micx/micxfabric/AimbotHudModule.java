@@ -31,6 +31,8 @@ public final class AimbotHudModule implements Module {
     };
 
     private boolean enabled;
+    /** 游戏结束的临时隐藏截止时刻（毫秒），0 = 不在窗口内。只影响本模块，不改用户开关状态。 */
+    private volatile long hideUntilMs;
     private final Set<String> down = new HashSet<>();
     private final Set<String> heldThroughBlock = new HashSet<>();
 
@@ -39,6 +41,29 @@ public final class AimbotHudModule implements Module {
 
     public static AimbotHudModule instance() {
         return INSTANCE;
+    }
+
+    /**
+     * 整局游戏结束 → Aimbot HUD 立刻隐藏，{@link AimbotRules#GAME_OVER_HUD_HIDE_MS} 毫秒后
+     * 自动恢复；不发任何聊天提示。
+     *
+     * <p>用户定稿 2026-09-16，触发点是<b>整局结束</b>而不是每回合（用户纠正：「游戏结束
+     * 不是回合结束」）。只动 {@code hideUntilMs}，不碰模块开关状态（{@code enabled}），
+     * 所以隐藏窗口结束后回到用户原本的设置。
+     */
+    public static void onGameOver() {
+        AimbotConfig config = AimbotModule.instance().config();
+        // Aimbot 模块被关掉时它的 tick 不会跑，配置可能一次都没读过——这里补一次（load 幂等）。
+        config.load();
+        if (!config.hudHideOnGameOver) return;
+        INSTANCE.hideUntilMs = AimbotRules.hudHideDeadline(true, System.currentTimeMillis());
+        INSTANCE.down.clear();
+        INSTANCE.heldThroughBlock.clear();
+    }
+
+    /** 是否正处在游戏结束的临时隐藏窗口内。 */
+    public boolean hiddenByGameOver() {
+        return AimbotRules.hudHideActive(System.currentTimeMillis(), hideUntilMs);
     }
 
     @Override
@@ -76,7 +101,9 @@ public final class AimbotHudModule implements Module {
     public void tick(Minecraft client) {
         if (!enabled || client == null || client.player == null || client.level == null) return;
         AimbotConfig config = AimbotModule.instance().config();
-        boolean blocked = client.gui == null || client.gui.screen() != null || client.isPaused();
+        // 隐藏窗口内同样不接受分组快捷键（走 blocked 通道，窗口结束时手上还按着的键不会补触发）。
+        boolean blocked = hiddenByGameOver()
+                || client.gui == null || client.gui.screen() != null || client.isPaused();
         int[][] keys = keyArrays(config);
         if (blocked) {
             heldThroughBlock.clear();
@@ -115,7 +142,7 @@ public final class AimbotHudModule implements Module {
     }
 
     public void drawHud(GuiGraphicsExtractor graphics) {
-        if (!enabled) return;
+        if (!enabled || hiddenByGameOver()) return;
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.level == null
                 || (client.gui != null && client.gui.screen() != null)) return;

@@ -303,6 +303,9 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 () -> c.showHud = !c.showHud, y, "显示目标名、当前模式、锁定状态和攻击状态；位置可在 HUD Layout 中拖动调整。");
         y = toggleRow(graphics, mouseX, mouseY, "显示快捷键 / Show Key Hints", c.showKeyHints,
                 () -> c.showKeyHints = !c.showKeyHints, y, "在 HUD 第二行显示 TOO/GOL/SLM、CLO/GIA、BAB、CLS 等分组快捷键提示。");
+        y = toggleRow(graphics, mouseX, mouseY, "游戏结束自动隐藏 / Hide On Game Over", c.hudHideOnGameOver,
+                () -> c.hudHideOnGameOver = !c.hudHideOnGameOver, y,
+                "整局结束时（出现 Zombies - 时间 / SURVIVED 结算那一行，赢输都算）立刻隐藏 Aimbot HUD，10 秒后自动恢复；窗口内分组快捷键不响应，也不会发任何聊天提示。");
         y = toggleRow(graphics, mouseX, mouseY, "调试视线 / Debug Line", c.debugLine,
                 () -> c.debugLine = !c.debugLine, y, "从玩家视线起点渲染到最终攻击点的绿线，用于检查目标点、AimLead 和穿透路径。");
         y = wrapped(graphics, "Aimbot HUD 是独立显示模块，不改变瞄准逻辑；需要检查目标点时可临时打开 Debug Line，确认后建议关闭。",

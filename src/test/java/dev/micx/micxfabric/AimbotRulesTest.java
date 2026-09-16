@@ -650,6 +650,26 @@ class AimbotRulesTest {
     }
 
     @Test
+    void gameOverHidesAimbotHudForTenSeconds() {
+        // 用户定稿 2026-09-16：**整局游戏结束** → Aimbot HUD 立刻隐藏，10 秒后立即恢复，不发聊天提示。
+        // 触发点是整局结束（Zombies - 时间 / SURVIVED 结算行），不是每回合结束——用户纠正过。
+        assertEquals(10_000L, AimbotRules.GAME_OVER_HUD_HIDE_MS);
+
+        // 截止时刻 = 触发时刻 + 10s；不触发时没有窗口（0）
+        assertEquals(15_000L, AimbotRules.hudHideDeadline(true, 5_000L));
+        assertEquals(0L, AimbotRules.hudHideDeadline(false, 5_000L));
+
+        // 窗口内隐藏，到点那一毫秒就恢复（严格小于）
+        assertTrue(AimbotRules.hudHideActive(5_000L, 15_000L));
+        assertTrue(AimbotRules.hudHideActive(14_999L, 15_000L));
+        assertFalse(AimbotRules.hudHideActive(15_000L, 15_000L));
+        assertFalse(AimbotRules.hudHideActive(15_001L, 15_000L));
+        // 没有窗口时永远不隐藏
+        assertFalse(AimbotRules.hudHideActive(0L, 0L));
+        assertFalse(AimbotRules.hudHideActive(123_456L, 0L));
+    }
+
+    @Test
     void joystickUsesConeTieAndDecay() {
         assertFalse(AimbotRules.isJoystickSwitching(14.9, 0.0, 15.0));
         assertTrue(AimbotRules.isJoystickSwitching(9.0, 12.0, 15.0));

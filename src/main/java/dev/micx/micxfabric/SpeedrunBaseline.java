@@ -12,7 +12,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** 双基准：A=11015（config 优先/打包 aa105.json 兜底），B=10905（config baseline2.json 优先/打包 aa105_10905.json 兜底）。 */
+/**
+ * 双基准：A（查找顺序见 {@link #candidates}，全部落空时用打包资源 /baseline/aa105.json = 11015 兜底），
+ * B（同序，兜底 /baseline/aa105_10905.json = 10905）。
+ */
 public final class SpeedrunBaseline {
     private static final SpeedrunBaseline INSTANCE = new SpeedrunBaseline();
     public static SpeedrunBaseline get() { return INSTANCE; }
@@ -45,19 +48,31 @@ public final class SpeedrunBaseline {
         b = loadSlot("baseline2.json", "MICxToolkit_baseline_2.json", "/baseline/aa105_10905.json", "10905");
     }
 
+    /**
+     * 基线文件的查找顺序（相对 {@code <gameDir>/config}，先命中先用）。
+     *
+     * <p>用户定稿 2026-09-16：0.2.86 把 10832（1:08:45 的个人记录）放在 {@code config/baseline.json}
+     * ——游戏 config 根目录；而当时的实现只找 {@code config/MICxToolkit/} 与 Forge 风格的
+     * {@code MICxToolkit_baseline*.json}，两处都落空后静默回退到打包资源里的旧基线（11015），
+     * 于是「记录一直没显示」。现在三个位置都找，模块自己的目录优先。
+     */
+    static java.util.List<String> candidates(String configName, String legacyName) {
+        return java.util.List.of("MICxToolkit/" + configName, configName, legacyName);
+    }
+
     private Data loadSlot(String configName, String legacyName, String resource, String defaultLabel) {
         try {
             JsonObject obj = null;
             String srcLabel = null;
             Path configDir = FabricRuntime.configPath();
-            Path current = configDir.resolve(configName);
-            Path legacy = configDir.getParent().resolve(legacyName);
+            Path configRoot = configDir.getParent() == null ? configDir : configDir.getParent();
             File f = null;
-            if (Files.isRegularFile(current)) f = current.toFile();
-            else if (Files.isRegularFile(legacy)) f = legacy.toFile();
-            else if ("baseline.json".equals(configName)) {
-                File mcLegacy = new File("config/MICxToolkit_baseline.json");
-                if (mcLegacy.exists()) f = mcLegacy;
+            for (String relative : candidates(configName, legacyName)) {
+                Path candidate = configRoot.resolve(relative);
+                if (Files.isRegularFile(candidate)) {
+                    f = candidate.toFile();
+                    break;
+                }
             }
             if (f != null && f.exists()) {
                 obj = JsonParser.parseReader(new FileReader(f, StandardCharsets.UTF_8)).getAsJsonObject();

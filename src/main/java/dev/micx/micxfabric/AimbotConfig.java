@@ -97,6 +97,8 @@ public final class AimbotConfig {
 
     public boolean showHud = true;
     public boolean showKeyHints = true;
+    /** 整局游戏结束时立刻隐藏 Aimbot HUD，{@link AimbotRules#GAME_OVER_HUD_HIDE_MS} 毫秒后自动恢复（不发聊天提示）。 */
+    public boolean hudHideOnGameOver = true;
     public boolean closest = false;
     public boolean holdLock = false;
 
@@ -201,6 +203,7 @@ public final class AimbotConfig {
         fov = ConfigProperties.integer(p, "fov", 360, 30, 360);
         showHud = ConfigProperties.bool(p, "showHud", true);
         showKeyHints = ConfigProperties.bool(p, "showKeyHints", true);
+        hudHideOnGameOver = ConfigProperties.bool(p, "hudHideOnGameOver", true);
         closest = ConfigProperties.bool(p, "closest", false);
         holdLock = ConfigProperties.bool(p, "holdLock", false);
 
@@ -278,6 +281,7 @@ public final class AimbotConfig {
         put(p, "fov", clamp(fov, 30, 360));
         put(p, "showHud", showHud);
         put(p, "showKeyHints", showKeyHints);
+        put(p, "hudHideOnGameOver", hudHideOnGameOver);
         put(p, "closest", closest);
         put(p, "holdLock", holdLock);
         put(p, "insta", insta);

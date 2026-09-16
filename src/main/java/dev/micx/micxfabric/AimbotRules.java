@@ -948,6 +948,26 @@ public final class AimbotRules {
         return currentDistance - newDistance > margin;
     }
 
+    /* ---- 游戏结束临时隐藏 Aimbot HUD ---- */
+
+    /**
+     * 游戏（整局）结束后隐藏 Aimbot HUD 的时长（用户定稿 2026-09-16：10 秒，到点立即恢复）。
+     *
+     * <p>触发点是<b>整局结束</b>那一刻（赢输都会发的「Zombies - 时间 (Round N) / SURVIVED!」
+     * 那一行），不是每回合结束——用户明确纠正过：「游戏结束 不是回合结束」。
+     */
+    public static final long GAME_OVER_HUD_HIDE_MS = 10_000L;
+
+    /** 隐藏截止时刻（毫秒）；不隐藏返回 0（表示没有窗口）。 */
+    public static long hudHideDeadline(boolean hide, long nowMs) {
+        return hide ? nowMs + GAME_OVER_HUD_HIDE_MS : 0L;
+    }
+
+    /** 是否仍在游戏结束的隐藏窗口内（纯时间比较：到点即恢复，没有渐变）。 */
+    public static boolean hudHideActive(long nowMs, long deadlineMs) {
+        return nowMs < deadlineMs;
+    }
+
     /* ---- mid（UFO 飞碟投放区）高空坠怪过滤 ---- */
 
     /**

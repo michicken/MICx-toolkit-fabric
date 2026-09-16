@@ -276,6 +276,11 @@ public final class ZombiesTracker {
         if (normalized.kind() == ZombiesEventParser.Kind.ROUND && normalized.round() > 0) {
             updateRound(normalized.round(), now);
         }
+        if (normalized.kind() == ZombiesEventParser.Kind.GAME_OVER) {
+            // 整局结束（那行「Zombies - 时间 (Round N) [+ SURVIVED!]」聊天，赢输都发）→
+            // Aimbot HUD 立刻隐藏 10 秒后自动恢复，不发聊天提示。用户定稿 2026-09-16。
+            try { AimbotHudModule.onGameOver(); } catch (Throwable ignored) {}
+        }
     }
 
     private boolean prewarmRoundTitleContext() {
