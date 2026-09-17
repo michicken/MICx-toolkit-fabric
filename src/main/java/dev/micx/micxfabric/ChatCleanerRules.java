@@ -5,6 +5,8 @@ import java.util.regex.Pattern;
 public final class ChatCleanerRules {
     private static final Pattern COUNT_SUFFIX = Pattern.compile("\\s+\\(x\\d+\\)\\s*$", Pattern.CASE_INSENSITIVE);
     private static final Pattern COPY_SUFFIX = Pattern.compile("\\s+\\[C\\]\\s*$", Pattern.CASE_INSENSITIVE);
+    /** ChatMessageTranslate 在行尾追加的 [T]。翻译与折叠同开时它排在 (xN) 之后，须一并剥离才能对上新旧消息。 */
+    private static final Pattern TRANSLATE_SUFFIX = Pattern.compile("\\s+\\[T\\]\\s*$", Pattern.CASE_INSENSITIVE);
 
     private ChatCleanerRules() {
     }
@@ -24,6 +26,7 @@ public final class ChatCleanerRules {
         do {
             previous = value;
             value = COPY_SUFFIX.matcher(value).replaceFirst("").trim();
+            value = TRANSLATE_SUFFIX.matcher(value).replaceFirst("").trim();
             value = COUNT_SUFFIX.matcher(value).replaceFirst("").trim();
         } while (!value.equals(previous));
         return value;
