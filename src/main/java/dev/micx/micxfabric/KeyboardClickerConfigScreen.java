@@ -77,7 +77,10 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         graphics.text(font, "实验：切到瞬间检测前兆，40ms 后按 Q 换弹 + 90ms 切走。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.isJamProtectModeB(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
-        y += 38;
+        y += 24;
+        y = wrapped(graphics, "换弹键混合（0.2.112）：默认左键；55/59/60/75/77/80/85/87/90/95/97/100/101 回合，"
+                + "或本回合有人释放 LR（含队友，需 LR Indicator 开启）→ 整回合改用 Q。",
+                contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;

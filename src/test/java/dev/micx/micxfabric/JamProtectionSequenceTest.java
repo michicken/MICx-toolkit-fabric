@@ -10,7 +10,7 @@ class JamProtectionSequenceTest {
         JamProtectionSequence sequence = new JamProtectionSequence(2, 0);
         assertEquals(JamProtectionSequence.Kind.SELECT, sequence.advance(0, 0L).kind);
         assertEquals(JamProtectionSequence.Kind.NONE, sequence.advance(2, 25L).kind);
-        assertEquals(JamProtectionSequence.Kind.DROP, sequence.advance(2, 50L).kind);
+        assertEquals(JamProtectionSequence.Kind.RELOAD, sequence.advance(2, 50L).kind);
         assertEquals(0, sequence.advance(2, 75L).slot);
         assertEquals(JamProtectionSequence.Kind.COMPLETE, sequence.advance(2, 100L).kind);
     }

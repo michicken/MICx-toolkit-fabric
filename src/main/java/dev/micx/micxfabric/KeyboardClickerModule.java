@@ -33,11 +33,11 @@ public final class KeyboardClickerModule implements Module {
     private static final long JAM_DETECT_MS = 150L;
     private static final long SKIP_LOG_INTERVAL_MS = 1_000L;
     /* ---- 模式 B（保护模式，Forge 同参） ---- */
-    /** 前兆阈值：磨损 ≥ 88% 且耐久不变 → 记 40ms 后按 Q 换弹。 */
+    /** 前兆阈值：磨损 ≥ 88% 且耐久不变 → 记 40ms 后按混合规则换弹（左键/Q）。 */
     private static final float JAM_PRECURSOR_RATIO = 0.88f;
     /** 模式 B 触发前兆后的切走窗口（ms）：90ms 内切到其他枪。 */
     private static final long MODE_B_SWITCH_MS = 90L;
-    /** 模式 B 切到后延迟多久补 Q 换弹（ms）。 */
+    /** 模式 B 切到后延迟多久补一次换弹（ms）。 */
     private static final long MODE_B_DROP_MS = 40L;
     /** 待执行 Q 换弹最长等待（ms），超时放弃防悬挂。 */
     private static final long MODE_B_PENDING_MAX_DELAY_MS = 500L;
@@ -58,13 +58,17 @@ public final class KeyboardClickerModule implements Module {
     private int modeKey = DEFAULT_MODE_KEY;
     private int clickInterval = 50;
     private boolean rightClickTrigger;
-    /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补 Q 换弹。 */
+    /** 保护模式（模式 B，实验）：不走旧检测/保护序列，切到瞬间检测前兆补换弹（键走混合规则）。 */
     private boolean jamProtectModeB;
-    /* ---- 模式 B 待执行 Q 换弹状态 ---- */
-    private int pendingDropSlot = -1;
-    private long pendingDropAt;
-    private long pendingDropSetAt;
+    /* ---- 模式 B 待执行换弹状态（键由混合规则定） ---- */
+    private int pendingReloadSlot = -1;
+    private long pendingReloadAt;
+    private long pendingReloadSetAt;
     private boolean modeBSwitch90;
+    /* ---- 混合换弹 LR 锁存（0.2.112）：本回合有人释放 LR → 整回合用 Q ---- */
+    private int lrLatchRound = -1;
+    private boolean lrReleasedThisRound;
+    private long lrReleaseSeen;
     private boolean configLoaded;
     private Properties config = new Properties();
 
@@ -173,6 +177,7 @@ public final class KeyboardClickerModule implements Module {
             return;
         }
 
+        updateLrLatch();
         advanceProtectionSequence(client, now);
         advanceDownJamProtection(client, now);
         resetClickerModesOnNewGame();
@@ -203,15 +208,15 @@ public final class KeyboardClickerModule implements Module {
             sequenceIndex = (sequenceIndex + attempts + 1) % sequence.length;
             lastClick = now;
             // 模式 B（实验）：切到瞬间检测前兆——磨损极高且当前没在变化
-            // → 记 40ms 后按 Q 换弹（90ms 切走窗口内，不叠加），避免同帧按键的机器特征
+            // → 记 40ms 后换弹（左键/Q 由混合规则定；90ms 切走窗口内不叠加），避免同帧按键的机器特征
             if (jamProtectModeB && !item.isEmpty() && item.getMaxDamage() > 0) {
                 int damage = item.getDamageValue();
                 Integer previous = slotLastDamage.get(hotbarSlot);
                 if (damage >= item.getMaxDamage() * JAM_PRECURSOR_RATIO
                         && previous != null && previous == damage) {
-                    pendingDropSlot = hotbarSlot;
-                    pendingDropAt = now + MODE_B_DROP_MS;
-                    pendingDropSetAt = now;
+                    pendingReloadSlot = hotbarSlot;
+                    pendingReloadAt = now + MODE_B_DROP_MS;
+                    pendingReloadSetAt = now;
                     modeBSwitch90 = true;
                     MicxFabric.LOGGER.debug("KeyboardClicker mode B precursor on slot {}", hotbarSlot);
                 }
@@ -223,17 +228,17 @@ public final class KeyboardClickerModule implements Module {
         }
     }
 
-    /** 模式 B 待执行 Q 换弹：到期、未超时、仍持目标槽 → 按 Q。 */
+    /** 模式 B 待执行换弹：到期、未超时、仍持目标槽 → 按混合规则出左键或 Q。 */
     private void advancePendingDrop(Minecraft client, long now) {
-        if (pendingDropSlot < 0) return;
-        if (now <= pendingDropAt + MODE_B_PENDING_MAX_DELAY_MS
-                && selectedSlot(client) == pendingDropSlot) {
-            queueDropKey();
-            MicxFabric.LOGGER.debug("KeyboardClicker mode B drop key for slot {}", pendingDropSlot);
+        if (pendingReloadSlot < 0) return;
+        if (now <= pendingReloadAt + MODE_B_PENDING_MAX_DELAY_MS
+                && selectedSlot(client) == pendingReloadSlot) {
+            queueReload(client);
+            MicxFabric.LOGGER.debug("KeyboardClicker mode B reload for slot {}", pendingReloadSlot);
         }
-        pendingDropSlot = -1;
-        pendingDropAt = 0L;
-        pendingDropSetAt = 0L;
+        pendingReloadSlot = -1;
+        pendingReloadAt = 0L;
+        pendingReloadSetAt = 0L;
     }
 
     private void checkJamDetection(Minecraft client, long now) {
@@ -292,7 +297,7 @@ public final class KeyboardClickerModule implements Module {
         JamProtectionSequence.Action action = sequence.advance(selectedSlot(client), now);
         switch (action.kind) {
             case SELECT -> queueHotbarSlot(action.slot);
-            case DROP -> queueDropKey();
+            case RELOAD -> queueReload(client);
             case RESTORE -> queueHotbarSlot(action.slot);
             case CANCEL -> cancelProtection("manual_slot_change_or_timeout");
             case COMPLETE -> pendingProtection = null;
@@ -352,7 +357,7 @@ public final class KeyboardClickerModule implements Module {
             downJamStageTime = now;
         } else if (downJamStage == 1) {
             if (selectedSlot(client) == targetSlot) {
-                queueDropKey();
+                queueReload(client);
                 downJamStage = 2;
                 downJamStageTime = now;
             } else if (now - downJamStageTime >= JamProtectionRules.DOWN_SLOT_WAIT_MS) {
@@ -524,9 +529,9 @@ public final class KeyboardClickerModule implements Module {
             modeIndex = 0;
             sequenceIndex = 0;
             lastClick = System.currentTimeMillis() + 1000L;
-            pendingDropSlot = -1;
-            pendingDropAt = 0L;
-            pendingDropSetAt = 0L;
+            pendingReloadSlot = -1;
+            pendingReloadAt = 0L;
+            pendingReloadSetAt = 0L;
             modeBSwitch90 = false;
             queueHotbarSlot(0);
         } else if (!cur[0] && hotbarPrevDown[0]) {
@@ -552,6 +557,44 @@ public final class KeyboardClickerModule implements Module {
     private void queueHotbarSlot(int slot) {
         if (slot < 0 || slot > 8) return;
         KeyMapping.click(InputConstants.getKey(new KeyEvent(GLFW.GLFW_KEY_1 + slot, 0, 0)));
+    }
+
+    /**
+     * 本回合 LR 锁存（0.2.112 混合换弹的联动源）。LrIndicator 的释放记录 18s 会被剪枝，
+     * 长回合查不回来，所以比「有效释放计数在回合内是否递增」并锁存；换回合清零重新看。
+     * LR Indicator 关闭时计数不动 → 视同没人释放，按左键路线（与无敌怪 LR 门控同口径）。
+     */
+    private void updateLrLatch() {
+        int round = ZombiesTracker.instance().round();
+        long generation = LrIndicatorModule.lrReleaseGeneration();
+        if (round != lrLatchRound) {
+            lrLatchRound = round;
+            lrReleasedThisRound = false;
+            lrReleaseSeen = generation;
+            return;
+        }
+        if (generation != lrReleaseSeen) {
+            lrReleaseSeen = generation;
+            if (round > 0) lrReleasedThisRound = true;
+        }
+    }
+
+    /** 混合换弹（用户定稿 2026-09-17）：固定 Q 回合表或本回合有人放 LR → Q 丢枪换弹；否则左键（攻击键）换弹。 */
+    private void queueReload(Minecraft client) {
+        if (JamReloadKeyRules.resolve(lrLatchRound, lrReleasedThisRound)
+                == JamReloadKeyRules.ReloadKey.LEFT_CLICK) {
+            // 攻击键 click：与切槽/Q 同一条原生 KeyMapping 流水线；0.2.97 教训——点 keyAttack
+            // 实例的当前绑定键本身（KeyMapping.key 无公开 getter，走 KeyMappingAccess），
+            // 物理键绑什么都等价于「左键动作」；未绑定 click 无目标，退回 Q。
+            dev.micx.micxfabric.mixin.KeyMappingAccess access =
+                    (dev.micx.micxfabric.mixin.KeyMappingAccess) client.options.keyAttack;
+            InputConstants.Key attackKey = access.micx$currentKey();
+            if (attackKey != null && attackKey != InputConstants.UNKNOWN) {
+                KeyMapping.click(attackKey);
+                return;
+            }
+        }
+        queueDropKey();
     }
 
     /** 模拟按下 Q 键（换弹）：与数字键同一条原生 KeyMapping 流水线。 */
