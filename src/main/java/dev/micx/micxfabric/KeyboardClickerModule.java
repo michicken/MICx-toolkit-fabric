@@ -65,10 +65,6 @@ public final class KeyboardClickerModule implements Module {
     private long pendingReloadAt;
     private long pendingReloadSetAt;
     private boolean modeBSwitch90;
-    /* ---- 混合换弹 LR 锁存（0.2.112）：本回合有人释放 LR → 整回合用 Q ---- */
-    private int lrLatchRound = -1;
-    private boolean lrReleasedThisRound;
-    private long lrReleaseSeen;
     private boolean configLoaded;
     private Properties config = new Properties();
 
@@ -177,7 +173,6 @@ public final class KeyboardClickerModule implements Module {
             return;
         }
 
-        updateLrLatch();
         advanceProtectionSequence(client, now);
         advanceDownJamProtection(client, now);
         resetClickerModesOnNewGame();
@@ -560,28 +555,21 @@ public final class KeyboardClickerModule implements Module {
     }
 
     /**
-     * 本回合 LR 锁存（0.2.112 混合换弹的联动源）。LrIndicator 的释放记录 18s 会被剪枝，
-     * 长回合查不回来，所以比「有效释放计数在回合内是否递增」并锁存；换回合清零重新看。
-     * LR Indicator 关闭时计数不动 → 视同没人释放，按左键路线（与无敌怪 LR 门控同口径）。
+     * 本回合是否有人放过 LR（0.2.112 混合换弹的联动源）。判定＝「最后一次释放时刻 ≥ 本回合开始时刻」，
+     * 无锁存状态：开背包/暂停期间不采样、回合切换那一瞬的释放都不会漏判，下一 tick 照样算对。
+     * LrIndicator 关闭时没人记录释放 → 视同没人放（与无敌怪 LR 门控同口径）。
      */
-    private void updateLrLatch() {
-        int round = ZombiesTracker.instance().round();
-        long generation = LrIndicatorModule.lrReleaseGeneration();
-        if (round != lrLatchRound) {
-            lrLatchRound = round;
-            lrReleasedThisRound = false;
-            lrReleaseSeen = generation;
-            return;
-        }
-        if (generation != lrReleaseSeen) {
-            lrReleaseSeen = generation;
-            if (round > 0) lrReleasedThisRound = true;
-        }
+    private boolean lrReleasedThisRound() {
+        ZombiesTracker tracker = ZombiesTracker.instance();
+        int round = tracker.round();
+        long roundStart = tracker.roundStartMs();
+        if (round <= 0 || roundStart <= 0L) return false;
+        return LrIndicatorModule.lrLastReleaseMs() >= roundStart;
     }
 
     /** 混合换弹（用户定稿 2026-09-17）：固定 Q 回合表或本回合有人放 LR → Q 丢枪换弹；否则左键（攻击键）换弹。 */
     private void queueReload(Minecraft client) {
-        if (JamReloadKeyRules.resolve(lrLatchRound, lrReleasedThisRound)
+        if (JamReloadKeyRules.resolve(ZombiesTracker.instance().round(), lrReleasedThisRound())
                 == JamReloadKeyRules.ReloadKey.LEFT_CLICK) {
             // 攻击键 click：与切槽/Q 同一条原生 KeyMapping 流水线；0.2.97 教训——点 keyAttack
             // 实例的当前绑定键本身（KeyMapping.key 无公开 getter，走 KeyMappingAccess），
@@ -708,6 +696,9 @@ public final class KeyboardClickerModule implements Module {
         if (value) {
             cancelProtection("mode_b_enabled");
             clearJamSlotAll();
+            // 模式 B 不跑旧检测，清掉分槽冷却与升级历史，切回模式 A 时别继承陈旧冷却（≤2.5s）
+            slotProtectCooldownUntil.clear();
+            slotProtectHistory.clear();
         }
         saveConfig();
     }

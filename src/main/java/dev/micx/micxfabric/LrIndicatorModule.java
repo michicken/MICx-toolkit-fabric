@@ -95,22 +95,23 @@ public final class LrIndicatorModule implements Module {
         if (!LrIndicatorState.isLrPitch(pitch)) return;
         if (state.isGolemThunder(now, (float) x, (float) y, (float) z)) return;
         if (state.isBossFirstThunder(zt.round())) return;
-        if (state.tryRelease(now)) onValidRelease();
+        if (state.tryRelease(now)) onValidRelease(now);
     }
 
     /**
-     * 有效释放计数（只增不减）——KeyboardClicker 混合换弹联动用（0.2.112）：
-     * 释放记录 18s 会被剪枝，长回合回头查不到，改比「本回合内计数有没有变」做锁存。
-     * 只在模块开启时递增（关掉没人记录，与 {@link #lrReleasedWithin} 同口径）。
+     * 最后一次有效释放的时刻（只增不改）——KeyboardClicker 混合换弹联动用（0.2.112）：
+     * 释放记录 18s 会被剪枝，长回合回头查不到，所以留一个永不过期的时刻，
+     * 调用方比「时刻 ≥ 本回合开始时刻」即得「本回合有没有人放 LR」。
+     * 只在模块开启时更新（关掉没人记录，与 {@link #lrReleasedWithin} 同口径）。
      */
-    private static volatile long releaseGeneration;
+    private static volatile long lastReleaseMs;
 
-    public static long lrReleaseGeneration() {
-        return releaseGeneration;
+    public static long lrLastReleaseMs() {
+        return lastReleaseMs;
     }
 
-    private void onValidRelease() {
-        releaseGeneration++;
+    private void onValidRelease(long releaseAtMs) {
+        lastReleaseMs = releaseAtMs;
         if (!lrBeepEnabled) return;
         int pos = lrRotationPosition;
         int beeps = 1;
