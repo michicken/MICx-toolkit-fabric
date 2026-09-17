@@ -1,11 +1,11 @@
 package dev.micx.micxfabric;
 
 /**
- * 救援光环的纯逻辑：发包节流 + 多目标轮换。
+ * 救援光环的纯逻辑：按目标分开的冷却（0.2.110 用户定稿，推翻 0.2.103 的全局串行轮换）。
  *
- * <p>用户定稿 2026-09-16：场上同时有两个倒地（Sleeping）队友且在范围内时，
- * <b>先点 1 号，间隔到了就点 2 号，而不是又点 1 号</b>。
- * 所以选靶规则是「优先不是上一次点过的那只，同级取最近」，只剩它一只时才重复点。
+ * <p>冷却属于每个目标自己：给 A 发包只有 A 进入 intervalMs 冷却，
+ * 没发过的 B <b>不受 A 影响、可立刻发</b>；每 tick 仍最多发一包（保守节奏）。
+ * 间隔语义 = 「对同一目标的最小重发间隔」，只在倒地标记被清后又立刻重新判倒地的抖动时挡连点。
  */
 public final class ReviveAuraRules {
     /** 两次救援发包的最小间隔默认值（毫秒）——沿用 Forge 面板口径。 */
@@ -26,31 +26,28 @@ public final class ReviveAuraRules {
     }
 
     /**
-     * 从候选里选下一个要救的目标下标。
+     * 从候选里挑本 tick 要救的那一只（每 tick 最多一包）。
      *
-     * <p>第一优先：不是 {@code lastTargetId}（上一次点过的那只）里最近的一只；
-     * 候选里只剩上一次那只时才返回它；没有候选返回 -1。
+     * <p>{@code lastSentMs[i]} 是<b>该目标自己</b>上次被发包的毫秒时间戳，{@code <= 0} 表示从没发过。
+     * 可发 = 从没发过，或已过对它的 intervalMs 冷却；可发者里取最近。
+     * 关键语义：A 在冷却不拖累 B——B 只要没被点过就永远立刻可选。
+     * 全都不可发或没有候选返回 -1。
      */
-    public static int chooseIndex(int[] ids, double[] distances, int lastTargetId) {
-        if (ids == null || distances == null || ids.length == 0
-                || ids.length != distances.length) {
+    public static int nextSendIndex(double[] distances, long[] lastSentMs, long nowMs, double intervalMs) {
+        if (distances == null || lastSentMs == null || distances.length == 0
+                || distances.length != lastSentMs.length) {
             return -1;
         }
-        int bestAny = -1;
-        double bestAnyDist = Double.MAX_VALUE;
-        int bestOther = -1;
-        double bestOtherDist = Double.MAX_VALUE;
-        for (int i = 0; i < ids.length; i++) {
-            double distance = distances[i];
-            if (bestAny < 0 || distance < bestAnyDist) {
-                bestAny = i;
-                bestAnyDist = distance;
-            }
-            if (ids[i] != lastTargetId && (bestOther < 0 || distance < bestOtherDist)) {
-                bestOther = i;
-                bestOtherDist = distance;
+        int best = -1;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < distances.length; i++) {
+            long last = lastSentMs[i];
+            if (last > 0L && !intervalReady(nowMs, last, intervalMs)) continue;
+            if (best < 0 || distances[i] < bestDist) {
+                best = i;
+                bestDist = distances[i];
             }
         }
-        return bestOther >= 0 ? bestOther : bestAny;
+        return best;
     }
 }

@@ -30,33 +30,53 @@ class ReviveAuraRulesTest {
     }
 
     @Test
-    void rotationNeverHitsTheSameTargetTwiceInARowWhenAnotherIsAvailable() {
-        // 用户 2026-09-16 的场景：两个 Sleeping 在范围内 → 先点 1 号，间隔到了点 2 号
-        int[] ids = {101, 202};
+    void freshTargetIsNeverBlockedByAnotherTargetsCooldown() {
+        // 用户 0.2.110 的场景：给 A（下标 0）刚发过包、A 在冷却，B 从没点过 → 立刻选 B。
         double[] distances = {2.0, 3.0};
-        int first = ReviveAuraRules.chooseIndex(ids, distances, -1);
-        assertEquals(0, first, "没点过任何人时取最近的一只");
-        int second = ReviveAuraRules.chooseIndex(ids, distances, ids[first]);
-        assertEquals(1, second, "点上过 1 号之后要换 2 号，哪怕 1 号更近");
-        // 轮换是持续的：再下一发又回到 1 号
-        assertEquals(0, ReviveAuraRules.chooseIndex(ids, distances, ids[second]));
+        long[] lastSent = {1_000L, 0L};
+        assertEquals(1, ReviveAuraRules.nextSendIndex(distances, lastSent, 1_050L, 100.0),
+                "A 冷却中（才 50ms），没点过的 B 不受牵连");
+        // 反过来 B 在冷却、A 没点过也同理
+        assertEquals(0, ReviveAuraRules.nextSendIndex(distances, new long[]{0L, 1_000L}, 1_050L, 100.0));
     }
 
     @Test
-    void fallsBackToTheOnlyCandidate() {
-        int[] only = {101};
-        assertEquals(0, ReviveAuraRules.chooseIndex(only, new double[]{2.0}, 101));
-        assertEquals(0, ReviveAuraRules.chooseIndex(only, new double[]{2.0}, -1));
-        // 上一次点的已经起来了 → 剩余候选里挑最近的
-        int[] rest = {202, 303};
-        assertEquals(0, ReviveAuraRules.chooseIndex(rest, new double[]{2.5, 4.0}, 101));
-        assertEquals(1, ReviveAuraRules.chooseIndex(rest, new double[]{2.5, 4.0}, 202));
+    void picksNearestAmongReadyTargets() {
+        double[] distances = {4.0, 2.0, 3.0};
+        long[] lastSent = {0L, 0L, 0L};
+        assertEquals(1, ReviveAuraRules.nextSendIndex(distances, lastSent, 5_000L, 200.0));
+        // 最近那只冷却中 → 退而求其次取可发里最近的
+        long[] cooled = {0L, 4_900L, 0L};
+        assertEquals(2, ReviveAuraRules.nextSendIndex(distances, cooled, 5_000L, 200.0));
+    }
+
+    @Test
+    void sameTargetRespectsItsOwnCooldown() {
+        double[] distances = {2.0};
+        long[] lastSent = {1_000L};
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(distances, lastSent, 1_050L, 100.0),
+                "只剩 A 且 A 冷却未到 → 本 tick 不发");
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(distances, lastSent, 1_099L, 100.0),
+                "99ms < 100ms 冷却未到");
+        assertEquals(0, ReviveAuraRules.nextSendIndex(distances, lastSent, 1_100L, 100.0));
+    }
+
+    @Test
+    void pingPongAandBNeedsOnlyOneTickGapNotTwoIntervals() {
+        // 旧全局节流：A→B 要等满 intervalMs。分目标后：发 A（t=1000），t=1050 即可发 B。
+        double[] distances = {2.0, 3.0};
+        long[] lastSent = {1_000L, 0L};
+        assertEquals(1, ReviveAuraRules.nextSendIndex(distances, lastSent, 1_050L, 100.0));
+        // 发完 B（t=1050）后若 A 又出现（倒地标记被抖清）：A 的冷却 t=1100 才到，此时都不可发。
+        long[] bothSent = {1_000L, 1_050L};
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(distances, bothSent, 1_090L, 100.0));
+        assertEquals(0, ReviveAuraRules.nextSendIndex(distances, bothSent, 1_100L, 100.0));
     }
 
     @Test
     void emptyOrMismatchedInputHasNoPick() {
-        assertEquals(-1, ReviveAuraRules.chooseIndex(new int[0], new double[0], -1));
-        assertEquals(-1, ReviveAuraRules.chooseIndex(null, null, -1));
-        assertEquals(-1, ReviveAuraRules.chooseIndex(new int[]{1, 2}, new double[]{1.0}, -1));
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(new double[0], new long[0], 5_000L, 100.0));
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(null, null, 5_000L, 100.0));
+        assertEquals(-1, ReviveAuraRules.nextSendIndex(new double[]{1.0, 2.0}, new long[]{0L}, 5_000L, 100.0));
     }
 }
