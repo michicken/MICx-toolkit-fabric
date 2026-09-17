@@ -9,6 +9,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -67,7 +68,10 @@ public final class KeyboardClickerModule implements Module {
     private boolean configLoaded;
     private Properties config = new Properties();
 
-    private long stuckProtectCooldown;
+    /** 分槽触发冷却（0.2.111）：槽位 → 冷却截止毫秒，只挡那把枪自己，其他槽照常触发。 */
+    private final Map<Integer, Long> slotProtectCooldownUntil = new HashMap<>();
+    /** 槽位最近 8 秒内的防卡弹触发时刻（升序），第 3 次命中升级档后清零；出窗即剪。 */
+    private final Map<Integer, ArrayDeque<Long>> slotProtectHistory = new HashMap<>();
     private long stuckPauseUntil;
     private JamProtectionSequence pendingProtection;
     private final Map<Integer, Long> slotVeryLowSince = new HashMap<>();
@@ -264,8 +268,17 @@ public final class KeyboardClickerModule implements Module {
             long since = slotVeryLowSince.getOrDefault(sequenceSlot, now);
             if (now - since < JAM_DETECT_MS) continue;
             clearJamSlot(sequenceSlot);
-            if (now < stuckProtectCooldown || pendingProtection != null) continue;
-            stuckProtectCooldown = now + JamProtectionRules.PROTECT_COOLDOWN_MS;
+            // 冷却分槽（0.2.111 用户定稿）：这把枪在冷却里只挡它自己；恢复序列仍全局串行一次一条。
+            Long coolUntil = slotProtectCooldownUntil.get(sequenceSlot);
+            if ((coolUntil != null && now < coolUntil) || pendingProtection != null) continue;
+            ArrayDeque<Long> history = slotProtectHistory.computeIfAbsent(sequenceSlot, k -> new ArrayDeque<>());
+            while (!history.isEmpty() && now - history.peekFirst() > JamProtectionRules.ESCALATION_WINDOW_MS) {
+                history.pollFirst();
+            }
+            history.addLast(now);
+            long cooldown = JamProtectionRules.protectCooldownMs(history.size());
+            if (JamProtectionRules.isEscalated(cooldown)) history.clear();
+            slotProtectCooldownUntil.put(sequenceSlot, now + cooldown);
             stuckPauseUntil = now + JamProtectionRules.STUCK_PAUSE_MS;
             pendingProtection = new JamProtectionSequence(sequenceSlot,
                     client.player.getInventory().getSelectedSlot());
@@ -476,7 +489,8 @@ public final class KeyboardClickerModule implements Module {
 
     private void resetProtectionState() {
         pendingProtection = null;
-        stuckProtectCooldown = 0L;
+        slotProtectCooldownUntil.clear();
+        slotProtectHistory.clear();
         stuckPauseUntil = 0L;
         slotVeryLowSince.clear();
         slotLastDamage.clear();
