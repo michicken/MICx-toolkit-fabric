@@ -34,13 +34,14 @@ public final class PowerUpTimer {
     }
 
     /**
-     * 1.8.9 自计时对齐：同一 kind 刷新/续时不做“相关去重”。
-     * 外部若在双 PowerUp 叠加时重补同一 kind 的 activate，本地计时以“最长剩余”为准，
-     * 因此不管同 kind 多次信号，只保留到期最晚的那一把（max），绝不丢时长更长那条。
+     * 1.8.9 自计时对齐：同一 powerup 只保留一条计时，谁剩余最长以谁为准（max），绝不丢时长更长那条。
+     * 键用 {@link PowerUpHudRules#canonicalKind} 归一化 —— 聊天路径给 {@code INSTA KILL}、字幕路径给
+     * {@code Insta Kill}，不归一化会在同一个 powerup 上留两条条目、顶栏重复显示。
      */
     public void activate(String kind, int durationSeconds, long now) {
         if (kind == null || kind.isBlank() || durationSeconds < 1 || durationSeconds > 120 || now < 0) return;
-        String key = kind.trim();
+        String key = PowerUpHudRules.canonicalKind(kind);
+        if (key.isEmpty()) return;
         long expiresAt = now + durationSeconds * 1000L;
         Active previous = active.get(key);
         if (previous != null) {

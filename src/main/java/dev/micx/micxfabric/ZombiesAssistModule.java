@@ -541,24 +541,14 @@ public final class ZombiesAssistModule implements Module {
                                                ZombiesTracker tracker, ZombiesConfig cfg) {
         long now = System.currentTimeMillis();
         Map<String, PowerUpTimer.Active> snap = tracker.eventState().powerUps().activeSnapshot();
-        // Hypixel 读秒口径：多 PU 同时生效时只显示最长剩余那个，其它不抢行
-        Map.Entry<String, PowerUpTimer.Active> best = null;
-        long bestRem = -1L;
-        for (Map.Entry<String, PowerUpTimer.Active> e : snap.entrySet()) {
-            long rem = e.getValue().expiresAt() - now;
-            if (rem <= 0L) continue;
-            if (rem > bestRem) { bestRem = rem; best = e; }
-        }
-        if (best == null) {
-            drawCentered(graphics, client, "zombies.top", "——", cfg.topHudXOffset,
-                    cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale,
-                    ChatMessageStyles.INFO, false);
-            return;
-        }
-        drawCentered(graphics, client, "zombies.top",
-                powerUpLabel(best.getKey()) + " " + formatSeconds(bestRem),
-                cfg.topHudXOffset, cfg.topHudY + Math.round(12 * cfg.topHudScale),
-                cfg.topHudScale, powerUpColor(best.getKey()), false);
+        // 1.8.9 口径（用户报障 2026-09-17 修正）：同时生效的 powerup **全部**画在这一行，
+        // 每条各自带自己的剩余时间（" §7| " 分隔，精确到 0.01s）。
+        // 旧实现只画「剩余最长的那一条」，另一个直接不显示 —— 看起来像被删掉。
+        String line = PowerUpHudRules.renderLine(snap, now);
+        boolean empty = line.isEmpty();
+        drawCentered(graphics, client, "zombies.top", empty ? "——" : line, cfg.topHudXOffset,
+                cfg.topHudY + Math.round(12 * cfg.topHudScale), cfg.topHudScale,
+                empty ? ChatMessageStyles.INFO : 0xFFFFFFFF, false);
     }
 
     /**
@@ -1145,8 +1135,8 @@ public final class ZombiesAssistModule implements Module {
         Map<Integer, ZombiesPowerUpTracker.DropVisual> drops = powerUpTracker.dropsSnapshot();
         if (drops.isEmpty() || client.player == null) return List.of();
         List<ZombiesPowerUpTracker.DropVisual> sorted = new ArrayList<>(drops.values());
-        sorted.sort((a, b) -> Integer.compare(puPriority(canonicalPowerUpKind(b.kind())),
-                puPriority(canonicalPowerUpKind(a.kind()))));
+        sorted.sort((a, b) -> Integer.compare(puPriority(PowerUpHudRules.canonicalKind(b.kind())),
+                puPriority(PowerUpHudRules.canonicalKind(a.kind()))));
         List<String> lines = new ArrayList<>();
         for (ZombiesPowerUpTracker.DropVisual drop : sorted) {
             if (lines.size() >= 2) break;
@@ -1157,7 +1147,7 @@ public final class ZombiesAssistModule implements Module {
             String dir = directionTo(dx, dz, client.player.getYRot());
             long left = Math.max(0L, drop.expiresAt() - now);
             String life = (left <= 15_000L ? " \u00a7c" : " \u00a77") + formatSeconds(left);
-            lines.add(powerUpLabel(drop.kind())
+            lines.add(PowerUpHudRules.label(drop.kind())
                     + " \u00a7f" + dist + "m " + dir + life);
         }
         return lines;
@@ -1392,41 +1382,6 @@ public final class ZombiesAssistModule implements Module {
         } finally {
             graphics.pose().popMatrix();
         }
-    }
-
-    /** Forge puLabel 对齐：带 § 段色，Max §9蓝 / SS §5紫 / DG §6金 / Insta §c红 等。 */
-    private static String powerUpLabel(String kind) {
-        return switch (canonicalPowerUpKind(kind)) {
-            case "max" -> "§9Max Ammo";
-            case "insta" -> "§cInsta Kill";
-            case "shopping" -> "§5Shopping Spree";
-            case "dg" -> "§6Double Gold";
-            case "bg" -> "§6Bonus Gold";
-            case "carp" -> "§eCarpenter";
-            default -> kind == null || kind.isBlank() ? "§7Power-up" : "§7" + kind;
-        };
-    }
-
-    private static int powerUpColor(String kind) {
-        return switch (canonicalPowerUpKind(kind)) {
-            case "max" -> 0xFF4D8CFF;
-            case "insta" -> 0xFFFF5964;
-            case "shopping" -> 0xFFC05CFF;
-            case "dg", "bg" -> 0xFFFFC247;
-            case "carp" -> 0xFF57B9D8;
-            default -> 0xFFD8DDE3;
-        };
-    }
-
-    static String canonicalPowerUpKind(String kind) {
-        String value = kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT);
-        if (value.contains("max ammo") || value.equals("max")) return "max";
-        if (value.contains("insta") || value.contains("instant kill") || value.equals("ins")) return "insta";
-        if (value.contains("shopping") || value.equals("ss")) return "shopping";
-        if (value.contains("double gold") || value.equals("dg")) return "dg";
-        if (value.contains("bonus gold") || value.equals("bg")) return "bg";
-        if (value.contains("carp")) return "carp";
-        return value;
     }
 
     private static void sendLocalMessage(Minecraft client, String text) {

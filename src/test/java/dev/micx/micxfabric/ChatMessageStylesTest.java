@@ -15,9 +15,10 @@ class ChatMessageStylesTest {
 
     @Test
     void fullPowerupNamesUseCanonicalKinds() {
-        assertEquals("insta", ZombiesAssistModule.canonicalPowerUpKind("Insta Kill"));
-        assertEquals("shopping", ZombiesAssistModule.canonicalPowerUpKind("Shopping Spree"));
-        assertEquals("dg", ZombiesAssistModule.canonicalPowerUpKind("Double Gold"));
+        // 归一化实现已挪到 PowerUpHudRules（HUD 与计时表共用），这里只保留回归点
+        assertEquals("insta", PowerUpHudRules.canonicalKind("Insta Kill"));
+        assertEquals("shopping", PowerUpHudRules.canonicalKind("Shopping Spree"));
+        assertEquals("dg", PowerUpHudRules.canonicalKind("Double Gold"));
         assertTrue(ChatMessageStyles.feedback("x").getStyle().getColor() != null);
     }
 }
