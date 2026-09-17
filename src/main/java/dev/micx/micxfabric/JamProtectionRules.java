@@ -5,9 +5,13 @@ import java.util.Arrays;
 /** Minecraft-free rules shared by the client protection state machine and tests. */
 final class JamProtectionRules {
     static final long VERY_LOW_STABLE_MS = 150L;
-    /** 单槽常规触发冷却（0.2.111 用户定稿：全局一刀切 2500ms 改为分槽 450ms）。 */
-    static final long NORMAL_PROTECT_COOLDOWN_MS = 450L;
-    /** 升级冷却：同一把枪 8 秒内凑满第 3 次触发时，第 3 次直接进这一档，随后计数清零回 450 节奏。 */
+    /**
+     * 单槽常规触发冷却。时间线口径（2026-09-17 用户二次定稿）：触发瞬间先清观察窗，
+     * 可触发检查点只能落在观察窗 150ms 的整数倍上 → 实际两次触发间隔 = 第一个 ≥ 本值的检查点。
+     * 220ms → 实际 ≈300ms（不是 220，也不是 450+150）。恒定校准前先核对这条链。
+     */
+    static final long NORMAL_PROTECT_COOLDOWN_MS = 220L;
+    /** 升级冷却：同一把枪 8 秒内凑满第 3 次触发时，第 3 次直接进这一档，随后计数清零回常规节奏（实际 ≈2550ms）。 */
     static final long ESCALATED_PROTECT_COOLDOWN_MS = 2_500L;
     /** 升级判定窗口：往前数这段时间内的触发记录（含本次）参与计数。 */
     static final long ESCALATION_WINDOW_MS = 8_000L;

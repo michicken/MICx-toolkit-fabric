@@ -36,35 +36,35 @@ class JamProtectionRulesTest {
 
     @Test
     void tieredCooldownEscalatesOnThirdTrigger() {
-        assertEquals(450L, JamProtectionRules.NORMAL_PROTECT_COOLDOWN_MS);
+        assertEquals(220L, JamProtectionRules.NORMAL_PROTECT_COOLDOWN_MS);
         assertEquals(2_500L, JamProtectionRules.ESCALATED_PROTECT_COOLDOWN_MS);
         assertEquals(100L, JamProtectionRules.STUCK_PAUSE_MS, "0.2.111：触发时连点暂停 200ms 改 100ms");
-        assertEquals(450L, JamProtectionRules.protectCooldownMs(1));
-        assertEquals(450L, JamProtectionRules.protectCooldownMs(2));
+        assertEquals(220L, JamProtectionRules.protectCooldownMs(1));
+        assertEquals(220L, JamProtectionRules.protectCooldownMs(2));
         assertEquals(2_500L, JamProtectionRules.protectCooldownMs(3));
         assertEquals(2_500L, JamProtectionRules.protectCooldownMs(4));
         assertTrue(JamProtectionRules.isEscalated(2_500L));
-        assertFalse(JamProtectionRules.isEscalated(450L));
+        assertFalse(JamProtectionRules.isEscalated(220L));
     }
 
     @Test
     void windowCountAndResetReproduceModuleLoop() {
         // 复刻模块的维护逻辑：剪掉 8 秒外的记录，第 3 次命中升级并清零计数。
         java.util.ArrayDeque<Long> history = new java.util.ArrayDeque<>();
-        assertEquals(450L, trigger(history, 0L));
-        assertEquals(450L, trigger(history, 1_000L));
+        assertEquals(220L, trigger(history, 0L));
+        assertEquals(220L, trigger(history, 1_000L));
         assertEquals(2_500L, trigger(history, 2_000L), "8 秒内第 3 次 → 直接 2500");
         assertTrue(history.isEmpty(), "升级后计数清零");
-        assertEquals(450L, trigger(history, 3_000L), "回到 450 节奏重新数");
+        assertEquals(220L, trigger(history, 3_000L), "回到常规节奏重新数");
     }
 
     @Test
     void triggersSpreadWiderThanEightSecondsNeverEscalate() {
         java.util.ArrayDeque<Long> history = new java.util.ArrayDeque<>();
-        assertEquals(450L, trigger(history, 0L));
-        assertEquals(450L, trigger(history, 5_000L));
-        // 第 3 次在 t=9000：t=0 已出 8 秒窗 → 窗口内只有 2 次，仍是 450。
-        assertEquals(450L, trigger(history, 9_000L));
+        assertEquals(220L, trigger(history, 0L));
+        assertEquals(220L, trigger(history, 5_000L));
+        // 第 3 次在 t=9000：t=0 已出 8 秒窗 → 窗口内只有 2 次，仍是常规档。
+        assertEquals(220L, trigger(history, 9_000L));
         assertEquals(2, history.size());
     }
 
