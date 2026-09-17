@@ -1143,9 +1143,22 @@ public final class AimbotRules {
             }
             // 目标已不在池内（死亡 / 被挡 / 移出）→ 立刻续链，不等停留保护到期
         }
-        // 当前目标没了时游标可能还是旧的（curYaw 有限即可用；NaN 才去池里回查）
-        double reference = Double.isFinite(curYaw) ? curYaw : yawOf(ids, yaw, heldId);
+        // 当前目标没了时游标可能还是旧的（curYaw 有限即可用；NaN 才去池里回查）。
+        // 注意不能写成 `finite ? curYaw : yawOf(...)`——double 与 Double 混用三元会被整体拆箱，
+        // null 在赋值前就 NPE（0.2.115 崩端根因）。
         long limit = dwellMs <= 0 ? BRUTE_HOLD_FOREVER : nowMs + dwellMs;
+        Double cursor = null;
+        if (Double.isFinite(curYaw)) {
+            cursor = curYaw;
+        } else if (heldId >= 0) {
+            cursor = yawOf(ids, yaw, heldId);
+        }
+        if (cursor == null) {
+            // 首次进入扫射（heldId=-1、curYaw=NaN）或游标损坏：从池首起链（调用方已按优先级排序），
+            // 并把游标立起来，之后正常推进。
+            return new BruteChainPick(ids[0], yaw[0], dir, limit, true);
+        }
+        double reference = cursor;
         // 2) 本方向的最近邻接怪
         int hop = nearestChainNeighbor(yaw, reference, dir, chainDeg);
         int usedDir = dir;

@@ -428,6 +428,29 @@ class AimbotRulesTest {
     }
 
     @Test
+    void bruteChainStartsFromThePoolHeadWhenTheCursorIsEmpty() {
+        // 0.2.115 崩端回归：刚开扫射时 heldId=-1、curYaw=NaN（空游标），
+        // 旧代码把 yawOf 的 null 直接拆箱 → NPE，一开扫射就崩。
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-20.0, -2.0, 15.0};
+        AimbotRules.BruteChainPick first = AimbotRules.bruteChainDecision(ids, yaw,
+                -1, Double.NaN, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 1_000L, 0L, 100);
+        assertEquals(11, first.entityId(), "空游标从池首（调用方已排序的最优）起链");
+        assertTrue(first.moved());
+        assertEquals(1_100L, first.holdUntilMs());
+        // 拿着这个游标继续走 → 正常按链推进到 22，链不会断
+        AimbotRules.BruteChainPick hop = AimbotRules.bruteChainDecision(ids, yaw,
+                first.entityId(), first.yaw(), first.direction(), 45.0,
+                first.holdUntilMs() + 1L, first.holdUntilMs(), 100);
+        assertEquals(22, hop.entityId());
+        // dwell<=0（不限时）时同样能起链，且停留截止 = 不限
+        AimbotRules.BruteChainPick forever = AimbotRules.bruteChainDecision(ids, yaw,
+                -1, Double.NaN, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 1_000L, 0L, 0);
+        assertEquals(11, forever.entityId());
+        assertEquals(AimbotRules.BRUTE_HOLD_FOREVER, forever.holdUntilMs());
+    }
+
+    @Test
     void bruteChainHoldsTheCurrentTargetUntilDwellExpires() {
         int[] ids = {11, 22, 33};
         double[] yaw = {-20.0, -2.0, 15.0};
