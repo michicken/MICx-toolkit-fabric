@@ -209,6 +209,8 @@ public final class AimbotModule implements Module {
 
     private volatile Vec3 debugAim;
     private volatile long debugAimAt;
+    /** HUD 用：当前锁定目标的来源标签（窗 id 如 "P2"，模式傀儡 "G"）；null = 无（UFO/窗外/未锁定）。 */
+    private volatile String lockSourceLabel;
 
     private AimbotModule() {
         LevelRenderEvents.START_MAIN.register(this::applyFrameRotation);
@@ -466,18 +468,20 @@ public final class AimbotModule implements Module {
         }
         all.sort(Comparator.comparingDouble(meta -> meta.angle));
 
-        // 「降至普通怪之后」档（group < 0，baby / insta 下的史莱姆·岩浆怪）只在
-        // 首选档无可打目标时才参与：先用首选档扫一遍，全都被挡时才退到降级档。
-        // 这样「优先打普通怪，没别的可打才锁 baby」是硬保证，不受转向角排序影响。
-        List<CandidateMeta> preferred = new ArrayList<>(all.size());
-        List<CandidateMeta> demoted = new ArrayList<>();
-        for (CandidateMeta meta : all) {
-            if (meta.group < 0) demoted.add(meta);
-            else preferred.add(meta);
-        }
-        List<Scored> scored = scanCandidates(client, eye, all, preferred);
-        if (scored.isEmpty() && !demoted.isEmpty()) {
-            scored = scanCandidates(client, eye, all, demoted);
+        // 六档选靶（P5+MID模式巨人 > 窗怪 > 窗傀儡 > 普通 > 降级 > 忽略）：按 rank 从低到高逐档扫描，
+        // 第一档「扫得出瞄点」的目标即为靶池。高档只有当更高档全空/全被挡时才参与——
+        // 优先怪被墙挡光先放行打其他怪，露头（扫出点）下一 tick 自动切回（用户定稿 2026-09-19）。
+        List<Scored> scored = List.of();
+        for (int rank = AimbotRules.RANK_MODE_GIANT;
+             rank <= AimbotRules.RANK_IGNORED && scored.isEmpty(); rank++) {
+            List<CandidateMeta> pool = null;
+            for (CandidateMeta meta : all) {
+                if (meta.rank != rank) continue;
+                if (pool == null) pool = new ArrayList<>();
+                pool.add(meta);
+            }
+            if (pool == null) continue;
+            scored = scanCandidates(client, eye, all, pool);
         }
         if (scored.isEmpty()) {
             clearLock();
@@ -509,6 +513,8 @@ public final class AimbotModule implements Module {
         int previous = lockedTargetId;
         lockedTargetId = best.entity.getId();
         lastLockedDir = direction(eye, best.point);
+        lockSourceLabel = best.entity instanceof IronGolem ? "G"
+                : WindowSpawnCounterModule.instance().birthWindowIdOf(lockedTargetId);
         if (previous != lockedTargetId && config.joystick) {
             joyYawOff = 0.0;
             joyPitchOff = 0.0;
@@ -562,9 +568,15 @@ public final class AimbotModule implements Module {
         lastLockedDir = null;
         debugAim = null;
         debugAimAt = 0L;
+        lockSourceLabel = null;
         resetHumanState();
         resetBruteSweep();
         clearFrameRotation();
+    }
+
+    /** HUD 显示用：当前锁定目标来源（窗 id / "G"），未锁定或窗外出生为 null。 */
+    public String lockSourceLabel() {
+        return lockedTargetId >= 0 ? lockSourceLabel : null;
     }
 
     private void removeExpiredThreats(long now) {
@@ -586,14 +598,17 @@ public final class AimbotModule implements Module {
         // 同时把移速慢、好瞄的非 baby 怪整体前置。
         boolean instaWindow = instaActive();
         int round = ZombiesTracker.instance().round();
-        // BRUTE 扫射是「按空间顺序逐个清」，扫射生效时不再降级 baby（用户定稿 2026-09-11）。
-        boolean babyFirst = bruteSweepActive();
         // R21 豁免「忽略头顶高处」：该回合飞碟/高处投放的怪密集，全跳过会无人可打。
         boolean aboveExempt = AimbotRules.aboveHeightExemptRound(round);
         // 无敌怪判定的 LR 门控（用户定稿 2026-09-16）：只有 LR 会造成无敌怪，所以窗口外不判定。
         // 破窗的怪与靠近扔炸弹的 Clown 都是「站着不动 + 长时间不吃真实伤害」，窗口一关就判不出来。
         boolean lrWindow = !c.immortalLrGate
                 || LrIndicatorModule.lrReleasedWithin(now, c.immortalLrWindowMs());
+        // 窗优先模式只在 AA 局生效（窗坐标是 AA 专属；其他图 rank 全部落回普通/baby/忽略档）。
+        int wpMode = c.windowPriorityMode;
+        boolean wpActive = AimbotRules.isWindowPriorityMode(wpMode) && wpMode != AimbotRules.WP_OFF
+                && ZombiesTracker.instance().isInAlienArcadium();
+        double[] wpAnchor = wpActive ? AimbotRules.golemAnchor(wpMode) : null;
         for (Entity entity : client.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity living) || !isAliveTarget(living)
                     || living == client.player || living.getId() < 0) continue;
@@ -635,10 +650,14 @@ public final class AimbotModule implements Module {
             boolean giant = isGiant(living);
             boolean slime = isSlime(living);
             boolean golem = living instanceof IronGolem;
+            // TOO 也是 baby 体型，但归 TOO 类不算 baby（signature 优先）。
+            boolean baby = living instanceof Zombie zombie && zombie.isBaby() && !too;
             if (instaWindow && (giant || isGhast(living))) continue;
-            if (c.ignoreToo && too) continue;
-            if (c.ignoreGolem && golem) continue;
-            if (c.ignoreSlime && slime) continue;
+            // 类型忽略（TOO/傀儡/史莱姆）从「完全不打」改为 RANK_IGNORED 末位档：
+            // 场上只剩它们（或普通怪全被挡）时可打。
+            // baby 并入忽略档（用户定稿 2026-09-19：忽略 Baby 而非优先，BRUTE 扫射也不再提前）。
+            boolean typeIgnored = (c.ignoreToo && too) || (c.ignoreGolem && golem)
+                    || (c.ignoreSlime && slime) || baby;
             if (c.ignoreVerticalFall && isVerticalFalling(living)) continue;
             if (c.ignoreMidFall && isMidFallDrop(living)) continue;
             // 头顶高处（高度差 > aboveHeightBlocks，默认 5 格）：不再硬排除，改为降到
@@ -660,17 +679,30 @@ public final class AimbotModule implements Module {
                     living.getY() + living.getBbHeight() * 0.5, living.getZ());
             if (!threat && c.fov < 360 && Math.toDegrees(angle) > fovHalf) continue;
 
-            boolean baby = living instanceof Zombie zombie && zombie.isBaby() && !too;
             boolean clown = living instanceof Zombie zombie && isClown(zombie);
             int group = instaWindow
-                    ? AimbotRules.instaGroupRank(baby, slime, babyFirst)
-                    : AimbotRules.groupRank(c.prioClown, c.prioGiant, babyFirst,
-                    baby, clown, giant);
+                    ? AimbotRules.instaGroupRank(baby, slime)
+                    : AimbotRules.groupRank(c.prioClown, c.prioGiant, baby, clown, giant);
             if (highAbove) {
                 group = Math.min(group, AimbotRules.GROUP_HIGH_ABOVE);
             }
+            // 窗优先（AA 局内生效）：出生窗归档（含 UFO 口 = MID）+ 模式锚点傀儡 → 六档 rank。
+            // 窗怪档压过类型忽略：P2 的 TOO/Baby 也是窗怪（先清窗的语义优先于「别打它」）。
+            String windowId = null;
+            boolean golemInAnchor = false;
+            boolean modeGiant = false;
+            if (wpActive) {
+                windowId = WindowSpawnCounterModule.instance().birthWindowIdOf(living.getId());
+                golemInAnchor = golem
+                        && AimbotRules.withinGolemAnchor(wpAnchor, living.getX(), living.getZ());
+                // P5+MID 默认优先打巨人；选了 Clown 优先就不抢（Clown 自带巨人降档，2026-09-19 定稿）。
+                modeGiant = wpMode == AimbotRules.WP_P5 && giant && !c.prioClown;
+            }
+            // baby 走 typeIgnored 忽略档；demoted 档只剩高处怪与 Clown 模式巨人（group<0 且非 baby）。
+            int rank = AimbotRules.priorityRank(wpMode, windowId, modeGiant, golemInAnchor,
+                    group < 0 && !baby, typeIgnored);
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
-                    Math.sqrt(distSq)));
+                    Math.sqrt(distSq), windowId, rank));
         }
         return result;
     }
@@ -2027,6 +2059,9 @@ public final class AimbotModule implements Module {
         Vec3 end = eye.add(delta.scale(RAY_EXTEND / length));
         int count = 0;
         for (CandidateMeta meta : all) {
+            // 类型忽略档（RANK_IGNORED）历史上完全不在候选里，不参与掩体统计——
+            // 加入 all 是为「最后档可打」，这里跳过以保持 wall-shot 判定不变。
+            if (meta.rank >= AimbotRules.RANK_IGNORED) continue;
             LivingEntity other = meta.entity;
             if (other == self || !isAliveTarget(other)) continue;
             AABB box = other.getBoundingBox();
@@ -2244,9 +2279,14 @@ public final class AimbotModule implements Module {
         final int group;
         final double angle;
         final double distance;
+        /** AA 出生窗 id（WindowSpawnCounter 归档口径）；null = 未归档/UFO/窗外出生/非 AA。 */
+        final String windowId;
+        /** 选靶档位（{@link AimbotRules#RANK_WINDOW}..{@link AimbotRules#RANK_IGNORED}），越小越优先。 */
+        final int rank;
 
         CandidateMeta(LivingEntity entity, boolean threat, boolean too, boolean giant,
-                      int group, double angle, double distance) {
+                      int group, double angle, double distance,
+                      String windowId, int rank) {
             this.entity = entity;
             this.threat = threat;
             this.too = too;
@@ -2254,6 +2294,8 @@ public final class AimbotModule implements Module {
             this.group = group;
             this.angle = angle;
             this.distance = distance;
+            this.windowId = windowId;
+            this.rank = rank;
         }
     }
 

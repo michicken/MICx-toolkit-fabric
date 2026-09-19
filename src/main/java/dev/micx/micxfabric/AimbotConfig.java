@@ -150,6 +150,12 @@ public final class AimbotConfig {
     /** 命中箱三围的全局缩放，1.0 = 表值原样；供实测微调（面板 0.50–1.50）。 */
     public double serverDimsScale = 1.0;
 
+    /**
+     * 窗优先模式（仅 AA 局生效）：0=关 1=P2+P3+P4(+P4傀儡) 2=P5 3=P1+ULT(+ULT傀儡) 4=ALT。
+     * 五档选靶：窗怪 &gt; 窗傀儡 &gt; 普通 &gt; baby/降级 &gt; 类型忽略（2026-09-19 定稿）。
+     */
+    public int windowPriorityMode = 0;
+
     private boolean loaded;
     private int[] ignoreTooKey = KeyChord.EMPTY;
     private int[] ignoreGolemKey = KeyChord.EMPTY;
@@ -159,6 +165,8 @@ public final class AimbotConfig {
     private int[] closestKey = KeyChord.EMPTY;
     private int[] holdLockKey = KeyChord.EMPTY;
     private int[] toggleKey = KeyChord.EMPTY;
+    /** SR 模式（窗优先）循环切换键；按一下切到下一模式，HUD 实时显示简写。 */
+    private int[] srModeKey = KeyChord.EMPTY;
 
     public void load() {
         if (loaded) return;
@@ -235,6 +243,8 @@ public final class AimbotConfig {
                 AimbotRules.GIANT_AIM_FRAC_DEFAULT, 0.50, 1.00);
         serverDims = ConfigProperties.bool(p, "serverDims", true);
         serverDimsScale = ConfigProperties.real(p, "serverDimsScale", 1.0, 0.50, 1.50);
+        windowPriorityMode = ConfigProperties.integer(p, "windowPriorityMode", 0,
+                AimbotRules.WP_OFF, AimbotRules.WP_ALT);
 
         ignoreTooKey = readKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode");
         ignoreGolemKey = readKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode");
@@ -244,6 +254,7 @@ public final class AimbotConfig {
         closestKey = readKey(p, "closestKeyCodes", "closestKeyCode");
         holdLockKey = readKey(p, "holdLockKeyCodes", "holdLockKeyCode");
         toggleKey = readKey(p, "toggleKeyCodes", "toggleKeyCode");
+        srModeKey = readKey(p, "srModeKeyCodes", "srModeKeyCode");
     }
 
     public void save() {
@@ -312,6 +323,8 @@ public final class AimbotConfig {
         put(p, "giantAimFrac", clamp(giantAimFrac, 0.50, 1.00));
         put(p, "serverDims", serverDims);
         put(p, "serverDimsScale", clamp(serverDimsScale, 0.50, 1.50));
+        put(p, "windowPriorityMode", clamp(windowPriorityMode,
+                AimbotRules.WP_OFF, AimbotRules.WP_ALT));
 
         writeKey(p, "ignoreTooKeyCodes", "ignoreTooKeyCode", ignoreTooKey);
         writeKey(p, "ignoreGolemKeyCodes", "ignoreGolemKeyCode", ignoreGolemKey);
@@ -321,6 +334,7 @@ public final class AimbotConfig {
         writeKey(p, "closestKeyCodes", "closestKeyCode", closestKey);
         writeKey(p, "holdLockKeyCodes", "holdLockKeyCode", holdLockKey);
         writeKey(p, "toggleKeyCodes", "toggleKeyCode", toggleKey);
+        writeKey(p, "srModeKeyCodes", "srModeKeyCode", srModeKey);
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("aimbot.properties"), p,
                     "MICx Aimbot configuration");
@@ -347,6 +361,7 @@ public final class AimbotConfig {
     public int[] getClosestKey() { load(); return closestKey.clone(); }
     public int[] getHoldLockKeyCodes() { load(); return holdLockKey.clone(); }
     public int[] getToggleKeyCodes() { load(); return toggleKey.clone(); }
+    public int[] getSrModeKey() { load(); return srModeKey.clone(); }
 
     public void setIgnoreTooKey(int[] value) { ignoreTooKey = setKey(value); save(); }
     public void setIgnoreGolemKey(int[] value) { ignoreGolemKey = setKey(value); save(); }
@@ -356,6 +371,7 @@ public final class AimbotConfig {
     public void setClosestKey(int[] value) { closestKey = setKey(value); save(); }
     public void setHoldLockKeyCodes(int[] value) { holdLockKey = setKey(value); save(); }
     public void setToggleKeyCodes(int[] value) { toggleKey = setKey(value); save(); }
+    public void setSrModeKey(int[] value) { srModeKey = setKey(value); save(); }
 
     private int[] setKey(int[] value) {
         return KeyChord.normalize(value);

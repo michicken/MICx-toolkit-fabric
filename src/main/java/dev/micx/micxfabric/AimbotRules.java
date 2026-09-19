@@ -88,10 +88,7 @@ public final class AimbotRules {
      */
     public static final int GROUP_GIANT_BACKUP = -3;
 
-    /** BRUTE 扫射生效时 baby 恢复的最高组。 */
-    public static final int GROUP_BABY_FIRST = 2;
-
-    /** 小丑优先组。 */
+    /** 小丑/巨人优先组（group 数字越大越优先）。 */
     public static final int GROUP_PRIORITY = 1;
 
     /**
@@ -102,10 +99,10 @@ public final class AimbotRules {
      * 秒杀期间追求「快速清掉每一只」，所以优先打打得中的，其余降到
      * {@link #GROUP_DEPRIORITIZED} 档。巨人已由调用方在该窗口内整体剔除，这里不再区分。
      *
-     * @param babyFirst BRUTE 扫射生效时为 true —— 扫射是「按空间顺序逐个清」，不再降级 baby
+     * <p>2026-09-19：{@code babyFirst} 提前逻辑删除——baby 一律走忽略档，
+     * BRUTE 扫射生效时也不再把它提回最高组（GROUP_BABY_FIRST 移除）。
      */
-    public static int instaGroupRank(boolean baby, boolean slime, boolean babyFirst) {
-        if (babyFirst && baby) return GROUP_BABY_FIRST;
+    public static int instaGroupRank(boolean baby, boolean slime) {
         if (baby || slime) return GROUP_DEPRIORITIZED;
         return GROUP_PRIORITY;
     }
@@ -959,8 +956,10 @@ public final class AimbotRules {
      * 普通（非 insta）分组。
      *
      * <p>用户定稿 2026-09-11：<b>废弃 Prio Baby 开关</b>——baby 僵尸默认降到
-     * {@link #GROUP_DEPRIORITIZED}（排在普通怪之后，只有再无别的可打目标时才锁），
-     * 仅当 BRUTE 扫射生效（{@code babyFirst}）时恢复 {@link #GROUP_BABY_FIRST} 最高组。
+     * {@link #GROUP_DEPRIORITIZED}。用户定稿 2026-09-19：<b>baby 改走忽略档</b>
+     * （{@code priorityRank} 的 {@code typeIgnored} 通道，与 TOO/傀儡/史莱姆同为
+     * {@link #RANK_IGNORED} 最后可打），BRUTE 扫射也不再把它提回最高组——
+     * 原 {@code GROUP_BABY_FIRST} 提前逻辑随之删除。
      *
      * <p>用户定稿 2026-09-16：两个优先级开关是<b>对称的一对</b>，各自把自己的目标提进
      * 首选档、需要时把对方压下去（配置层保证二者互斥）：
@@ -974,9 +973,8 @@ public final class AimbotRules {
      * Clown 模式没人压得住巨人（留在组 0，靠同组内 TOO/巨人优先排序抢靶），
      * Giant 模式反倒把巨人踢出首选池（{@code group < 0} 进降级池，普通怪能打就永远不锁）。
      */
-    public static int groupRank(boolean prioClown, boolean prioGiant, boolean babyFirst,
+    public static int groupRank(boolean prioClown, boolean prioGiant,
                                 boolean baby, boolean clown, boolean giant) {
-        if (babyFirst && baby) return GROUP_BABY_FIRST;
         if (prioGiant && giant) return GROUP_PRIORITY;
         if (prioClown && clown) return GROUP_PRIORITY;
         if (prioClown && giant) return GROUP_GIANT_BACKUP;
@@ -1210,5 +1208,122 @@ public final class AimbotRules {
             }
         }
         return bestIdx;
+    }
+
+    /* ==================== 窗优先模式（AA SpawnMark 窗位联动，2026-09-19 定稿） ==================== */
+
+    /** 窗优先关闭（默认）。 */
+    public static final int WP_OFF = 0;
+    /** P2+P3+P4 窗怪 + P4 点 15 格内铁傀儡。 */
+    public static final int WP_P234 = 1;
+    /** P5+MID 窗怪（P5 窗 + UFO 4 口 MID，2026-09-19 扩展）+ 默认优先巨人（Clown 开关压过）。 */
+    public static final int WP_P5 = 2;
+    /** P1+ULT 窗怪 + ULT 点 10 格内铁傀儡。 */
+    public static final int WP_P1_ULT = 3;
+    /** 仅 ALT 窗怪。 */
+    public static final int WP_ALT = 4;
+
+    /**
+     * 选靶档位，越小越优先。同档内沿用现有打分/滞回；
+     * 高档只有在所有更高档「没有任何可打点（含被墙挡光）」时才参与。
+     * <ul>
+     *   <li>{@link #RANK_MODE_GIANT}：P5+MID 模式默认优先的巨人（prioClown 开启时不打此标）；</li>
+     *   <li>{@link #RANK_WINDOW}：SR 模式窗内出生的怪（含窗内 TOO/baby——窗优先压过类型忽略）；</li>
+     *   <li>{@link #RANK_WINDOW_GOLEM}：模式锚点半径内的铁傀儡（窗怪清空才轮到）；</li>
+     *   <li>{@link #RANK_NORMAL}：普通怪（现有 group ≥ 0）；</li>
+     *   <li>{@link #RANK_DEMOTED}：高处怪 / Clown 模式巨人（group &lt; 0 且非 baby）；</li>
+     *   <li>{@link #RANK_IGNORED}：baby（2026-09-19 改忽略）/ ignoreToo/ignoreGolem/ignoreSlime
+     *       命中的怪——从「完全不打」改为最后档可打（场上只剩它们时可打）。</li>
+     * </ul>
+     */
+    public static final int RANK_MODE_GIANT = 0;
+    public static final int RANK_WINDOW = 1;
+    public static final int RANK_WINDOW_GOLEM = 2;
+    public static final int RANK_NORMAL = 3;
+    public static final int RANK_DEMOTED = 4;
+    public static final int RANK_IGNORED = 5;
+    /** 动态排除（坠怪/高处怪等）仍完全不进候选，不走档位。 */
+    public static final int RANK_EXCLUDED = Integer.MAX_VALUE;
+
+    /** 模式对应的优先窗 id 集合（{@code P1..P5/ULT/ALT/MID}，与 WindowSpawnCounterModule 同名）；关/未知返回空集。 */
+    public static java.util.Set<String> priorityWindows(int mode) {
+        return switch (mode) {
+            case WP_P234 -> java.util.Set.of("P2", "P3", "P4");
+            case WP_P5 -> java.util.Set.of("P5", "MID");
+            case WP_P1_ULT -> java.util.Set.of("P1", "ULT");
+            case WP_ALT -> java.util.Set.of("ALT");
+            default -> java.util.Set.of();
+        };
+    }
+
+    /**
+     * 模式对应的铁傀儡锚点 {@code {x, z, radius}}（水平距离判定）；该模式无傀儡目标返回 null。
+     * 半径为用户定稿口径：ULT 10 格、P4 15 格。
+     */
+    public static double[] golemAnchor(int mode) {
+        return switch (mode) {
+            case WP_P234 -> new double[]{-10.0, -6.0, 15.0};
+            case WP_P1_ULT -> new double[]{28.0, 32.0, 10.0};
+            default -> null;
+        };
+    }
+
+    /** 模式的 HUD/面板展示名。 */
+    public static String windowPriorityName(int mode) {
+        return switch (mode) {
+            case WP_P234 -> "P2+P3+P4";
+            case WP_P5 -> "P5+MID";
+            case WP_P1_ULT -> "P1+ULT";
+            case WP_ALT -> "ALT";
+            default -> "Off";
+        };
+    }
+
+    /**
+     * 模式的 HUD 简写（用户定稿 2026-09-19：P234 / P5M / P1U / ALT）；
+     * 关闭返回 null（HUD 上不显示）。
+     */
+    public static String windowPriorityShort(int mode) {
+        return switch (mode) {
+            case WP_P234 -> "P234";
+            case WP_P5 -> "P5M";
+            case WP_P1_ULT -> "P1U";
+            case WP_ALT -> "ALT";
+            default -> null;
+        };
+    }
+
+    /** 模式取值合法（含 0=关）。 */
+    public static boolean isWindowPriorityMode(int mode) {
+        return mode >= WP_OFF && mode <= WP_ALT;
+    }
+
+    /** 水平距离是否落在傀儡锚点 {@code {x, z, radius}} 内；锚点 null 恒 false。 */
+    public static boolean withinGolemAnchor(double[] anchor, double x, double z) {
+        if (anchor == null || anchor.length < 3) return false;
+        double dx = x - anchor[0];
+        double dz = z - anchor[1];
+        return dx * dx + dz * dz <= anchor[2] * anchor[2];
+    }
+
+    /**
+     * 单只怪的档位判定（collectCandidates 每怪一次）。
+     *
+     * @param mode           窗优先模式（{@code WP_OFF} 时窗/傀儡/模式巨人档不参与）
+     * @param windowId       出生窗 id（AA 归档口径，含 "MID"；null = 未归档/窗外出生）
+     * @param modeGiant      P5+MID 模式默认优先的巨人（prioClown 开启时调用方须传 false）
+     * @param golemInAnchor  铁傀儡且落在模式锚点半径内（模式关闭时调用方须传 false）
+     * @param demotedGroup   现有 group &lt; 0 且非 baby（高处怪 / Clown 模式巨人）
+     * @param typeIgnored    baby / ignoreToo/ignoreGolem/ignoreSlime 命中
+     */
+    public static int priorityRank(int mode, String windowId, boolean modeGiant,
+                                   boolean golemInAnchor, boolean demotedGroup,
+                                   boolean typeIgnored) {
+        if (modeGiant) return RANK_MODE_GIANT;
+        if (mode != WP_OFF && windowId != null && priorityWindows(mode).contains(windowId)) return RANK_WINDOW;
+        if (golemInAnchor) return RANK_WINDOW_GOLEM;
+        if (demotedGroup) return RANK_DEMOTED;
+        if (typeIgnored) return RANK_IGNORED;
+        return RANK_NORMAL;
     }
 }

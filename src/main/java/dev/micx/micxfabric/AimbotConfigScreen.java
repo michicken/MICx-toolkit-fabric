@@ -186,8 +186,15 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = keyRow(graphics, mouseX, mouseY, "巨人快捷键 / Prio Giant Key", c::getPrioGiantKey,
                 c::setPrioGiantKey, y, "绑定后可快速切换巨人优先。 ");
         y = wrapped(graphics,
-                "Baby 僵尸已固定降到「普通怪之后」：优先打普通怪，只有场上再无别的可打目标时才锁 Baby（仅 BRUTE 扫射生效时恢复最高优先）。原 Prio Baby 开关已废弃移除。",
+                "2026-09-19 定稿：Baby 僵尸按「忽略」处理——与 TOO/傀儡/史莱姆同为最后档，场上只剩它们（或前面的怪全不可打）时才锁。BRUTE 扫射生效时也不再提前；SR 窗优先开启时窗内 Baby 仍随窗怪先清。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
+        y = modeRow(graphics, mouseX, mouseY, "SR 模式 / SR Window Priority",
+                AimbotRules.windowPriorityName(c.windowPriorityMode),
+                () -> c.windowPriorityMode = (c.windowPriorityMode + 1) % (AimbotRules.WP_ALT + 1),
+                y,
+                "专打指定出生点出来的怪（点击循环：Off → P2+P3+P4 → P5+MID → P1+ULT → ALT；HUD 简写 P234/P5M/P1U/ALT）。仅 Alien Arcadium 生效。六档选靶：① P5+MID 默认优先巨人（选了 Clown 优先就不抢，巨人按 Clown 规则降末位）② SR 窗怪（P5+MID=P5 窗+UFO 4 口 MID 怪）③ SR 铁傀儡（P234=P4 点 15 格内 / P1+ULT=ULT 点 10 格内）④ 普通怪 ⑤ 降级（高处怪/Clown 模式巨人）⑥ 忽略（baby/TOO/傀儡/史莱姆，最后可打）。窗怪没清完绝不锁窗外的怪；被墙挡光先打其他怪，露头自动切回。可用快捷键（下方）按一下循环切换，HUD 实时显示当前模式。");
+        y = keyRow(graphics, mouseX, mouseY, "SR 模式快捷键 / SR Mode Key", c::getSrModeKey,
+                c::setSrModeKey, y, "绑定后按一下切到下一个 SR 模式（Off → P234 → P5M → P1U → ALT → Off 循环），聊天栏与 Aimbot HUD 实时显示当前模式。");
         y = toggleRow(graphics, mouseX, mouseY, "近身威胁 / Threat", c.threatEnabled,
                 () -> c.threatEnabled = !c.threatEnabled, y,
                 "开启后近距离威胁目标会被保送，并且可以无视 FOV 限制；受伤记录保留约 5 秒。 ");

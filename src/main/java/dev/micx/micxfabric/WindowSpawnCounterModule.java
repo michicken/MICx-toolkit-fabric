@@ -139,6 +139,14 @@ public final class WindowSpawnCounterModule implements Module {
     private final java.util.Map<Integer, Vec3> birthPosById = new java.util.LinkedHashMap<Integer, Vec3>() {
         @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Vec3> e) { return size() > 512; }
     };
+    // 出生窗归档：entityId -> WINDOWS index。AA 局内无条件记录（Aimbot 窗优先依赖），
+    // 不受本模块开关影响；几何口径与计数归档完全一致（windowIndexForBirth）。
+    // 特殊值 BIRTH_WINDOW_MID：UFO 4 口（y≈105）出生的怪，供 SR P5+MID 模式识别。
+    private final java.util.Map<Integer, Integer> birthWindowById = new java.util.LinkedHashMap<Integer, Integer>() {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Integer> e) { return size() > 512; }
+    };
+    /** UFO（MID）出生的归档值：不是 WINDOWS index，{@link #birthWindowIdOf} 会转成 "MID"。 */
+    public static final int BIRTH_WINDOW_MID = -2;
     // 本回合有 TOO 的窗
     private final boolean[] hasToo = new boolean[WINDOWS.size()];
     // TOO IN 列表：本回合内去重窗，TTL 3 波
@@ -249,8 +257,23 @@ public final class WindowSpawnCounterModule implements Module {
     public void recordBirthPos(int id, double x, double y, double z) {
         birthPosById.put(id, new Vec3(x, y, z));
     }
+
+    /** entityId → 出生窗 index（AA 归档口径）；查不到返回 -1（含 UFO/窗外出生/未归档）。 */
+    public int birthWindowOf(int entityId) {
+        Integer idx = birthWindowById.get(entityId);
+        return idx != null ? idx : -1;
+    }
+
+    /** entityId → 出生窗显示名（如 "P2"；UFO 口出生为 "MID"）；查不到返回 null。 */
+    public String birthWindowIdOf(int entityId) {
+        Integer val = birthWindowById.get(entityId);
+        if (val == null) return null;
+        if (val == BIRTH_WINDOW_MID) return "MID";
+        return val >= 0 && val < WINDOWS.size() ? WINDOWS.get(val).id : null;
+    }
+
     public void onEntitiesRemoved(int[] ids) {
-        for (int id : ids) { birthPosById.remove(id); }
+        for (int id : ids) { birthPosById.remove(id); birthWindowById.remove(id); }
         // 清理已死亡的 session 的 birthPos 也在 tick 中处理
     }
 
@@ -321,6 +344,28 @@ public final class WindowSpawnCounterModule implements Module {
 
     /** 由 Mixin handleAddEntity 调用：每个实体出生点归档一次。 */
     public void onEntitySpawn(Entity entity) {
+        // 出生窗归档（无条件段）：AA 回合内任何生物落在窗 3×3 就记窗，供 Aimbot 窗优先
+        // 查询；不按类型过滤（几何归档，Aimbot 只查自己的候选），练习靶照旧排除。
+        if (entity instanceof LivingEntity le) {
+            ZombiesTracker z0 = ZombiesTracker.instance();
+            if (z0 != null && z0.isInAlienArcadium() && z0.round() > 0) {
+                Vec3 bp0 = birthPosById.get(entity.getId());
+                double bx0 = bp0 != null ? bp0.x : entity.getX();
+                double by0 = bp0 != null ? bp0.y : entity.getY();
+                double bz0 = bp0 != null ? bp0.z : entity.getZ();
+                if (!isPracticeDummy(le, bx0, bz0)) {
+                    int wIdx0 = windowIndexForBirth(bx0, by0, bz0);
+                    if (wIdx0 >= 0) {
+                        birthWindowById.put(entity.getId(), wIdx0);
+                    } else if (Math.abs(by0 - 105.0) <= 3.0
+                            && AimbotRules.isInsideMidCell(bx0, bz0)) {
+                        // UFO 4 口出生（y≈105 + MID 单元格内）：归档为 MID。
+                        // 地面怪 y=72 不可能命中，练习区/窗外地面怪同样排除。
+                        birthWindowById.put(entity.getId(), BIRTH_WINDOW_MID);
+                    }
+                }
+            }
+        }
         if (!enabled) return;
         if (!(entity instanceof LivingEntity le)) return;
         if (!isCountable(le)) return;

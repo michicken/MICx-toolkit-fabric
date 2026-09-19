@@ -24,6 +24,8 @@ public final class AimbotHudModule implements Module {
     private static final int COLOR_EMPTY = 0xFF555555;
     private static final int COLOR_BG = 0x99000000;
     private static final int COLOR_BORDER = 0x66FFFFFF;
+    /** SR 模式名显示色（黄，与锁定来源的绿区分）。 */
+    private static final int COLOR_SR = 0xFFFFFF55;
 
     private static final String[] KEY_IDS = {
             "ignoreToo", "ignoreGolem", "ignoreSlime", "prioClown",
@@ -35,6 +37,8 @@ public final class AimbotHudModule implements Module {
     private volatile long hideUntilMs;
     private final Set<String> down = new HashSet<>();
     private final Set<String> heldThroughBlock = new HashSet<>();
+    /** SR 模式切换键的上一 tick 按下态（边沿检测：按一下 = 一次切换）。 */
+    private boolean srKeyWasDown;
 
     private AimbotHudModule() {
     }
@@ -105,7 +109,12 @@ public final class AimbotHudModule implements Module {
         boolean blocked = hiddenByGameOver()
                 || client.gui == null || client.gui.screen() != null || client.isPaused();
         int[][] keys = keyArrays(config);
+        // SR 模式切换键（独立于分组开关）：按一下循环到下一模式，聊天栏 + HUD 实时确认。
+        // blocked 窗口内只记录按下态不触发，避免出窗口时补切一次。
+        int[] srKey = config.getSrModeKey();
+        boolean srDown = !KeyChord.isEmpty(srKey) && KeyChord.isAllDown(srKey, client);
         if (blocked) {
+            srKeyWasDown = srDown;
             heldThroughBlock.clear();
             for (int i = 0; i < KEY_IDS.length; i++) {
                 if (KeyChord.isAllDown(keys[i], client)) heldThroughBlock.add(KEY_IDS[i]);
@@ -113,6 +122,14 @@ public final class AimbotHudModule implements Module {
             down.clear();
             return;
         }
+        if (srDown && !srKeyWasDown) {
+            int next = (config.windowPriorityMode + 1) % (AimbotRules.WP_ALT + 1);
+            config.windowPriorityMode = next;
+            config.save();
+            client.player.sendSystemMessage(ChatMessageStyles.notice("SR 模式: "
+                    + AimbotRules.windowPriorityName(next)));
+        }
+        srKeyWasDown = srDown;
         if (!heldThroughBlock.isEmpty()) {
             for (String id : heldThroughBlock) {
                 int index = indexOf(id);
@@ -169,6 +186,14 @@ public final class AimbotHudModule implements Module {
                 if (column + 1 < labels[group].length) totalWidth += 2;
             }
         }
+        // SR 模式名（黄）+ 锁定来源（绿）前缀：SR 开启才显示模式名；锁定窗怪/傀儡才显示来源。
+        String srLabel = AimbotRules.windowPriorityShort(config.windowPriorityMode);
+        String srPrefix = srLabel != null ? srLabel + " " : null;
+        int srWidth = srPrefix != null ? client.font.width(srPrefix) : 0;
+        String lockLabel = AimbotModule.instance().lockSourceLabel();
+        String lockPrefix = lockLabel != null ? lockLabel + " " : null;
+        int lockWidth = lockPrefix != null ? client.font.width(lockPrefix) + 2 : 0;
+        totalWidth += srWidth + lockWidth;
 
         int pad = 3;
         int lineHeight = client.font.lineHeight;
@@ -194,6 +219,18 @@ public final class AimbotHudModule implements Module {
             outline(graphics, 0, 0, totalWidth + pad * 2, logicalHeight, COLOR_BORDER);
             int x = pad;
             int index = 0;
+            if (srPrefix != null) {
+                graphics.text(client.font, Component.literal(srPrefix), x, pad, COLOR_SR);
+                x += srWidth;
+            }
+            if (lockPrefix != null) {
+                graphics.text(client.font, Component.literal(lockPrefix), x, pad, COLOR_ON);
+                x += lockWidth;
+            }
+            if (srPrefix != null || lockPrefix != null) {
+                graphics.text(client.font, Component.literal("|"), x, pad, COLOR_SEP);
+                x += 6;
+            }
             for (int group = 0; group < labels.length; group++) {
                 if (group > 0) {
                     graphics.text(client.font, Component.literal("|"), x, pad, COLOR_SEP);

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AimbotRulesTest {
@@ -128,16 +129,11 @@ class AimbotRulesTest {
     @Test
     void instaGroupRankDemotesBabyAndSlimeBehindNormalMobs() {
         // 普通怪（非 baby、非史莱姆）在 insta 窗口里前置
-        assertEquals(AimbotRules.GROUP_PRIORITY, AimbotRules.instaGroupRank(false, false, false));
+        assertEquals(AimbotRules.GROUP_PRIORITY, AimbotRules.instaGroupRank(false, false));
         // baby 与史莱姆/岩浆怪都降到「普通怪之后」档，且同档
-        assertEquals(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.instaGroupRank(true, false, false));
-        assertEquals(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.instaGroupRank(false, true, false));
-        assertEquals(AimbotRules.instaGroupRank(true, false, false),
-                AimbotRules.instaGroupRank(false, true, false));
-        assertTrue(AimbotRules.instaGroupRank(false, false, false)
-                > AimbotRules.instaGroupRank(true, true, false));
-        // BRUTE 扫射生效时 baby 恢复最高组
-        assertEquals(AimbotRules.GROUP_BABY_FIRST, AimbotRules.instaGroupRank(true, false, true));
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.instaGroupRank(true, false));
+        // 2026-09-19：baby 提前逻辑删除，BRUTE 扫射生效时也不再恢复最高组
+        assertTrue(AimbotRules.instaGroupRank(false, false) > AimbotRules.instaGroupRank(true, true));
     }
 
     @Test
@@ -590,29 +586,26 @@ class AimbotRulesTest {
 
     @Test
     void groupPriorityAndClosestMarginMatchForgeRules() {
-        // 新签名：groupRank(prioClown, prioGiant, babyFirst, baby, clown, giant)
-        // baby 不再有独立开关，默认降到「普通怪之后」档
+        // 新签名：groupRank(prioClown, prioGiant, baby, clown, giant)
+        // 2026-09-19：baby 无 BRUTE 提前，固定降到「普通怪之后」档（选靶侧走忽略档）
         assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
-                AimbotRules.groupRank(false, false, false, true, false, false));
-        // BRUTE 扫射生效时 baby 恢复最高组
-        assertEquals(AimbotRules.GROUP_BABY_FIRST,
-                AimbotRules.groupRank(false, false, true, true, false, false));
+                AimbotRules.groupRank(false, false, true, false, false));
         assertEquals(AimbotRules.GROUP_PRIORITY,
-                AimbotRules.groupRank(true, false, false, false, true, false));
+                AimbotRules.groupRank(true, false, false, true, false));
         // 用户定稿 2026-09-16：巨人降档改挂 Clown 模式（两个模式的对称语义见
         // clownAndGiantModesAreSymmetric）。
         assertEquals(AimbotRules.GROUP_GIANT_BACKUP,
-                AimbotRules.groupRank(true, false, false, false, false, true));
+                AimbotRules.groupRank(true, false, false, false, true));
         // 末位档排序：巨人 < 头顶高处 < baby < 普通怪（数值越小越晚锁）
         assertTrue(AimbotRules.GROUP_GIANT_BACKUP < AimbotRules.GROUP_HIGH_ABOVE);
         assertTrue(AimbotRules.GROUP_HIGH_ABOVE < AimbotRules.GROUP_DEPRIORITIZED);
         // 普通怪仍是 0，baby 降级后严格低于普通怪
-        assertEquals(0, AimbotRules.groupRank(false, false, false, false, false, false));
-        assertTrue(AimbotRules.groupRank(false, false, false, false, false, false)
-                > AimbotRules.groupRank(false, false, false, true, false, false));
+        assertEquals(0, AimbotRules.groupRank(false, false, false, false, false));
+        assertTrue(AimbotRules.groupRank(false, false, false, false, false)
+                > AimbotRules.groupRank(false, false, true, false, false));
         // 头顶高处（调用方 Math.min 合入）：即使 baby 降级也不越过它
         assertEquals(AimbotRules.GROUP_HIGH_ABOVE,
-                Math.min(AimbotRules.groupRank(false, false, false, false, false, false),
+                Math.min(AimbotRules.groupRank(false, false, false, false, false),
                         AimbotRules.GROUP_HIGH_ABOVE));
         assertEquals(AimbotRules.GROUP_HIGH_ABOVE,
                 Math.min(AimbotRules.GROUP_DEPRIORITIZED, AimbotRules.GROUP_HIGH_ABOVE));
@@ -633,39 +626,37 @@ class AimbotRulesTest {
         //
         // Giant 模式：巨人进首选档（group >= 0 才进首选池，才会被扫到）
         assertEquals(AimbotRules.GROUP_PRIORITY,
-                AimbotRules.groupRank(false, true, false, false, false, true));
-        assertTrue(AimbotRules.groupRank(false, true, false, false, false, true) >= 0);
+                AimbotRules.groupRank(false, true, false, false, true));
+        assertTrue(AimbotRules.groupRank(false, true, false, false, true) >= 0);
         // Giant 模式不影响小丑，也不影响普通怪 / baby
-        assertEquals(0, AimbotRules.groupRank(false, true, false, false, true, false));
-        assertEquals(0, AimbotRules.groupRank(false, true, false, false, false, false));
+        assertEquals(0, AimbotRules.groupRank(false, true, false, true, false));
+        assertEquals(0, AimbotRules.groupRank(false, true, false, false, false));
         assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
-                AimbotRules.groupRank(false, true, false, true, false, false));
+                AimbotRules.groupRank(false, true, true, false, false));
         // Giant 模式下巨人不再是「末位」（末位档会让它被 preferred 池排除，永远不锁）
         assertNotEquals(AimbotRules.GROUP_GIANT_BACKUP,
-                AimbotRules.groupRank(false, true, false, false, false, true));
+                AimbotRules.groupRank(false, true, false, false, true));
 
         // Clown 模式：小丑首选，同时巨人被压到末位档（< 0 = 只在首选池全不可打时才扫）
         assertEquals(AimbotRules.GROUP_PRIORITY,
-                AimbotRules.groupRank(true, false, false, false, true, false));
-        int clownGiant = AimbotRules.groupRank(true, false, false, false, false, true);
+                AimbotRules.groupRank(true, false, false, true, false));
+        int clownGiant = AimbotRules.groupRank(true, false, false, false, true);
         assertEquals(AimbotRules.GROUP_GIANT_BACKUP, clownGiant);
         assertTrue(clownGiant < 0, "Clown 模式下巨人必须落在降级池");
         // Clown 模式不影响普通怪 / baby
-        assertEquals(0, AimbotRules.groupRank(true, false, false, false, false, false));
+        assertEquals(0, AimbotRules.groupRank(true, false, false, false, false));
         assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
-                AimbotRules.groupRank(true, false, false, true, false, false));
+                AimbotRules.groupRank(true, false, true, false, false));
 
         // 两个都不开：巨人按普通档参与（既不提前也不降级）
-        assertEquals(0, AimbotRules.groupRank(false, false, false, false, false, true));
+        assertEquals(0, AimbotRules.groupRank(false, false, false, false, true));
 
-        // BRUTE 扫射的 baby 最高组对两个模式都生效
-        assertEquals(AimbotRules.GROUP_BABY_FIRST,
-                AimbotRules.groupRank(true, false, true, true, false, false));
-        assertEquals(AimbotRules.GROUP_BABY_FIRST,
-                AimbotRules.groupRank(false, true, true, true, false, false));
-        // baby 与优先/降级目标同时在场时，扫射的 baby 仍压过巨人（扫射按空间顺序逐个清）
-        assertTrue(AimbotRules.groupRank(false, true, true, true, false, false)
-                > AimbotRules.groupRank(false, true, false, false, false, true));
+        // 2026-09-19：baby 提前逻辑（GROUP_BABY_FIRST）删除——baby 在选靶侧固定走忽略档，
+        // BRUTE 扫射生效时也不再提前；groupRank 对 baby 恒返回 GROUP_DEPRIORITIZED。
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
+                AimbotRules.groupRank(true, false, true, false, false));
+        assertEquals(AimbotRules.GROUP_DEPRIORITIZED,
+                AimbotRules.groupRank(false, true, true, false, false));
     }
 
     @Test
@@ -1051,5 +1042,89 @@ class AimbotRulesTest {
         assertEquals(half, dirs[3], 1.0e-9);
         assertEquals(half, dirs[4], 1.0e-9);
         assertEquals(-half, dirs[5], 1.0e-9);
+    }
+
+    /* ==================== 窗优先模式（2026-09-19 定稿口径） ==================== */
+
+    @Test
+    void windowPriorityModesMapToWindowsAndAnchors() {
+        assertTrue(AimbotRules.priorityWindows(AimbotRules.WP_OFF).isEmpty());
+        assertEquals(java.util.Set.of("P2", "P3", "P4"),
+                AimbotRules.priorityWindows(AimbotRules.WP_P234));
+        // P5+MID（2026-09-19 扩展）：P5 窗 + UFO 4 口 MID 怪
+        assertEquals(java.util.Set.of("P5", "MID"), AimbotRules.priorityWindows(AimbotRules.WP_P5));
+        assertEquals(java.util.Set.of("P1", "ULT"),
+                AimbotRules.priorityWindows(AimbotRules.WP_P1_ULT));
+        assertEquals(java.util.Set.of("ALT"), AimbotRules.priorityWindows(AimbotRules.WP_ALT));
+
+        // 傀儡锚点：P234 → P4(-10,-6) r15；P1+ULT → ULT(28,32) r10；P5/ALT/关 → 无。
+        assertArrayEquals(new double[]{-10.0, -6.0, 15.0},
+                AimbotRules.golemAnchor(AimbotRules.WP_P234), 1.0e-9);
+        assertArrayEquals(new double[]{28.0, 32.0, 10.0},
+                AimbotRules.golemAnchor(AimbotRules.WP_P1_ULT), 1.0e-9);
+        assertNull(AimbotRules.golemAnchor(AimbotRules.WP_P5));
+        assertNull(AimbotRules.golemAnchor(AimbotRules.WP_ALT));
+        assertNull(AimbotRules.golemAnchor(AimbotRules.WP_OFF));
+
+        for (int mode = AimbotRules.WP_OFF; mode <= AimbotRules.WP_ALT; mode++) {
+            assertTrue(AimbotRules.isWindowPriorityMode(mode));
+        }
+        assertFalse(AimbotRules.isWindowPriorityMode(AimbotRules.WP_ALT + 1));
+        assertFalse(AimbotRules.isWindowPriorityMode(-1));
+
+        // HUD 简写（用户定稿 2026-09-19）：P234 / P5M / P1U / ALT；关闭不显示（null）。
+        assertEquals("P234", AimbotRules.windowPriorityShort(AimbotRules.WP_P234));
+        assertEquals("P5M", AimbotRules.windowPriorityShort(AimbotRules.WP_P5));
+        assertEquals("P1U", AimbotRules.windowPriorityShort(AimbotRules.WP_P1_ULT));
+        assertEquals("ALT", AimbotRules.windowPriorityShort(AimbotRules.WP_ALT));
+        assertNull(AimbotRules.windowPriorityShort(AimbotRules.WP_OFF));
+    }
+
+    @Test
+    void golemAnchorUsesPlanarDistance() {
+        double[] anchor = {-10.0, -6.0, 15.0};
+        // 垂直高度差不影响水平判定（y 不参与）。
+        assertTrue(AimbotRules.withinGolemAnchor(anchor, -10.0, -6.0));
+        assertTrue(AimbotRules.withinGolemAnchor(anchor, 5.0, -6.0));
+        assertTrue(AimbotRules.withinGolemAnchor(anchor, -10.0, 9.0));
+        assertFalse(AimbotRules.withinGolemAnchor(anchor, 6.0, -6.0));
+        assertFalse(AimbotRules.withinGolemAnchor(null, -10.0, -6.0));
+    }
+
+    @Test
+    void priorityRankOrdersWindowsAboveGolemsAboveIgnored() {
+        // P5+MID 模式巨人档（默认优先；Clown 开启时调用方传 false）压过窗怪与一切。
+        assertEquals(AimbotRules.RANK_MODE_GIANT, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, null, true, false, false, false));
+        // 窗怪档压过一切（含类型忽略：P2 的 TOO/Baby 也是窗怪）。
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, "P2", false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, "P2", false, false, true, true));
+        // P5+MID 的 MID 怪（birthWindowIdOf 返回 "MID"）与 P5 窗怪同档。
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "MID", false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "P5", false, false, false, false));
+        // 模式窗集合外的窗 id（如 P2 在 P5+MID 模式下）不算窗怪档。
+        assertEquals(AimbotRules.RANK_NORMAL, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "P2", false, false, false, false));
+        // 非窗怪的铁傀儡（锚点内）档位居窗怪之后。
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, false, true, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P1_ULT, null, false, true, false, false));
+        // 普通怪 → 降级（高处怪/Clown 模式巨人）→ 忽略（baby/TOO/傀儡/史莱姆）。
+        assertEquals(AimbotRules.RANK_NORMAL, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, false, false, false, false));
+        assertEquals(AimbotRules.RANK_DEMOTED, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, false, false, true, false));
+        assertEquals(AimbotRules.RANK_IGNORED, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, false, false, false, true));
+        // 模式关闭：窗 id/模式巨人都不再产生优先档，忽略怪仍落末位档（修复独立于模式）。
+        assertEquals(AimbotRules.RANK_NORMAL, AimbotRules.priorityRank(
+                AimbotRules.WP_OFF, "P2", false, false, false, false));
+        assertEquals(AimbotRules.RANK_IGNORED, AimbotRules.priorityRank(
+                AimbotRules.WP_OFF, null, false, false, false, true));
     }
 }
