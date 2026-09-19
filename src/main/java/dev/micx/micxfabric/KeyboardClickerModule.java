@@ -402,6 +402,9 @@ public final class KeyboardClickerModule implements Module {
         resetProtectionState();
     }
 
+    /** 本局金铲子已适配过（用户定稿 2026-09-19：一局只改一次键位模式）。倒地→救起会让物品
+     * 消失重现，不复位本标志，否则每次救起都会重写双键勾选并把待命模式抢成铲子对应双键；
+     * 仅 {@link #resetClickerModesOnNewGame}（新开局）复位。 */
     private boolean goldAdaptDone;
     private long nextGoldAdaptAt;
 
@@ -416,7 +419,7 @@ public final class KeyboardClickerModule implements Module {
             ItemStack s = client.player.getInventory().getItem(i);
             if (s != null && !s.isEmpty() && isGoldenShovel(s)) { shovelSlot = i; break; }
         }
-        if (shovelSlot < 0) { goldAdaptDone = false; return; }
+        if (shovelSlot < 0) return;
         if (goldAdaptDone) return;
         // 金铲子存在：三键仍 234；双键关掉命中金铲子的那条，换成另一条非金铲子组合
         // 例如金铲子在 2 → 双键切成 34；命中 3 → 24；命中 4 → 23
@@ -597,7 +600,8 @@ public final class KeyboardClickerModule implements Module {
         lastClick = 0L;
         paused = false;
         java.util.Arrays.fill(hotbarPrevDown, false);
-        goldAdaptDone = false;
+        // 金铲子"一局只适配一次"的标志不在这里清：模块中途关开（resetInput 会在停用时触发）
+        // 不算新的一局，清了就会在下次看到铲子时重复改键位模式（用户定稿 2026-09-19）。
         nextGoldAdaptAt = 0L;
         resetProtectionState();
     }
@@ -605,6 +609,7 @@ public final class KeyboardClickerModule implements Module {
     @Override
     public void resetState() {
         resetInput();
+        goldAdaptDone = false;   // 断线/退出 = 一局结束，才允许下一局重新适配
         lastNewGameRoundStartMs = 0L;
     }
 
