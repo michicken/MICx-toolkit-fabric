@@ -1157,12 +1157,12 @@ public final class AimbotRules {
             return new BruteChainPick(ids[0], yaw[0], dir, limit, true);
         }
         double reference = cursor;
-        // 2) 本方向的最近邻接怪
-        int hop = nearestChainNeighbor(yaw, reference, dir, chainDeg);
+        // 2) 本方向的最近邻接怪（显式排除当前目标自己——它移动后夹角不再是 0）
+        int hop = nearestChainNeighbor(ids, yaw, heldId, reference, dir, chainDeg);
         int usedDir = dir;
         if (hop < 0) {
             // 3) 本方向到头 → 翻向再来一次（从右到左 ↔ 从左到右）
-            hop = nearestChainNeighbor(yaw, reference, -dir, chainDeg);
+            hop = nearestChainNeighbor(ids, yaw, heldId, reference, -dir, chainDeg);
             usedDir = -dir;
         }
         if (hop >= 0) {
@@ -1189,14 +1189,21 @@ public final class AimbotRules {
      * 指定方向上的最近邻接怪：夹角（{@link #angleDelta}，MC 里 yaw 增大 = 向右）必须落在
      * 该方向且绝对值 ≤ {@code chainDeg}，取夹角最小的那只。
      *
+     * <p><b>必须显式排除当前目标</b>（{@code heldId}）：{@code reference} 是它<b>上一 tick</b>
+     * 的瞄点 yaw，而池内该目标本 tick 的 yaw 会随移动变化——只靠「夹角不为 0 就不是自己」
+     * 会让移动中的当前目标通过方向过滤，成为「方向侧最近邻」，hop 回自己
+     * （{@code moved=true} 空转、停留计时被刷新），表现为扫射锁死到目标死亡才换下一只
+     * （0.2.117 实机回归，诊断测得连续 tick 全部 hop 回自己）。
+     *
      * @return 池内下标；没有邻接怪返回 -1
      */
-    private static int nearestChainNeighbor(double[] yaw, double reference,
+    private static int nearestChainNeighbor(int[] ids, double[] yaw, int heldId, double reference,
                                             int direction, double chainDeg) {
         if (!Double.isFinite(reference) || !(chainDeg > 0.0)) return -1;
         double best = Double.MAX_VALUE;
         int bestIdx = -1;
         for (int i = 0; i < yaw.length; i++) {
+            if (ids != null && i < ids.length && ids[i] == heldId) continue;
             if (!Double.isFinite(yaw[i])) continue;
             double delta = angleDelta(reference, yaw[i]);
             if (direction < 0 ? delta >= 0.0 : delta <= 0.0) continue;

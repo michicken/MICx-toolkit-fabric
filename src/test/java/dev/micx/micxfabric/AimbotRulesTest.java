@@ -519,6 +519,46 @@ class AimbotRulesTest {
     }
 
     @Test
+    void bruteChainNeverHopsBackToTheMovedCurrentTarget() {
+        // 0.2.117 实机回归根因：curYaw 是上一 tick 的瞄点，池内当前目标的 yaw 本 tick 已经变了。
+        // 旧代码只靠「夹角不为 0」排除自己 → 移动中的当前目标成了「本方向最近邻」，
+        // hop 回自己（moved=true 空转、停留计时被刷新），扫射锁死到目标死亡才换下一只。
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-5.0, -2.0, 15.0};   // 11 本 tick 从 -20° 移到 -5°（已经跑到 22 左边）
+        AimbotRules.BruteChainPick pick = AimbotRules.bruteChainDecision(ids, yaw,
+                11, -20.0, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 5_000L, 0L, 100);
+        assertEquals(22, pick.entityId(), "必须换到方向侧的另一只，不能 hop 回自己");
+        assertTrue(pick.moved());
+    }
+
+    @Test
+    void bruteChainRotatesTargetsAcrossATickLoopWhileEveryoneMoves() {
+        // 每 tick 全池各偏 0.5°（模拟真实移动）+ 每 50ms 一次决策 + 40ms 停留：
+        // 期望固定轮转 11→22→33→22→11→22（从左到右再翻向），而不是一直锁同一只。
+        int[] ids = {11, 22, 33};
+        double[] base = {-20.0, -2.0, 15.0};
+        int held = -1;
+        double curYaw = Double.NaN;
+        int dir = AimbotRules.BRUTE_DIR_RIGHT;
+        long holdUntil = 0L;
+        long now = 1_000L;
+        StringBuilder trace = new StringBuilder();
+        for (int tick = 0; tick < 6; tick++) {
+            double[] yaw = new double[base.length];
+            for (int i = 0; i < base.length; i++) yaw[i] = base[i] + 0.5 * tick;
+            AimbotRules.BruteChainPick pick = AimbotRules.bruteChainDecision(ids, yaw,
+                    held, curYaw, dir, 45.0, now, holdUntil, 40);
+            trace.append(pick.entityId()).append(' ');
+            held = pick.entityId();
+            curYaw = pick.yaw();
+            dir = pick.direction();
+            holdUntil = pick.holdUntilMs();
+            now += 50L;
+        }
+        assertEquals("11 22 33 22 11 22 ", trace.toString());
+    }
+
+    @Test
     void bruteChainHandlesWrapAroundAndDegenerateInput() {
         // 跨 0°/360°：参考 350°，右侧（yaw 递增）15° 处的怪夹角是 25°
         AimbotRules.BruteChainPick wrapped = AimbotRules.bruteChainDecision(
