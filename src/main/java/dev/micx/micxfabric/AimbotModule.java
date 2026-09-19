@@ -513,7 +513,7 @@ public final class AimbotModule implements Module {
         int previous = lockedTargetId;
         lockedTargetId = best.entity.getId();
         lastLockedDir = direction(eye, best.point);
-        lockSourceLabel = best.entity instanceof IronGolem ? "G"
+        lockSourceLabel = best.entity instanceof IronGolem ? golemLabel(lockedTargetId)
                 : WindowSpawnCounterModule.instance().birthWindowIdOf(lockedTargetId);
         if (previous != lockedTargetId && config.joystick) {
             joyYawOff = 0.0;
@@ -686,20 +686,23 @@ public final class AimbotModule implements Module {
             if (highAbove) {
                 group = Math.min(group, AimbotRules.GROUP_HIGH_ABOVE);
             }
-            // 窗优先（AA 局内生效）：出生窗归档（含 UFO 口 = MID）+ 模式锚点傀儡 → 六档 rank。
+            // 窗优先（AA 局内生效）：出生窗归档（含 UFO 口 = MID）+ 出生点傀儡标（RC-G/ULT-G/
+            // ENT-G1/G2，2026-09-19 实测定稿）→ 六档 rank。锚点半径只作未打标傀儡的兜底。
             // 窗怪档压过类型忽略：P2 的 TOO/Baby 也是窗怪（先清窗的语义优先于「别打它」）。
             String windowId = null;
+            String golemTag = null;
             boolean golemInAnchor = false;
             boolean modeGiant = false;
             if (wpActive) {
                 windowId = WindowSpawnCounterModule.instance().birthWindowIdOf(living.getId());
+                golemTag = golem ? WindowSpawnCounterModule.instance().golemTagOf(living.getId()) : null;
                 golemInAnchor = golem
                         && AimbotRules.withinGolemAnchor(wpAnchor, living.getX(), living.getZ());
                 // P5+MID 默认优先打巨人；选了 Clown 优先就不抢（Clown 自带巨人降档，2026-09-19 定稿）。
                 modeGiant = wpMode == AimbotRules.WP_P5 && giant && !c.prioClown;
             }
             // baby 走 typeIgnored 忽略档；demoted 档只剩高处怪与 Clown 模式巨人（group<0 且非 baby）。
-            int rank = AimbotRules.priorityRank(wpMode, windowId, modeGiant, golemInAnchor,
+            int rank = AimbotRules.priorityRank(wpMode, windowId, golemTag, modeGiant, golemInAnchor,
                     group < 0 && !baby, typeIgnored);
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
                     Math.sqrt(distSq), windowId, rank));
@@ -900,13 +903,18 @@ public final class AimbotModule implements Module {
         int size = scored.size();
         int[] ids = new int[size];
         double[] yaw = new double[size];
+        long[] gateUntil = new long[size];
+        int wpMode = AimbotRules.isWindowPriorityMode(config.windowPriorityMode)
+                ? config.windowPriorityMode : AimbotRules.WP_OFF;
         for (int i = 0; i < size; i++) {
             ids[i] = scored.get(i).entity.getId();
             yaw[i] = calculateYawPitch(eye, scored.get(i).point)[0];
+            gateUntil[i] = sweepGateEnd(wpMode, ids[i]);
         }
         AimbotRules.BruteChainPick pick = AimbotRules.bruteChainDecision(ids, yaw,
                 bruteSweepHeldId, bruteSweepCurYaw, bruteSweepDirection,
-                config.bruteSweepChainDeg, now, bruteSweepHoldUntilMs, config.bruteSweepDwellMs);
+                config.bruteSweepChainDeg, now, bruteSweepHoldUntilMs, config.bruteSweepDwellMs,
+                gateUntil);
         if (pick.entityId() < 0) {
             // 链断且当前目标已不在池内（死亡/被挡）→ 回落到普通最优选择，下一帧从它起链。
             resetBruteSweep();
@@ -944,6 +952,25 @@ public final class AimbotModule implements Module {
         bruteSweepCurYaw = Double.NaN;
         bruteSweepDirection = AimbotRules.BRUTE_DIR_RIGHT;
         bruteSweepHoldUntilMs = 0L;
+    }
+
+    /**
+     * 出生扫射门控截止（毫秒）：该怪是该模式锁定的窗怪且在出生门控期内 →
+     * 出生时刻 + 门控时长；其余（傀儡/普通怪/其他窗）返回 0 = 不门控。
+     * 用户定稿 2026-09-19：P234 的 P2/P3/P4 怪出生 3 秒内不扫射、P1+ULT 的 P1/ULT 怪 2 秒。
+     */
+    private long sweepGateEnd(int wpMode, int entityId) {
+        WindowSpawnCounterModule wsc = WindowSpawnCounterModule.instance();
+        int gate = AimbotRules.sweepGateMs(wpMode, wsc.birthWindowIdOf(entityId));
+        if (gate <= 0) return 0L;
+        long birth = wsc.birthMsOf(entityId);
+        return birth > 0L ? birth + gate : 0L;
+    }
+
+    /** HUD 锁源标签：打标的傀儡显示标（RC-G/ULT-G/ENT-G1/G2），未打标显示 "G"。 */
+    private static String golemLabel(int entityId) {
+        String tag = WindowSpawnCounterModule.instance().golemTagOf(entityId);
+        return tag != null ? tag : "G";
     }
 
     /** Humanized target choice: sweep the crosshair cone instead of pinning one entity forever. */

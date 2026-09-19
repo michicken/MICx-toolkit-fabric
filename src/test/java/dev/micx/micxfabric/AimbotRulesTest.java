@@ -1132,6 +1132,109 @@ class AimbotRulesTest {
     }
 
     @Test
+    void golemTagsCoverTheFourRealSpawnPoints() {
+        // 4 个固定刷点（18 359 条 mob_spawn 全量统计，2026-09-19）全部命中，且互不串标。
+        assertEquals(AimbotRules.GOLEM_TAG_ULT, AimbotRules.golemTagFor(20.5, 19.5));
+        assertEquals(AimbotRules.GOLEM_TAG_RC, AimbotRules.golemTagFor(-19.5, 30.5));
+        assertEquals(AimbotRules.GOLEM_TAG_ENT1, AimbotRules.golemTagFor(-9.5, 4.5));
+        assertEquals(AimbotRules.GOLEM_TAG_ENT2, AimbotRules.golemTagFor(0.5, -7.5));
+        // 容差 3 格：圈内命中、圈外不命中（坐标同步有误差时仍要打上标）。
+        assertEquals(AimbotRules.GOLEM_TAG_ULT, AimbotRules.golemTagFor(20.5, 19.5 - 2.9));
+        assertNull(AimbotRules.golemTagFor(20.5, 19.5 - 3.1));
+        // 窗外零散出生的傀儡（百余条记录）不打标。
+        assertNull(AimbotRules.golemTagFor(0.0, 0.0));
+        assertNull(AimbotRules.golemTagFor(-22.0, 16.0));
+    }
+
+    @Test
+    void p234LadderPutsRcGolemAboveWindowsAndEntGolems() {
+        // ① RC-G 傀儡压过窗怪
+        assertEquals(AimbotRules.RANK_MODE_GIANT, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, AimbotRules.GOLEM_TAG_RC, false, false, false, false));
+        // ② 窗怪
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, "P3", null, false, false, false, false));
+        // ③ ENT-G1/G2 傀儡（窗怪清完才轮到）
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, AimbotRules.GOLEM_TAG_ENT1, false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, AimbotRules.GOLEM_TAG_ENT2, false, false, false, false));
+        // 别的模式的标在 P234 里不产生优先档
+        assertEquals(AimbotRules.RANK_DEMOTED, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, AimbotRules.GOLEM_TAG_ULT, false, false, true, false));
+        // 锚点兜底仍在：未打标但落在 P4 r15 圈里 → 与 ENT-G 同档
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, null, null, false, true, false, false));
+    }
+
+    @Test
+    void p1uLadderPutsUltGolemBelowItsWindows() {
+        // 窗怪（P1/ULT）优先于 ULT-G 傀儡
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P1_ULT, "P1", null, false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P1_ULT, "ULT", null, false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW_GOLEM, AimbotRules.priorityRank(
+                AimbotRules.WP_P1_ULT, null, AimbotRules.GOLEM_TAG_ULT, false, false, false, false));
+        // RC-G / ENT-G 在 P1+ULT 里不参与优先档
+        assertEquals(AimbotRules.RANK_DEMOTED, AimbotRules.priorityRank(
+                AimbotRules.WP_P1_ULT, null, AimbotRules.GOLEM_TAG_RC, false, false, true, false));
+        // P5+MID 不受傀儡标影响（它只有巨人档 + 窗怪档）
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "MID", AimbotRules.GOLEM_TAG_ULT, false, false, false, false));
+    }
+
+    @Test
+    void sweepGateOnlyAppliesToTheModesOwnWindowMobs() {
+        // P234：P2/P3/P4 怪 3 秒
+        assertEquals(3000, AimbotRules.sweepGateMs(AimbotRules.WP_P234, "P2"));
+        assertEquals(3000, AimbotRules.sweepGateMs(AimbotRules.WP_P234, "P3"));
+        assertEquals(3000, AimbotRules.sweepGateMs(AimbotRules.WP_P234, "P4"));
+        // P1+ULT：P1/ULT 怪 2 秒
+        assertEquals(2000, AimbotRules.sweepGateMs(AimbotRules.WP_P1_ULT, "P1"));
+        assertEquals(2000, AimbotRules.sweepGateMs(AimbotRules.WP_P1_ULT, "ULT"));
+        // 其他任何东西都不门控（用户口径：仅限于对应的窗怪，其他怪不受影响）
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_P234, "P5"));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_P234, "MID"));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_P234, null));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_P1_ULT, "ULT-G"));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_P5, "P5"));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_ALT, "ALT"));
+        assertEquals(0, AimbotRules.sweepGateMs(AimbotRules.WP_OFF, "P2"));
+    }
+
+    @Test
+    void bruteChainHoldsAWindowMobThroughItsBirthGate() {
+        int[] ids = {11, 22, 33};
+        double[] yaw = {-20.0, -2.0, 15.0};
+        // 22 是刚出窗的怪：出生门控到 5000ms，dwell 100ms 早已到期 → 仍然保持 22（不扫射）
+        long[] gate = {0L, 5000L, 0L};
+        AimbotRules.BruteChainPick held = AimbotRules.bruteChainDecision(ids, yaw,
+                22, -2.0, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 1_000L, 1_000L, 100, gate);
+        assertEquals(22, held.entityId());
+        assertFalse(held.moved());
+        assertEquals(5_000L, held.holdUntilMs(), "门控把保持截止抬到出生 3 秒后");
+        // 门控一过 → 立刻恢复按 dwell 轮转
+        AimbotRules.BruteChainPick hop = AimbotRules.bruteChainDecision(ids, yaw,
+                22, -2.0, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 5_000L, 5_000L, 100, gate);
+        assertEquals(33, hop.entityId());
+        assertTrue(hop.moved());
+        assertEquals(5_100L, hop.holdUntilMs());
+        // 切到的新目标自己带门控 → 它的保持截止同样被抬起（刚出窗的那只被咬住打完）
+        long[] gateOnNext = {0L, 0L, 6_000L};
+        AimbotRules.BruteChainPick gated = AimbotRules.bruteChainDecision(ids, yaw,
+                22, -2.0, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 5_000L, 5_000L, 100, gateOnNext);
+        assertEquals(33, gated.entityId());
+        assertEquals(6_000L, gated.holdUntilMs());
+        // 没有门控的池子行为不变（等价旧签名）
+        AimbotRules.BruteChainPick plain = AimbotRules.bruteChainDecision(ids, yaw,
+                22, -2.0, AimbotRules.BRUTE_DIR_RIGHT, 45.0, 5_000L, 5_000L, 100,
+                new long[]{0L, 0L, 0L});
+        assertEquals(33, plain.entityId());
+        assertEquals(5_100L, plain.holdUntilMs());
+    }
+
+    @Test
     void priorityRankOrdersWindowsAboveGolemsAboveIgnored() {
         // P5+MID 模式巨人档（默认优先；Clown 开启时调用方传 false）压过窗怪与一切。
         assertEquals(AimbotRules.RANK_MODE_GIANT, AimbotRules.priorityRank(

@@ -147,6 +147,16 @@ public final class WindowSpawnCounterModule implements Module {
     };
     /** UFO（MID）出生的归档值：不是 WINDOWS index，{@link #birthWindowIdOf} 会转成 "MID"。 */
     public static final int BIRTH_WINDOW_MID = -2;
+    // 出生时刻归档（entityId -> 出生毫秒）：SR 扫射门控用——P234 窗怪出生 3s 内不扫射、
+    // P1+ULT 2s（用户定稿 2026-09-19，只对本人模式锁定的窗怪生效）。
+    private final java.util.Map<Integer, Long> birthMsById = new java.util.LinkedHashMap<Integer, Long>() {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Long> e) { return size() > 512; }
+    };
+    // 出生傀儡打标（entityId -> "ULT-G"/"RC-G"/"ENT-G1"/"ENT-G2"）：4 个固定刷点（AimbotRules
+    // 全量日志实测）在 AA 局内出生即打标，随怪存活，傀儡走远也不掉档。查不到 = 未打标。
+    private final java.util.Map<Integer, String> golemTagById = new java.util.LinkedHashMap<Integer, String>() {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Integer, String> e) { return size() > 128; }
+    };
     // 本回合有 TOO 的窗
     private final boolean[] hasToo = new boolean[WINDOWS.size()];
     // TOO IN 列表：本回合内去重窗，TTL 3 波
@@ -272,8 +282,24 @@ public final class WindowSpawnCounterModule implements Module {
         return val >= 0 && val < WINDOWS.size() ? WINDOWS.get(val).id : null;
     }
 
+    /** entityId → 出生毫秒（AA 局内出生归档）；查不到返回 0（未归档/非 AA 局）。 */
+    public long birthMsOf(int entityId) {
+        Long ms = birthMsById.get(entityId);
+        return ms != null ? ms : 0L;
+    }
+
+    /** entityId → 出生傀儡标（"ULT-G"/"RC-G"/"ENT-G1"/"ENT-G2"）；未打标返回 null。 */
+    public String golemTagOf(int entityId) {
+        return golemTagById.get(entityId);
+    }
+
     public void onEntitiesRemoved(int[] ids) {
-        for (int id : ids) { birthPosById.remove(id); birthWindowById.remove(id); }
+        for (int id : ids) {
+            birthPosById.remove(id);
+            birthWindowById.remove(id);
+            birthMsById.remove(id);
+            golemTagById.remove(id);
+        }
         // 清理已死亡的 session 的 birthPos 也在 tick 中处理
     }
 
@@ -353,6 +379,12 @@ public final class WindowSpawnCounterModule implements Module {
                 double bx0 = bp0 != null ? bp0.x : entity.getX();
                 double by0 = bp0 != null ? bp0.y : entity.getY();
                 double bz0 = bp0 != null ? bp0.z : entity.getZ();
+                birthMsById.put(entity.getId(), System.currentTimeMillis());
+                if (entity instanceof IronGolem) {
+                    // 铁傀儡：出生点落在 4 个固定刷点容差内就打标（RC-G/ULT-G/ENT-G1/ENT-G2）。
+                    String tag = AimbotRules.golemTagFor(bx0, bz0);
+                    if (tag != null) golemTagById.put(entity.getId(), tag);
+                }
                 if (!isPracticeDummy(le, bx0, bz0)) {
                     int wIdx0 = windowIndexForBirth(bx0, by0, bz0);
                     if (wIdx0 >= 0) {

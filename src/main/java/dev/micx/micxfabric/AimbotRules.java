@@ -1128,16 +1128,37 @@ public final class AimbotRules {
                                                     int heldId, double curYaw, int direction,
                                                     double chainDeg,
                                                     long nowMs, long holdUntilMs, int dwellMs) {
+        return bruteChainDecision(ids, yaw, heldId, curYaw, direction, chainDeg,
+                nowMs, holdUntilMs, dwellMs, null);
+    }
+
+    /**
+     * 带「出生门控」的链式扫射决策：{@code gateUntilMs[i]} 是池内第 i 只的<b>最低保持截止</b>
+     * （出生后 N 秒内不扫射 = 集火同一只，见 {@link #sweepGateMs}），0 = 无门控。
+     *
+     * <p>语义与基础版完全一致，只在两个点上抬高保持截止：
+     * ① 保持当前目标时按门控延长；② 切到新目标后，它的停留截止至少到自己的门控结束。
+     * 因此刚出窗的那一只会被咬住打完，门控一过立刻恢复按 dwell 轮转——
+     * 池内其他没有门控的怪完全不受影响。
+     */
+    public static BruteChainPick bruteChainDecision(int[] ids, double[] yaw,
+                                                    int heldId, double curYaw, int direction,
+                                                    double chainDeg,
+                                                    long nowMs, long holdUntilMs, int dwellMs,
+                                                    long[] gateUntilMs) {
         int dir = direction < 0 ? BRUTE_DIR_LEFT : BRUTE_DIR_RIGHT;
         if (ids == null || yaw == null || ids.length == 0 || ids.length != yaw.length) {
             return BRUTE_CHAIN_NONE;
         }
-        // 1) 保持：当前目标仍在池内、停留保护未到期 → 不换目标（不换 = 不停顿）
-        if (heldId >= 0 && nowMs < holdUntilMs) {
+        // 1) 保持：当前目标仍在池内、停留保护（或出生门控）未到期 → 不换目标（不换 = 不停顿）
+        if (heldId >= 0) {
             for (int i = 0; i < ids.length; i++) {
-                if (ids[i] == heldId) {
-                    return new BruteChainPick(heldId, yaw[i], dir, holdUntilMs, false);
+                if (ids[i] != heldId) continue;
+                long until = Math.max(holdUntilMs, gateAt(gateUntilMs, i));
+                if (nowMs < until) {
+                    return new BruteChainPick(heldId, yaw[i], dir, until, false);
                 }
+                break;
             }
             // 目标已不在池内（死亡 / 被挡 / 移出）→ 立刻续链，不等停留保护到期
         }
@@ -1154,7 +1175,8 @@ public final class AimbotRules {
         if (cursor == null) {
             // 首次进入扫射（heldId=-1、curYaw=NaN）或游标损坏：从池首起链（调用方已按优先级排序），
             // 并把游标立起来，之后正常推进。
-            return new BruteChainPick(ids[0], yaw[0], dir, limit, true);
+            long until = Math.max(limit, gateAt(gateUntilMs, 0));
+            return new BruteChainPick(ids[0], yaw[0], dir, until, true);
         }
         double reference = cursor;
         // 2) 本方向的最近邻接怪（显式排除当前目标自己——它移动后夹角不再是 0）
@@ -1166,14 +1188,31 @@ public final class AimbotRules {
             usedDir = -dir;
         }
         if (hop >= 0) {
-            return new BruteChainPick(ids[hop], yaw[hop], usedDir, limit, true);
+            long until = Math.max(limit, gateAt(gateUntilMs, hop));
+            return new BruteChainPick(ids[hop], yaw[hop], usedDir, until, true);
         }
         // 4) 两个方向都没有邻接怪 → 停住锁当前（当前还在池内才留得住）
         if (heldId >= 0 && yawOf(ids, yaw, heldId) != null) {
             long until = nowMs < holdUntilMs ? holdUntilMs : limit;
+            until = Math.max(until, gateAt(gateUntilMs, indexOf(ids, heldId)));
             return new BruteChainPick(heldId, reference, dir, until, false);
         }
         return BRUTE_CHAIN_NONE;
+    }
+
+    /** 池内第 i 只的出生门控截止；数组缺失或下标越界按「无门控」处理。 */
+    private static long gateAt(long[] gateUntilMs, int index) {
+        if (gateUntilMs == null || index < 0 || index >= gateUntilMs.length) return 0L;
+        return gateUntilMs[index];
+    }
+
+    /** 池内下标；不在池内返回 -1。 */
+    private static int indexOf(int[] ids, int entityId) {
+        if (entityId < 0) return -1;
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == entityId) return i;
+        }
+        return -1;
     }
 
     /** 池内的瞄点 yaw；不在池内返回 {@code null}。 */
@@ -1267,12 +1306,89 @@ public final class AimbotRules {
      * 模式对应的铁傀儡锚点 {@code {x, z, radius}}（水平距离判定）；该模式无傀儡目标返回 null。
      * 锚点即对应窗位坐标（与 {@link WindowSpawnCounterModule#WINDOWS} 同值）：
      * P234 → P4(-10,-6) r15；P1+ULT → P5(22,14) r10（用户 2026-09-19 口径，原 ULT(28,32)）。
+     *
+     * <p><b>2026-09-19 起只作兜底</b>：主判定改为出生点打标（{@link #golemTagFor}），锚点半径
+     * 只负责「没打到标但落在圈里」的傀儡——因为半径按<b>当前坐标</b>判，傀儡一走就出圈。
      */
     public static double[] golemAnchor(int mode) {
         return switch (mode) {
             case WP_P234 -> new double[]{-10.0, -6.0, 15.0};
             case WP_P1_ULT -> new double[]{22.0, 14.0, 10.0};
             default -> null;
+        };
+    }
+
+    /* ==================== 铁傀儡刷点打标（2026-09-19 实测定稿） ==================== */
+
+    /**
+     * 铁傀儡固定刷怪点 → 标签。来源：<code>~/.micx/zombies/AA_*.ndjson</code> 全量 18 359 条
+     * {@code mob_spawn} 记录，只有 4 个坐标稳定出现（各约 4 550 次，y=71），其余零散记录共百余条。
+     * 出生瞬间按坐标打标、随怪存活（见 WindowSpawnCounterModule），傀儡走多远都算同一个标，
+     * 不再受「锚点半径按当前坐标判」的牵引绳限制。
+     */
+    public static final String GOLEM_TAG_RC = "RC-G";
+    public static final String GOLEM_TAG_ULT = "ULT-G";
+    public static final String GOLEM_TAG_ENT1 = "ENT-G1";
+    public static final String GOLEM_TAG_ENT2 = "ENT-G2";
+
+    /** 出生点容差（格）；刷点坐标固定，3 格足够吸收同步误差。 */
+    public static final double GOLEM_TAG_TOLERANCE = 3.0;
+
+    private static final double[][] GOLEM_SPAWN_POINTS = {
+            { 20.5,  19.5},   // ULT-G   靠近 P5 窗 (22,14) 5.7 格
+            {-19.5,  30.5},   // RC-G    靠近 CL 窗 (-28,28) 8.9 格
+            { -9.5,   4.5},   // ENT-G1  距 P4 (-10,-6) 10.5 格
+            {  0.5,  -7.5},   // ENT-G2  距 P4 (-10,-6) 10.6 格
+    };
+    private static final String[] GOLEM_SPAWN_TAGS = {
+            GOLEM_TAG_ULT, GOLEM_TAG_RC, GOLEM_TAG_ENT1, GOLEM_TAG_ENT2,
+    };
+
+    /** 出生坐标 → 铁傀儡标签；不在任何固定刷点容差内返回 null（含 y 不参与判定）。 */
+    public static String golemTagFor(double x, double z) {
+        for (int i = 0; i < GOLEM_SPAWN_POINTS.length; i++) {
+            double dx = x - GOLEM_SPAWN_POINTS[i][0];
+            double dz = z - GOLEM_SPAWN_POINTS[i][1];
+            if (dx * dx + dz * dz <= GOLEM_TAG_TOLERANCE * GOLEM_TAG_TOLERANCE) {
+                return GOLEM_SPAWN_TAGS[i];
+            }
+        }
+        return null;
+    }
+
+    /** 该模式的最高档傀儡：P234 的 RC-G（用户定稿 2026-09-19：RC-G 先于窗怪）。 */
+    public static boolean isTopGolem(int mode, String golemTag) {
+        return mode == WP_P234 && GOLEM_TAG_RC.equals(golemTag);
+    }
+
+    /**
+     * 该模式的次高档傀儡（窗怪清完才轮到）：P234 = ENT-G1/ENT-G2；P1+ULT = ULT-G。
+     * {@code golemInAnchor}（落在模式锚点圈内）作为未打标傀儡的兜底。
+     */
+    public static boolean isWindowGolem(int mode, String golemTag, boolean golemInAnchor) {
+        if (golemInAnchor) return true;
+        if (golemTag == null) return false;
+        return switch (mode) {
+            case WP_P234 -> GOLEM_TAG_ENT1.equals(golemTag) || GOLEM_TAG_ENT2.equals(golemTag);
+            case WP_P1_ULT -> GOLEM_TAG_ULT.equals(golemTag);
+            default -> false;
+        };
+    }
+
+    /**
+     * 出生后「不扫射」门控时长（毫秒）：只对被该模式锁定的窗怪生效，其他怪一律 0。
+     * 用户定稿 2026-09-19：P234 的 P2/P3/P4 怪出生 3 秒内集火不换目标、之后恢复扫射；
+     * P1+ULT 的 P1/ULT 怪同样 2 秒。傀儡/普通怪/其他窗不受影响。
+     */
+    public static final int SWEEP_GATE_P234_MS = 3000;
+    public static final int SWEEP_GATE_P1U_MS = 2000;
+
+    public static int sweepGateMs(int mode, String windowId) {
+        if (windowId == null || !priorityWindows(mode).contains(windowId)) return 0;
+        return switch (mode) {
+            case WP_P234 -> SWEEP_GATE_P234_MS;
+            case WP_P1_ULT -> SWEEP_GATE_P1U_MS;
+            default -> 0;
         };
     }
 
@@ -1315,21 +1431,39 @@ public final class AimbotRules {
     }
 
     /**
+     * 单只怪的档位判定（collectCandidates 每怪一次）。旧签名（无傀儡标）保留给历史用例，
+     * 等价于「打标未知」。
+     */
+    public static int priorityRank(int mode, String windowId, boolean modeGiant,
+                                   boolean golemInAnchor, boolean demotedGroup,
+                                   boolean typeIgnored) {
+        return priorityRank(mode, windowId, null, modeGiant, golemInAnchor, demotedGroup, typeIgnored);
+    }
+
+    /**
      * 单只怪的档位判定（collectCandidates 每怪一次）。
+     *
+     * <p>档位内容随模式变化（用户定稿 2026-09-19）：
+     * <ul>
+     *   <li><b>P234</b>：① RC-G 傀儡 ② P2/P3/P4 窗怪 ③ ENT-G1/ENT-G2 傀儡（+ P4 圈内未打标傀儡）；</li>
+     *   <li><b>P1+ULT</b>：① P1/ULT 窗怪 ② ULT-G 傀儡（+ P5 圈内未打标傀儡）；</li>
+     *   <li><b>P5+MID</b>：① 巨人（prioClown 开启时不打此标）② P5/MID 窗怪。</li>
+     * </ul>
      *
      * @param mode           窗优先模式（{@code WP_OFF} 时窗/傀儡/模式巨人档不参与）
      * @param windowId       出生窗 id（AA 归档口径，含 "MID"；null = 未归档/窗外出生）
+     * @param golemTag       出生点打标（{@link #golemTagFor}，null = 未打标）
      * @param modeGiant      P5+MID 模式默认优先的巨人（prioClown 开启时调用方须传 false）
      * @param golemInAnchor  铁傀儡且落在模式锚点半径内（模式关闭时调用方须传 false）
      * @param demotedGroup   现有 group &lt; 0 且非 baby（高处怪 / Clown 模式巨人）
      * @param typeIgnored    baby / ignoreToo/ignoreGolem/ignoreSlime 命中
      */
-    public static int priorityRank(int mode, String windowId, boolean modeGiant,
+    public static int priorityRank(int mode, String windowId, String golemTag, boolean modeGiant,
                                    boolean golemInAnchor, boolean demotedGroup,
                                    boolean typeIgnored) {
-        if (modeGiant) return RANK_MODE_GIANT;
+        if (modeGiant || isTopGolem(mode, golemTag)) return RANK_MODE_GIANT;
         if (mode != WP_OFF && windowId != null && priorityWindows(mode).contains(windowId)) return RANK_WINDOW;
-        if (golemInAnchor) return RANK_WINDOW_GOLEM;
+        if (isWindowGolem(mode, golemTag, golemInAnchor)) return RANK_WINDOW_GOLEM;
         if (demotedGroup) return RANK_DEMOTED;
         if (typeIgnored) return RANK_IGNORED;
         return RANK_NORMAL;

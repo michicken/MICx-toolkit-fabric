@@ -192,7 +192,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 AimbotRules.windowPriorityName(c.windowPriorityMode),
                 () -> c.windowPriorityMode = (c.windowPriorityMode + 1) % (AimbotRules.WP_ALT + 1),
                 y,
-                "专打指定出生点出来的怪（点击循环：Off → P2+P3+P4 → P5+MID → P1+ULT → ALT；HUD 简写 P234/P5M/P1U/ALT）。仅 Alien Arcadium 生效。六档选靶：① P5+MID 默认优先巨人（选了 Clown 优先就不抢，巨人按 Clown 规则降末位）② SR 窗怪（P5+MID=P5 窗+UFO 4 口 MID 怪）③ SR 铁傀儡（P234=P4 点 15 格内 / P1+ULT=P5 点 10 格内）④ 普通怪 ⑤ 降级（高处怪/Clown 模式巨人）⑥ 忽略（baby/TOO/傀儡/史莱姆，最后可打）。窗怪没清完绝不锁窗外的怪；被墙挡光先打其他怪，露头自动切回。可用快捷键（下方）按一下循环切换，HUD 实时显示当前模式。");
+                "专打指定出生点出来的怪（点击循环：Off → P2+P3+P4 → P5+MID → P1+ULT → ALT；HUD 简写 P234/P5M/P1U/ALT）。仅 Alien Arcadium 生效。六档选靶：① 最高档（P5+MID 的巨人 / P234 的 RC-G 傀儡）② 本模式窗怪（P5+MID=P5 窗+UFO 4 口 MID，P1+ULT=P1/ULT 窗）③ 本模式傀儡（P234=ENT-G1/ENT-G2，P1+ULT=ULT-G；另保留锚点圈兜底）④ 普通怪 ⑤ 降级（高处怪/Clown 模式巨人）⑥ 忽略（baby/TOO/傀儡/史莱姆，最后可打）。铁傀儡按出生点打标（4 个固定刷点：RC-G/ULT-G/ENT-G1/ENT-G2，出生即打标、随怪存活不掉档）。扫射门控：P234 的 P2/P3/P4 怪出生 3 秒内不扫射（集火同一只）、P1+ULT 的 P1/ULT 怪 2 秒，之后恢复扫射；其他怪不受影响。窗怪没清完绝不锁窗外的怪；被墙挡光先打其他怪，露头自动切回。可用快捷键（下方）按一下循环切换，HUD 实时显示当前模式。");
         y = keyRow(graphics, mouseX, mouseY, "SR 模式快捷键 / SR Mode Key", c::getSrModeKey,
                 c::setSrModeKey, y, "绑定后按一下切到下一个 SR 模式（Off → P234 → P5M → P1U → ALT → Off 循环），聊天栏与 Aimbot HUD 实时显示当前模式。");
         y = toggleRow(graphics, mouseX, mouseY, "近身威胁 / Threat", c.threatEnabled,
