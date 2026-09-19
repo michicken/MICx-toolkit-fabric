@@ -1097,10 +1097,10 @@ class AimbotRulesTest {
                 AimbotRules.priorityWindows(AimbotRules.WP_P1_ULT));
         assertEquals(java.util.Set.of("ALT"), AimbotRules.priorityWindows(AimbotRules.WP_ALT));
 
-        // 傀儡锚点：P234 → P4(-10,-6) r15；P1+ULT → ULT(28,32) r10；P5/ALT/关 → 无。
+        // 傀儡锚点：P234 → P4(-10,-6) r15；P1+ULT → P5(22,14) r10（原 ULT 点，2026-09-19 改）；P5/ALT/关 → 无。
         assertArrayEquals(new double[]{-10.0, -6.0, 15.0},
                 AimbotRules.golemAnchor(AimbotRules.WP_P234), 1.0e-9);
-        assertArrayEquals(new double[]{28.0, 32.0, 10.0},
+        assertArrayEquals(new double[]{22.0, 14.0, 10.0},
                 AimbotRules.golemAnchor(AimbotRules.WP_P1_ULT), 1.0e-9);
         assertNull(AimbotRules.golemAnchor(AimbotRules.WP_P5));
         assertNull(AimbotRules.golemAnchor(AimbotRules.WP_ALT));

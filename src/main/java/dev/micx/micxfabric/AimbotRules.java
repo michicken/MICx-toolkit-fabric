@@ -1225,7 +1225,7 @@ public final class AimbotRules {
     public static final int WP_P234 = 1;
     /** P5+MID 窗怪（P5 窗 + UFO 4 口 MID，2026-09-19 扩展）+ 默认优先巨人（Clown 开关压过）。 */
     public static final int WP_P5 = 2;
-    /** P1+ULT 窗怪 + ULT 点 10 格内铁傀儡。 */
+    /** P1+ULT 窗怪 + P5 点 10 格内铁傀儡（用户 2026-09-19 改口径：原为 ULT 点）。 */
     public static final int WP_P1_ULT = 3;
     /** 仅 ALT 窗怪。 */
     public static final int WP_ALT = 4;
@@ -1265,12 +1265,13 @@ public final class AimbotRules {
 
     /**
      * 模式对应的铁傀儡锚点 {@code {x, z, radius}}（水平距离判定）；该模式无傀儡目标返回 null。
-     * 半径为用户定稿口径：ULT 10 格、P4 15 格。
+     * 锚点即对应窗位坐标（与 {@link WindowSpawnCounterModule#WINDOWS} 同值）：
+     * P234 → P4(-10,-6) r15；P1+ULT → P5(22,14) r10（用户 2026-09-19 口径，原 ULT(28,32)）。
      */
     public static double[] golemAnchor(int mode) {
         return switch (mode) {
             case WP_P234 -> new double[]{-10.0, -6.0, 15.0};
-            case WP_P1_ULT -> new double[]{28.0, 32.0, 10.0};
+            case WP_P1_ULT -> new double[]{22.0, 14.0, 10.0};
             default -> null;
         };
     }
