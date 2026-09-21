@@ -3,6 +3,7 @@ package dev.micx.micxfabric.jev;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.micx.micxfabric.ChatMessageStyles;
 import dev.micx.micxfabric.FabricRuntime;
@@ -15,6 +16,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -40,6 +45,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Human-demonstration recorder for semantic Zombies points of interest. It never replays actions. */
 public final class JevPoiRecorderModule implements Module {
@@ -57,11 +63,8 @@ public final class JevPoiRecorderModule implements Module {
             "ClientboundContainerSetSlotPacket", "ClientboundContainerClosePacket",
             "ClientboundSystemChatPacket", "ClientboundSetTitleTextPacket",
             "ClientboundSetSubtitleTextPacket", "ClientboundSetActionBarTextPacket",
-            "ClientboundSoundPacket", "ClientboundBlockChangedAckPacket",
-            "ClientboundContainerClosePacket");
+            "ClientboundSoundPacket", "ClientboundBlockChangedAckPacket");
     private static final Set<String> DEDUP_INBOUND_PACKET_NAMES = Set.of(
-            "ClientboundSystemChatPacket", "ClientboundSetTitleTextPacket",
-            "ClientboundSetSubtitleTextPacket", "ClientboundSetActionBarTextPacket",
             "ClientboundSoundPacket", "ClientboundContainerSetContentPacket",
             "ClientboundContainerSetSlotPacket", "ClientboundContainerClosePacket",
             "ClientboundBlockChangedAckPacket");
@@ -75,6 +78,7 @@ public final class JevPoiRecorderModule implements Module {
     private int droppedEvents;
     private int dedupedEvents;
     private final Set<String> seenInboundEvidence = ConcurrentHashMap.newKeySet();
+    private final AtomicLong eventSequence = new AtomicLong();
 
     private JevPoiRecorderModule() { }
     public static JevPoiRecorderModule instance() { return INSTANCE; }
@@ -156,6 +160,19 @@ public final class JevPoiRecorderModule implements Module {
             event.addProperty("container_id", content.containerId());
             event.add("slots", itemSlots(content.items()));
         }
+        if (packet instanceof ClientboundSystemChatPacket chat) {
+            event.addProperty("channel", chat.overlay() ? "actionbar" : "chat");
+            event.addProperty("text", chat.content().getString());
+        } else if (packet instanceof ClientboundSetActionBarTextPacket actionBar) {
+            event.addProperty("channel", "actionbar");
+            event.addProperty("text", actionBar.text().getString());
+        } else if (packet instanceof ClientboundSetTitleTextPacket title) {
+            event.addProperty("channel", "title");
+            event.addProperty("text", title.text().getString());
+        } else if (packet instanceof ClientboundSetSubtitleTextPacket subtitle) {
+            event.addProperty("channel", "subtitle");
+            event.addProperty("text", subtitle.text().getString());
+        }
         if (!outbound && DEDUP_INBOUND_PACKET_NAMES.contains(packet.getClass().getSimpleName())) {
             String signature = packet.getClass().getSimpleName() + "|" + event;
             if (!seenInboundEvidence.add(signature)) {
@@ -163,6 +180,7 @@ public final class JevPoiRecorderModule implements Module {
                 return;
             }
         }
+        event.addProperty("seq", eventSequence.incrementAndGet());
         networkEvents.add(event);
     }
 
@@ -181,6 +199,7 @@ public final class JevPoiRecorderModule implements Module {
         droppedEvents = 0;
         dedupedEvents = 0;
         seenInboundEvidence.clear();
+        eventSequence.set(0L);
         lastAimSignature = "";
         recording = true;
         append("recording_started", "Human demonstration started; recorder sends no packets.");
@@ -199,6 +218,7 @@ public final class JevPoiRecorderModule implements Module {
         current.addProperty("dropped_events", droppedEvents);
         current.addProperty("deduped_events", dedupedEvents);
         append("recording_finished", "Human demonstration finished.");
+        finalizeTimeline(current);
         recording = false;
         Path saved = save(current);
         String label = current.get("label").getAsString();
@@ -212,7 +232,7 @@ public final class JevPoiRecorderModule implements Module {
 
     private void cancel(String reason) {
         recording = false; current = null; networkEvents.clear(); lastAimSignature = "";
-        droppedEvents = 0; dedupedEvents = 0; seenInboundEvidence.clear();
+        droppedEvents = 0; dedupedEvents = 0; seenInboundEvidence.clear(); eventSequence.set(0L);
         MicxFabric.LOGGER.info("Discarded active Jev POI recording: {}", reason);
     }
 
@@ -242,6 +262,8 @@ public final class JevPoiRecorderModule implements Module {
     private void append(String kind, String detail) { JsonObject e = new JsonObject(); e.addProperty("at", System.currentTimeMillis()); e.addProperty("kind", kind); e.addProperty("detail", detail); append(e); }
     private void append(JsonObject event) {
         if (current == null) return;
+        if (!event.has("at")) event.addProperty("at", System.currentTimeMillis());
+        if (!event.has("seq")) event.addProperty("seq", eventSequence.incrementAndGet());
         JsonArray events = current.getAsJsonArray("events");
         if (events.size() >= MAX_EVENTS) {
             droppedEvents++;
@@ -255,6 +277,30 @@ public final class JevPoiRecorderModule implements Module {
             }
         }
         events.add(event);
+    }
+
+    private static void finalizeTimeline(JsonObject recording) {
+        JsonArray source = recording.getAsJsonArray("events");
+        if (source == null) return;
+        List<JsonObject> ordered = new ArrayList<>();
+        for (JsonElement element : source) if (element.isJsonObject()) ordered.add(element.getAsJsonObject());
+        ordered.sort(Comparator.comparingLong(JevPoiRecorderModule::eventAt)
+                .thenComparingLong(JevPoiRecorderModule::eventSeq));
+        JsonArray timeline = new JsonArray();
+        long started = recording.has("started_at") ? recording.get("started_at").getAsLong() : 0L;
+        for (JsonObject event : ordered) {
+            event.addProperty("offset_ms", Math.max(0L, eventAt(event) - started));
+            timeline.add(event);
+        }
+        recording.add("events", timeline);
+    }
+
+    private static long eventAt(JsonObject event) {
+        return event.has("at") ? event.get("at").getAsLong() : Long.MAX_VALUE;
+    }
+
+    private static long eventSeq(JsonObject event) {
+        return event.has("seq") ? event.get("seq").getAsLong() : Long.MAX_VALUE;
     }
 
     private static JsonObject playerSnapshot(Minecraft client) {
