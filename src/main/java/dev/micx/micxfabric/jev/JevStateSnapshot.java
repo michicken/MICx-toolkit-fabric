@@ -14,6 +14,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
@@ -63,6 +64,7 @@ public final class JevStateSnapshot {
         guard(errors, "me", () -> root.add("me", meJson(me)));
         guard(errors, "inventory", () -> inventoryInto(root, me));
         guard(errors, "game", () -> gameInto(root));
+        guard(errors, "feedback", () -> root.add("feedback", JevFeedbackJournal.instance().snapshot()));
         guard(errors, "entities", () -> entitiesInto(root, client, me, errors));
         guard(errors, "windows", () -> windowsInto(root, me, errors));
         guard(errors, "powerups", () -> powerupsInto(root, me));
@@ -124,14 +126,33 @@ public final class JevStateSnapshot {
         int selected = me.getInventory().getSelectedSlot();
         root.addProperty("selected_slot", selected);
         root.add("main_hand", itemJson(me.getMainHandItem(), selected));
+        JsonObject equipment = new JsonObject();
+        equipment.add("head", itemJson(me.getItemBySlot(EquipmentSlot.HEAD), "head"));
+        equipment.add("chest", itemJson(me.getItemBySlot(EquipmentSlot.CHEST), "chest"));
+        equipment.add("legs", itemJson(me.getItemBySlot(EquipmentSlot.LEGS), "legs"));
+        equipment.add("feet", itemJson(me.getItemBySlot(EquipmentSlot.FEET), "feet"));
+        equipment.add("offhand", itemJson(me.getItemBySlot(EquipmentSlot.OFFHAND), "offhand"));
+        root.add("equipment", equipment);
     }
 
     private static JsonObject itemJson(ItemStack stack, int slot) {
         JsonObject o = new JsonObject();
         o.addProperty("slot", slot);
+        addItemDetails(o, stack);
+        return o;
+    }
+
+    private static JsonObject itemJson(ItemStack stack, String slotName) {
+        JsonObject o = new JsonObject();
+        o.addProperty("slot_name", slotName);
+        addItemDetails(o, stack);
+        return o;
+    }
+
+    private static void addItemDetails(JsonObject o, ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             o.addProperty("empty", true);
-            return o;
+            return;
         }
         try {
             o.addProperty("name", stack.getHoverName().getString());
@@ -147,7 +168,6 @@ public final class JevStateSnapshot {
         } catch (Throwable t) {
             o.addProperty("error", String.valueOf(t));
         }
-        return o;
     }
 
     private static void gameInto(JsonObject root) {

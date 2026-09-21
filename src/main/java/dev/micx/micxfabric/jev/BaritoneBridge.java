@@ -3,10 +3,19 @@ package dev.micx.micxfabric.jev;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
+import baritone.api.event.events.SprintStateEvent;
+import baritone.api.event.listener.AbstractGameEventListener;
+import baritone.api.event.listener.IEventBus;
+import baritone.api.pathing.calc.IPath;
+import baritone.api.pathing.path.IPathExecutor;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
+import baritone.api.utils.BetterBlockPos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.List;
 
 /**
  * Baritone 寻路的唯一入口（走位交给 Baritone，瞄准留在 Aimbot）。
@@ -27,6 +36,7 @@ public final class BaritoneBridge {
     private static volatile double targetY;
     private static volatile double targetZ;
     private static volatile int targetRange;
+    private static IEventBus sprintGuardBus;
 
     private BaritoneBridge() {
     }
@@ -58,11 +68,13 @@ public final class BaritoneBridge {
         }
     }
 
+    /** Start a bounded walk to a Jev anchor. Movement legality is enforced by JevMoveFix. */
     public static String gotoNear(double x, double y, double z, int range) {
         IBaritone baritone = primary();
         if (baritone == null) return "baritone-not-ready";
         try {
             applyZombiesSettings();
+            installSprintGuard(baritone);
             int r = Math.max(1, Math.min(8, range));
             baritone.getCustomGoalProcess().setGoalAndPath(new GoalNear(blockPos(x, y, z), r));
             rememberTarget(x, y, z, r);
@@ -77,6 +89,7 @@ public final class BaritoneBridge {
         if (baritone == null) return "baritone-not-ready";
         try {
             applyZombiesSettings();
+            installSprintGuard(baritone);
             baritone.getCustomGoalProcess().setGoalAndPath(new GoalBlock(blockPos(x, y, z)));
             rememberTarget(x, y, z, 0);
             return "ok";
@@ -91,6 +104,7 @@ public final class BaritoneBridge {
         if (baritone == null) return "baritone-not-ready";
         try {
             applyZombiesSettings();
+            installSprintGuard(baritone);
             baritone.getFollowProcess().follow(entity ->
                     entity instanceof Player player
                             && player.getName().getString().equalsIgnoreCase(playerName));
@@ -101,6 +115,7 @@ public final class BaritoneBridge {
     }
 
     public static String stop() {
+        JevMoveFix.clearPathCorrection();
         IBaritone baritone = primary();
         if (baritone == null) return "baritone-not-ready";
         try {
@@ -119,6 +134,37 @@ public final class BaritoneBridge {
         if (baritone == null) return false;
         try {
             return baritone.getPathingBehavior().isPathing();
+        } catch (Throwable t) {
+            lastError = String.valueOf(t);
+            return false;
+        }
+    }
+
+    /**
+     * Returns the next horizontal direction of Baritone's active path in world coordinates.
+     * The result is deliberately a direction, not a key state: JevMoveFix converts it through
+     * the player's actual camera yaw before Minecraft builds the input packet.
+     */
+    public static Vec3 currentPathDirection() {
+        IBaritone baritone = primary();
+        if (baritone == null) return null;
+        try {
+            if (!baritone.getPathingBehavior().isPathing()) return null;
+            LocalPathPoint point = nextPathPoint(baritone);
+            if (point != null) return new Vec3(point.x - playerX(baritone), 0.0, point.z - playerZ(baritone));
+            if (commandAtMs > 0L) {
+                return new Vec3(targetX - playerX(baritone), 0.0, targetZ - playerZ(baritone));
+            }
+        } catch (Throwable t) {
+            lastError = String.valueOf(t);
+        }
+        return null;
+    }
+
+    /** Whether Baritone itself is configured to request sprint when vanilla input permits it. */
+    public static boolean sprintAllowed() {
+        try {
+            return Boolean.TRUE.equals(BaritoneAPI.getSettings().allowSprint.value);
         } catch (Throwable t) {
             lastError = String.valueOf(t);
             return false;
@@ -171,6 +217,59 @@ public final class BaritoneBridge {
         targetRange = range;
         commandAtMs = System.currentTimeMillis();
         commandSequence++;
+    }
+
+    private static void installSprintGuard(IBaritone baritone) {
+        try {
+            IEventBus bus = baritone.getGameEventHandler();
+            if (bus == null || bus == sprintGuardBus) return;
+            bus.registerEventListener(new AbstractGameEventListener() {
+                @Override
+                public void onPlayerSprintState(SprintStateEvent event) {
+                    // Do not disable sprint globally. Only reject a request when the current
+                    // path/camera frame would make it a backward, sideways, airborne, or
+                    // otherwise vanilla-illegal sprint under Grim's movement prediction.
+                    if (JevMoveFix.shouldBlockBaritoneSprint()) event.setState(false);
+                }
+            });
+            sprintGuardBus = bus;
+        } catch (Throwable t) {
+            lastError = String.valueOf(t);
+        }
+    }
+
+    private static LocalPathPoint nextPathPoint(IBaritone baritone) {
+        IPathExecutor executor = baritone.getPathingBehavior().getCurrent();
+        if (executor == null) return null;
+        IPath path = executor.getPath();
+        if (path == null) return null;
+        List<BetterBlockPos> positions = path.positions();
+        if (positions == null || positions.isEmpty()) return null;
+        int current = Math.max(0, executor.getPosition());
+        int start = Math.min(positions.size() - 1, current + 1);
+        double px = playerX(baritone);
+        double pz = playerZ(baritone);
+        for (int i = start; i < positions.size(); i++) {
+            BetterBlockPos pos = positions.get(i);
+            if (pos == null) continue;
+            double x = pos.getX() + 0.5;
+            double z = pos.getZ() + 0.5;
+            double dx = x - px;
+            double dz = z - pz;
+            if (dx * dx + dz * dz > 0.04) return new LocalPathPoint(x, z);
+        }
+        return null;
+    }
+
+    private static double playerX(IBaritone baritone) {
+        return baritone.getPlayerContext().player().getX();
+    }
+
+    private static double playerZ(IBaritone baritone) {
+        return baritone.getPlayerContext().player().getZ();
+    }
+
+    private record LocalPathPoint(double x, double z) {
     }
 
     private static BlockPos blockPos(double x, double y, double z) {

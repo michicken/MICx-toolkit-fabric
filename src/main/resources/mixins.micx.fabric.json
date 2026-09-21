@@ -11,6 +11,7 @@
     "MixinMinecraftFocusPause",
     "MixinMinecraftRightClicker",
     "MixinConnectionPacketLog",
+    "MixinKeyboardInput",
     "MixinPlayerInteractionRange",
     "RightClickDelayAccess",
     "KeyMappingAccess",

@@ -1,6 +1,7 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.PacketLogModule;
+import dev.micx.micxfabric.jev.JevFeedbackJournal;
 import dev.micx.micxfabric.jev.JevPoiRecorderModule;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.client.Minecraft;
@@ -28,6 +29,7 @@ public final class MixinConnectionPacketLog {
     private void micx$logOutbound(Packet<?> packet, CallbackInfo callbackInfo) {
         if (!micx$isPlayerConnection()) return;
         PacketLogModule.instance().capture(true, packet);
+        JevFeedbackJournal.instance().capture(true, packet);
         JevPoiRecorderModule.instance().capturePacket(true, packet);
     }
 
@@ -35,6 +37,7 @@ public final class MixinConnectionPacketLog {
     private void micx$logInbound(ChannelHandlerContext context, Packet<?> packet, CallbackInfo callbackInfo) {
         if (!micx$isPlayerConnection()) return;
         PacketLogModule.instance().capture(false, packet);
+        JevFeedbackJournal.instance().capture(false, packet);
         JevPoiRecorderModule.instance().capturePacket(false, packet);
     }
 

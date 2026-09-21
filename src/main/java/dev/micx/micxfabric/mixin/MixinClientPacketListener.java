@@ -5,6 +5,7 @@ import dev.micx.micxfabric.LrIndicatorModule;
 import dev.micx.micxfabric.SlimeForecastModule;
 import dev.micx.micxfabric.ZombiesAssistModule;
 import dev.micx.micxfabric.ZombiesTracker;
+import dev.micx.micxfabric.jev.JevFeedbackJournal;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
@@ -32,6 +33,11 @@ public abstract class MixinClientPacketListener {
     private float micx$localYaw;
     private float micx$localPitch;
     private boolean micx$restoreRotation;
+
+    @Inject(method = "close", at = @At("HEAD"))
+    private void micx$resetJevFeedback(CallbackInfo callbackInfo) {
+        JevFeedbackJournal.instance().reset();
+    }
 
     @Inject(method = "handleMoveEntity", at = @At("RETURN"))
     private void micx$recordMove(ClientboundMoveEntityPacket packet, CallbackInfo callbackInfo) {
