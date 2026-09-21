@@ -1,6 +1,7 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.RankUpToolModule;
+import dev.micx.micxfabric.jev.HeadlessModule;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -19,6 +20,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public final class MixinMinecraftFocusPause {
     @Inject(method = "pauseIfInactive", at = @At("HEAD"), cancellable = true)
     private void micx$keepRankUpRunningWhenUnfocused(CallbackInfo callbackInfo) {
+        // 无头模式：窗口是藏起来的、永远没有焦点，一旦弹出暂停界面，模块里那些
+        // “screen != null 就跳过”的判定会连带失效。
+        if (HeadlessModule.instance().enabled()) {
+            callbackInfo.cancel();
+            return;
+        }
         if (RankUpToolModule.instance().enabled()) callbackInfo.cancel();
     }
 }

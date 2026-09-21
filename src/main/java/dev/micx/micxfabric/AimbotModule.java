@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import dev.micx.micxfabric.jev.HeadlessModule;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelTerrainRenderContext;
 import net.minecraft.client.KeyMapping;
@@ -414,6 +415,10 @@ public final class AimbotModule implements Module {
         config.load();
         if (!enabled || client == null || client.level == null || client.player == null) {
             return;
+        }
+        // 无头模式：渲染事件不再触发，转视角的排队量改在 tick 里消费（等价 20Hz，见 applyFrameRotation）。
+        if (HeadlessModule.rotationOnTickActive()) {
+            applyFrameRotation(null);
         }
         boolean bruteMode = config.bruteMode && !config.joystick;
         if (lastLevel != client.level) {
@@ -1913,6 +1918,8 @@ public final class AimbotModule implements Module {
      * share. yRotO/xRotO are still synchronized at every applied delta.
      */
     private void applyFrameRotation(LevelTerrainRenderContext ignored) {
+        // 无头模式下旋转由 tick 分支消费；渲染路径整条让位，同一份排队量不会被消费两次。
+        if (HeadlessModule.rotationOnTickActive()) return;
         long now = System.nanoTime();
         long previous = lastRotationFrameNs;
         lastRotationFrameNs = now;

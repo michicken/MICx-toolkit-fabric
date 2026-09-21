@@ -24,6 +24,8 @@ dependencies {
     implementation "com.google.code.gson:gson:2.14.0"
     implementation "com.neovisionaries:nv-websocket-client:2.14"
     include "com.neovisionaries:nv-websocket-client:2.14"
+    // Baritone 26.2 官方 Fabric 版：只管编译期 API，运行时由 mods 目录提供（缺装也不影响加载）
+    compileOnly files('libs/baritone-api-fabric-1.19.0.jar')
     testImplementation platform("org.junit:junit-bom:5.13.4")
     testImplementation "org.junit.jupiter:junit-jupiter"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"

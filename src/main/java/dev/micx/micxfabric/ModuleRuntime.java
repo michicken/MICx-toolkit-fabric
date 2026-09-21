@@ -68,6 +68,8 @@ public final class ModuleRuntime {
         register(WindowSpawnCounterModule.instance());
         register(WaveSpawnSoundModule.instance());
         register(ZoomScopeModule.instance());
+        register(dev.micx.micxfabric.jev.HeadlessModule.instance());
+        register(dev.micx.micxfabric.jev.JevBridgeModule.instance());
         registerMutex("noreload", "keyboard_clicker");
         for (Module module : MODULES.values()) {
             boolean want = ModuleStateStore.get(module.id(), module.defaultEnabled());

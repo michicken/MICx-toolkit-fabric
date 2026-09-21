@@ -41,7 +41,8 @@
     "MixinMouseHandlerZoom",
     "MixinMouseHandlerAimbot",
     "MixinLivingEntityDamage",
-    "MixinCameraZoom"
+    "MixinCameraZoom",
+    "MixinGameRendererHeadless"
   ],
   "injectors": {
     "defaultRequire": 1

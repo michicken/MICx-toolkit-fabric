@@ -71,6 +71,7 @@ public final class FabricRuntime {
     }
 
     private static void stopClient(Minecraft client) {
+        dev.micx.micxfabric.jev.JevBridgeModule.instance().shutdown();
         HsDispatchService.instance().close();
         resetTransientState();
         ChatTranslateModule.instance().shutdown();
@@ -87,7 +88,7 @@ public final class FabricRuntime {
         } : opener;
     }
 
-    static Path configPath() {
+    public static Path configPath() {
         return FabricLoader.getInstance().getConfigDir().resolve("MICxToolkit");
     }
 }
