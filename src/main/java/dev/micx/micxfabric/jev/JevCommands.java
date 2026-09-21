@@ -59,6 +59,10 @@ public final class JevCommands {
                 case "close_screen" -> onClient(JevCommands::closeScreen);
                 case "calibrate_window" -> onClient(client -> JevWindowAnchors.calibrate(
                         opt(request, "id", ""), client.player));
+                case "combat_move" -> onClient(client -> JevMoveFix.request(
+                        opt(request, "style", ""), optInt(request, "duration_ms", 350),
+                        request.has("sprint") && request.get("sprint").getAsBoolean()));
+                case "clear_combat_move" -> onClient(JevMoveFix::clear);
                 case "set" -> set(request);
                 default -> "error: unknown op '" + op + "'";
             };

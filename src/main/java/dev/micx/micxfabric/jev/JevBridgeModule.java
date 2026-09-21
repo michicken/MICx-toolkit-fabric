@@ -71,6 +71,7 @@ public final class JevBridgeModule implements Module {
     @Override
     public void tick(Minecraft client) {
         try {
+            JevMoveFix.tick(client);
             snapshotJson = JevStateSnapshot.build(client).toString();
             snapshotAt = System.currentTimeMillis();
         } catch (Throwable t) {
@@ -102,6 +103,7 @@ public final class JevBridgeModule implements Module {
 
     /** 关客户端时收摊（daemon 线程其实也会被 JVM 收走，这里只是干净点）。 */
     public void shutdown() {
+        JevMoveFix.clear(Minecraft.getInstance());
         stopServer();
     }
 

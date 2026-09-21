@@ -59,6 +59,7 @@ public final class JevStateSnapshot {
         guard(errors, "shops", () -> shopsInto(root, client));
         guard(errors, "modules", () -> root.add("modules", modulesJson()));
         guard(errors, "baritone", () -> root.add("baritone", baritoneJson()));
+        guard(errors, "movefix", () -> root.addProperty("movefix", JevMoveFix.status()));
         guard(errors, "client", () -> {
             root.addProperty("paused", client.isPaused());
             root.addProperty("has_screen", client.gui != null && client.gui.screen() != null);
