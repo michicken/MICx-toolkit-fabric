@@ -6,8 +6,8 @@
 默认显示「改写后」，按一下显示「改写前」。
 
 - 改写条数：**471**
-- 原样保留条数：45
-- 合计：516
+- 原样保留条数：39
+- 合计：510
 
 ## 一、改写过的文案
 
@@ -269,6 +269,7 @@
 | `ModulePanelRegistry.java` | 进服时在聊天里显示 MICx 提示与 /micx 入口 | 进服时在聊天里打一条 MICx 提示，并告诉你 /micx 入口在哪。 |
 | `ModulePanelRegistry.java` | 绑定快捷键立即发送预设消息到聊天 | 给预设消息绑一个快捷键，按下就直接发到聊天。 |
 | `ModulePanelRegistry.java` | 定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）；开启后打开书本界面会连响 1 分钟提醒，切到别的应用也不会自动暂停 | 定时把「<当前选中的 Rank> pls」发到聊天，默认 3 秒一条，大厅和局内都发；档位与间隔可以在面板里换。开启后打开书本界面会连响 1 分钟提醒，切到别的应用也不会自动暂停。 |
+| `ModulePanelRegistry.java` | 远程商店 | Reach买子弹 |
 | `ModulePanelRegistry.java` | 不开界面点到远处商店：客户端射程 3/4.5→5.5 格，面板可扫附近全息并「买一次」最近目标（服务端硬上限实体 6 格/方块 5.5 格，超了丢包） | 不用打开商店界面就能点到远处的商店：客户端交互距离从 3 / 4.5 格放宽到 5.5 格，面板里还能扫描附近的全息并「买一次」离你最近的那个。注意服务端硬上限是实体 6 格 / 方块 5.5 格，超出去的包会被丢弃。 |
 | `ModulePanelRegistry.java` | 按住 PTT 录音并将识别结果发送到聊天。 | 按住 PTT 键开始录音，松开后把识别出来的文字发到聊天。 |
 | `ModulePanelRegistry.java` | Powerup/BadHeadshot 标记：必出红/预测粉/最后怪绿/线上黄，线框盒+头顶标签。 | 从 ZombiesExplorer 移植过来的标记：用线框盒加头顶标签标出 Powerup 归属怪（必出暗红 / 预测亮红）、本回合的特殊怪（绿）和线上怪（黄）。 |
@@ -279,7 +280,6 @@
 | `ModulePanelRegistry.java` | 每波刷怪 pling 提示、最终波 orb、DE/BB 终波前 3-2-1 倒计时（SST 移植）。 | 每波刷怪时给一声 pling 提示，最终波换成 orb 音；DE / BB 的终波前还有 3-2-1 倒计时。整套是从 SST 移植过来的。 |
 | `ModulePanelRegistry.java` | WaveSpawnSound | 波次音效 |
 | `ModulePanelRegistry.java` | 波次音效 · SST 移植 | WaveSpawnSound · SST 移植 |
-| `ModulePanelRegistry.java` | SwingChat | 系统输入法 |
 | `ModulePanelRegistry.java` | Forge Display 分区：HUD、Power-up、命中统计、经济和原版 scoreboard。 | 对应 Forge 版的 Display 分区：HUD、Power-up、命中统计、经济和原生 scoreboard。 |
 | `ModulePanelRegistry.java` | Forge Alerts 分区：TOO、BLOCK、弹药、LS、FR 和威胁提示。 | 对应 Forge 版的 Alerts 分区：TOO、BLOCK、弹药、LS、FR 和威胁提示。 |
 | `ModulePanelRegistry.java` | Forge Auto 分区：回合播报、自动提醒、赛后统计和 noRotate。 | 对应 Forge 版的 Auto 分区：回合播报、自动提醒、赛后统计和 noRotate。 |
@@ -322,7 +322,7 @@
 | `RankUpToolConfigScreen.java` | MESSAGE / 话术 | 话术 |
 | `RankUpToolConfigScreen.java` | TIMING / 节奏 | 节奏 |
 | `RankUpToolConfigScreen.java` | 「立即发一条」按一次只补发一条，并重置自动计时，不会连着再发一条。 | 「立即发一条」按一次只补一条，并重置自动计时，不会连着多发。 |
-| `RemoteShopConfigScreen.java` | RemoteShop | 远程商店 |
+| `RemoteShopConfigScreen.java` | 远程商店 | Reach买子弹 |
 | `RemoteShopConfigScreen.java` | 远程商店 · 远程买弹 | RemoteShop · 远程买弹 |
 | `RemoteShopConfigScreen.java` | STATUS / 状态 | 开关与状态 |
 | `RemoteShopConfigScreen.java` | SCAN / 附近全息 | 扫描附近全息 |
@@ -520,15 +520,9 @@
 | `ModulePanelRegistry.java` | 欢迎横幅 |
 | `ModulePanelRegistry.java` | 快捷文本 |
 | `ModulePanelRegistry.java` | 求 Rank |
-| `ModulePanelRegistry.java` | 远程商店 |
 | `ModulePanelRegistry.java` | 语音输入 |
 | `ModulePanelRegistry.java` | 僵尸标记 |
 | `ModulePanelRegistry.java` | 波次音效 |
-| `ModulePanelRegistry.java` | 26.2/GLFW 原生支持系统输入法，Forge 的 Swing 外部输入框（LWJGL2 IME 变通）不再需要。 |
-| `ModulePanelRegistry.java` | 自动 Re-Shift |
-| `ModulePanelRegistry.java` | 原 Forge 版本因反作弊封禁风险停用，Fabric 端不会启用；防误松需求由 anti_reshift（AntiReshift）覆盖。 |
-| `ModulePanelRegistry.java` | AC 测试日志 |
-| `ModulePanelRegistry.java` | 原 Forge 版本是测试/诊断模块，Fabric 端不会启用。 |
 | `ModulePanelRegistry.java` | 显示开关 |
 | `ModulePanelRegistry.java` | 提示与警报 |
 | `ModulePanelRegistry.java` | 记分板 / 消息 |

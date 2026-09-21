@@ -465,7 +465,7 @@ public final class ModulePanelRegistry {
                         "定时把「<选中的 Rank> pls」发到聊天（默认 3 秒一条，大厅与局内都发；面板可换档位与间隔）；"
                                 + "开启后打开书本界面会连响 1 分钟提醒，切到别的应用也不会自动暂停"),
                 RankUpToolModule.instance(), RankUpToolConfigScreen::new);
-        real("remote_shop", "RemoteShop", unchanged("远程商店"), GROUP_CORE,
+        real("remote_shop", "RemoteShop", revised("Reach买子弹", "远程商店"), GROUP_CORE,
                 revised("不用打开商店界面就能点到远处的商店：客户端交互距离从 3 / 4.5 格放宽到 5.5 格，"
                                 + "面板里还能扫描附近的全息并「买一次」离你最近的那个。注意服务端硬上限是实体 6 格 / 方块 5.5 格，超出去的包会被丢弃。",
                         "不开界面点到远处商店：客户端射程 3/4.5→5.5 格，面板可扫附近全息并「买一次」最近目标"
@@ -519,13 +519,6 @@ public final class ModulePanelRegistry {
                                         WaveSpawnSoundModule.instance()::getDebbCountdown,
                                         WaveSpawnSoundModule.instance()::setDebbCountdown,
                                         "最终波到来前 3-2-1 秒各给一声 pling（默认关）。"))));
-        blocked("swing_chat", "SwingChat", revised("系统输入法", "SwingChat"), GROUP_MISC,
-                unchanged("26.2/GLFW 原生支持系统输入法，Forge 的 Swing 外部输入框（LWJGL2 IME 变通）不再需要。"));
-        blocked("auto_reshift", "AutoReShift", unchanged("自动 Re-Shift"), GROUP_MISC,
-                unchanged("原 Forge 版本因反作弊封禁风险停用，Fabric 端不会启用；防误松需求由 anti_reshift（AntiReshift）覆盖。"));
-        blocked("ac_test_logger", "ACTestLogger", unchanged("AC 测试日志"), GROUP_MISC,
-                unchanged("原 Forge 版本是测试/诊断模块，Fabric 端不会启用。"));
-
         SUBMODULES.put("zombies_assist", List.of(
                 new SubmoduleDescriptor("display", "Display", unchanged("显示开关"),
                         revised("对应 Forge 版的 Display 分区：HUD、Power-up、命中统计、经济和原生 scoreboard。",

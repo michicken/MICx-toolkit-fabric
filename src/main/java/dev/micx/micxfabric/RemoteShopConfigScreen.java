@@ -28,7 +28,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     }
 
     public RemoteShopConfigScreen(Screen parent) {
-        super(parent, UiText.shown("远程商店", "RemoteShop"), UiText.shown("RemoteShop · 远程买弹", "远程商店 · 远程买弹"));
+        super(parent, UiText.shown("Reach买子弹", "远程商店"), UiText.shown("RemoteShop · 远程买弹", "远程商店 · 远程买弹"));
     }
 
     @Override
