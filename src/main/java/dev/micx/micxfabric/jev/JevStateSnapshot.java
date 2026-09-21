@@ -11,13 +11,18 @@ import dev.micx.micxfabric.ZombiesTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,8 +39,12 @@ import java.util.Map;
  * 本方法只在客户端线程被调用（JevBridgeModule.tick）。
  */
 public final class JevStateSnapshot {
-    private static final int MOB_LIMIT = 20;
-    private static final double MOB_RANGE = 40.0;
+    /** The network-loaded entity radius Jev may reason about.  It is not server omniscience. */
+    private static final double ENTITY_RANGE = 48.0;
+    private static final int HOSTILE_LIMIT = 64;
+    private static final int OTHER_LIMIT = 16;
+    private static final int ITEM_LIMIT = 16;
+    private static final int PROJECTILE_LIMIT = 16;
 
     private JevStateSnapshot() {
     }
@@ -166,8 +175,19 @@ public final class JevStateSnapshot {
     private static void entitiesInto(JsonObject root, Minecraft client, LocalPlayer me, JsonArray errors) {
         JsonArray mates = new JsonArray();
         JsonArray zombies = new JsonArray();
+        JsonArray others = new JsonArray();
+        JsonArray items = new JsonArray();
+        JsonArray projectiles = new JsonArray();
         root.add("teammates", mates);
         root.add("zombies", zombies);
+        JsonObject perception = new JsonObject();
+        perception.addProperty("schema", "loaded-entity-v1");
+        perception.addProperty("range", ENTITY_RANGE);
+        perception.addProperty("boundary", "Only entities loaded by this client are known; unloaded or server-hidden entities are unknown.");
+        perception.add("other_living", others);
+        perception.add("items", items);
+        perception.add("projectiles", projectiles);
+        root.add("perception", perception);
         if (client.level == null) return;
 
         Map<String, String> statuses = Map.of();
@@ -180,25 +200,56 @@ public final class JevStateSnapshot {
             errors.add("status-maps: " + t);
         }
         long now = System.currentTimeMillis();
-        List<Entity> mobs = new ArrayList<>();
+        List<LivingEntity> hostiles = new ArrayList<>();
+        List<LivingEntity> otherLiving = new ArrayList<>();
+        List<ItemEntity> nearbyItems = new ArrayList<>();
+        List<Projectile> nearbyProjectiles = new ArrayList<>();
+        int scanned = 0;
         for (Entity entity : client.level.entitiesForRendering()) {
             if (entity == null) continue;
+            scanned++;
             if (entity instanceof Player other) {
                 if (me == null || other == me) continue;
                 mates.add(mateJson(other, me, statuses, downSince, now));
-            } else if (me != null
-                    && entity instanceof LivingEntity living
-                    && living.isAlive()
-                    && living.distanceTo(me) <= MOB_RANGE) {
-                mobs.add(entity);
+                continue;
+            }
+            if (me == null || entity.distanceTo(me) > ENTITY_RANGE) continue;
+            if (entity instanceof LivingEntity living && living.isAlive()) {
+                if (isHostile(living)) hostiles.add(living);
+                else otherLiving.add(living);
+            } else if (entity instanceof ItemEntity item) {
+                nearbyItems.add(item);
+            } else if (entity instanceof Projectile projectile) {
+                nearbyProjectiles.add(projectile);
             }
         }
+        perception.addProperty("loaded_entity_count", scanned);
+        perception.addProperty("hostile_total", hostiles.size());
+        perception.addProperty("other_living_total", otherLiving.size());
+        perception.addProperty("item_total", nearbyItems.size());
+        perception.addProperty("projectile_total", nearbyProjectiles.size());
         if (me != null) {
-            mobs.sort(Comparator.comparingDouble(entity -> entity.distanceToSqr(me)));
-            int taken = 0;
-            for (Entity mob : mobs) {
-                if (taken++ >= MOB_LIMIT) break;
+            hostiles.sort(Comparator.comparingDouble(entity -> entity.distanceToSqr(me)));
+            otherLiving.sort(Comparator.comparingDouble(entity -> entity.distanceToSqr(me)));
+            nearbyItems.sort(Comparator.comparingDouble(entity -> entity.distanceToSqr(me)));
+            nearbyProjectiles.sort(Comparator.comparingDouble(entity -> entity.distanceToSqr(me)));
+            perception.addProperty("hostiles_truncated", hostiles.size() > HOSTILE_LIMIT);
+            perception.addProperty("other_living_truncated", otherLiving.size() > OTHER_LIMIT);
+            perception.addProperty("items_truncated", nearbyItems.size() > ITEM_LIMIT);
+            perception.addProperty("projectiles_truncated", nearbyProjectiles.size() > PROJECTILE_LIMIT);
+            perception.add("pressure", pressureJson(hostiles, me));
+            for (int i = 0; i < Math.min(HOSTILE_LIMIT, hostiles.size()); i++) {
+                LivingEntity mob = hostiles.get(i);
                 zombies.add(mobJson(mob, me));
+            }
+            for (int i = 0; i < Math.min(OTHER_LIMIT, otherLiving.size()); i++) {
+                others.add(entityJson(otherLiving.get(i), me));
+            }
+            for (int i = 0; i < Math.min(ITEM_LIMIT, nearbyItems.size()); i++) {
+                items.add(entityJson(nearbyItems.get(i), me));
+            }
+            for (int i = 0; i < Math.min(PROJECTILE_LIMIT, nearbyProjectiles.size()); i++) {
+                projectiles.add(entityJson(nearbyProjectiles.get(i), me));
             }
         }
     }
@@ -230,6 +281,22 @@ public final class JevStateSnapshot {
         o.addProperty("y", round(mob.getY()));
         o.addProperty("z", round(mob.getZ()));
         o.addProperty("dist", round(me.distanceTo(mob)));
+        o.addProperty("type", typeKey(mob));
+        o.addProperty("bearing", round(bearing(me, mob)));
+        o.addProperty("relative_bearing", round(relativeBearing(me, mob)));
+        o.addProperty("line_of_sight", me.hasLineOfSight(mob));
+        Vec3 velocity = mob.getDeltaMovement();
+        o.addProperty("vx", round(velocity.x * 20.0));
+        o.addProperty("vy", round(velocity.y * 20.0));
+        o.addProperty("vz", round(velocity.z * 20.0));
+        o.addProperty("speed", round(Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) * 20.0));
+        o.addProperty("closing_speed", round(closingSpeed(mob, me)));
+        if (mob instanceof LivingEntity living) {
+            o.addProperty("hp", round(living.getHealth()));
+            o.addProperty("max_hp", round(living.getMaxHealth()));
+            o.addProperty("absorb", round(living.getAbsorptionAmount()));
+            o.addProperty("baby", living.isBaby());
+        }
         try {
             WindowSpawnCounterModule counter = WindowSpawnCounterModule.instance();
             String window = counter.birthWindowIdOf(mob.getId());
@@ -241,6 +308,80 @@ public final class JevStateSnapshot {
         } catch (Throwable ignored) {
         }
         return o;
+    }
+
+    private static JsonObject entityJson(Entity entity, LocalPlayer me) {
+        JsonObject o = new JsonObject();
+        o.addProperty("id", entity.getId());
+        o.addProperty("name", entity.getName().getString());
+        o.addProperty("type", typeKey(entity));
+        o.addProperty("x", round(entity.getX()));
+        o.addProperty("y", round(entity.getY()));
+        o.addProperty("z", round(entity.getZ()));
+        o.addProperty("dist", round(me.distanceTo(entity)));
+        o.addProperty("bearing", round(bearing(me, entity)));
+        o.addProperty("relative_bearing", round(relativeBearing(me, entity)));
+        if (entity instanceof LivingEntity living) {
+            o.addProperty("hp", round(living.getHealth()));
+            o.addProperty("max_hp", round(living.getMaxHealth()));
+        }
+        return o;
+    }
+
+    private static JsonObject pressureJson(List<LivingEntity> hostiles, LocalPlayer me) {
+        int within3 = 0;
+        int within6 = 0;
+        int within10 = 0;
+        int closing = 0;
+        for (LivingEntity hostile : hostiles) {
+            double distance = hostile.distanceTo(me);
+            if (distance <= 3.0) within3++;
+            if (distance <= 6.0) within6++;
+            if (distance <= 10.0) within10++;
+            if (closingSpeed(hostile, me) > 0.5) closing++;
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("within_3", within3);
+        o.addProperty("within_6", within6);
+        o.addProperty("within_10", within10);
+        o.addProperty("closing", closing);
+        return o;
+    }
+
+    private static String typeKey(Entity entity) {
+        return String.valueOf(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
+    }
+
+    /** Same target class as combat modules: monsters plus Hypixel's golem/wolf enemy skins. */
+    private static boolean isHostile(LivingEntity living) {
+        String path = BuiltInRegistries.ENTITY_TYPE.getKey(living.getType()).getPath();
+        return living instanceof Monster || "iron_golem".equals(path) || "wolf".equals(path);
+    }
+
+    /** Minecraft yaw: 0 faces +Z, so atan2(-dx, dz) is in the same convention. */
+    private static double bearing(LocalPlayer me, Entity entity) {
+        return wrapDegrees(Math.toDegrees(Math.atan2(-(entity.getX() - me.getX()), entity.getZ() - me.getZ())));
+    }
+
+    private static double relativeBearing(LocalPlayer me, Entity entity) {
+        return wrapDegrees(bearing(me, entity) - me.getYRot());
+    }
+
+    /** Positive means the entity's current horizontal velocity is reducing distance to the player. */
+    private static double closingSpeed(Entity entity, LocalPlayer me) {
+        double dx = me.getX() - entity.getX();
+        double dz = me.getZ() - entity.getZ();
+        double distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance < 0.001) return 0.0;
+        Vec3 velocity = entity.getDeltaMovement();
+        return ((velocity.x * dx + velocity.z * dz) / distance) * 20.0;
+    }
+
+    private static double wrapDegrees(double degrees) {
+        double wrapped = degrees % 360.0;
+        if (wrapped >= 180.0) wrapped -= 360.0;
+        if (wrapped < -180.0) wrapped += 360.0;
+        return wrapped;
     }
 
     private static void windowsInto(JsonObject root, LocalPlayer me, JsonArray errors) {
