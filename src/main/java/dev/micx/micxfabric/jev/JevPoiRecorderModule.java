@@ -77,6 +77,8 @@ public final class JevPoiRecorderModule implements Module {
     private String lastAimSignature = "";
     private int droppedEvents;
     private int dedupedEvents;
+    private boolean resumeBridgeAfterRecording;
+    private boolean resumeHeadlessAfterRecording;
     private final Set<String> seenInboundEvidence = ConcurrentHashMap.newKeySet();
     private final AtomicLong eventSequence = new AtomicLong();
 
@@ -114,6 +116,10 @@ public final class JevPoiRecorderModule implements Module {
         if (!recording || current == null) return "idle label=" + nextLabel();
         return "recording " + current.get("id").getAsString() + " label=" + current.get("label").getAsString();
     }
+
+    /** Manual mode can safely take the bridge down; restore only after the human ends this recording. */
+    public void resumeBridgeAfterRecording() { resumeBridgeAfterRecording = true; }
+    public void resumeHeadlessAfterRecording() { resumeHeadlessAfterRecording = true; }
 
     /** Called by Connection mixin. Network-thread safe: it only creates immutable metadata and queues it. */
     public void capturePacket(boolean outbound, Packet<?> packet) {
@@ -228,10 +234,28 @@ public final class JevPoiRecorderModule implements Module {
                 "POI 已保存但未命名，Jev 不会使用。下次先 /micx poi label <名称>"));
         else client.player.sendSystemMessage(ChatMessageStyles.notice("POI 录制已保存：" + saved.getFileName()));
         nextLabel = "";
+        if (resumeBridgeAfterRecording) {
+            resumeBridgeAfterRecording = false;
+            try {
+                dev.micx.micxfabric.ModuleRuntime.setEnabled("jev_bridge", true);
+                client.player.sendSystemMessage(ChatMessageStyles.notice("POI 已结束，Jev bridge 已恢复。"));
+            } catch (Throwable t) {
+                MicxFabric.LOGGER.warn("Unable to restore Jev bridge after POI recording", t);
+            }
+        }
+        if (resumeHeadlessAfterRecording) {
+            resumeHeadlessAfterRecording = false;
+            try {
+                dev.micx.micxfabric.ModuleRuntime.setEnabled("headless", true);
+            } catch (Throwable t) {
+                MicxFabric.LOGGER.warn("Unable to restore Headless after POI recording", t);
+            }
+        }
     }
 
     private void cancel(String reason) {
         recording = false; current = null; networkEvents.clear(); lastAimSignature = "";
+        resumeBridgeAfterRecording = false; resumeHeadlessAfterRecording = false;
         droppedEvents = 0; dedupedEvents = 0; seenInboundEvidence.clear(); eventSequence.set(0L);
         MicxFabric.LOGGER.info("Discarded active Jev POI recording: {}", reason);
     }

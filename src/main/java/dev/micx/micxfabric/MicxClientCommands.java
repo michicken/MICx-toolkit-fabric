@@ -81,6 +81,13 @@ public final class MicxClientCommands {
             enterPoiManualMode(source);
             return;
         }
+        if (args.length >= 2 && "resume".equalsIgnoreCase(args[1])) {
+            ModuleRuntime.setEnabled("jev_bridge", true);
+            ModuleRuntime.setEnabled("headless", true);
+            reply(source, "POI 手动模式已结束：Jev bridge + Headless 已恢复。\n"
+                    + "如果录制尚未完成，当前文件不会被自动保存；请重新开始一次完整录制。\n");
+            return;
+        }
         if (args.length >= 2 && "label".equalsIgnoreCase(args[1])) {
             if (args.length < 3) {
                 reply(source, "usage: /micx poi label <CC|增益机|Ultimate Machine|装备店>");
@@ -92,14 +99,17 @@ public final class MicxClientCommands {
             return;
         }
         reply(source, "POI " + recorder.status()
-                + "。流程：/micx poi manual → /micx poi label <名称> → 反斜杠键 \\ 开始 → 亲自操作 → 关容器 → \\ 结束。");
+                + "。流程：/micx poi manual → /micx poi label <名称> → 反斜杠键 \\ 开始 → 亲自操作 → 关容器 → \\ 结束。"
+                + "异常中断后可用 /micx poi resume 恢复自动化。");
     }
 
     /** Stop every module that can move the view, inject clicks, switch slots, or receive Jev commands. */
     private static void enterPoiManualMode(FabricClientCommandSource source) {
+        dev.micx.micxfabric.jev.JevPoiRecorderModule.instance().resumeBridgeAfterRecording();
+        dev.micx.micxfabric.jev.JevPoiRecorderModule.instance().resumeHeadlessAfterRecording();
         String[] controlModules = {
                 "aimbot", "right_clicker", "remote_shop", "keyboard_clicker",
-                "noreload", "toggle_sprint", "magnet", "jev_bridge"
+                "noreload", "toggle_sprint", "magnet", "jev_bridge", "headless"
         };
         StringBuilder disabled = new StringBuilder();
         for (String id : controlModules) {

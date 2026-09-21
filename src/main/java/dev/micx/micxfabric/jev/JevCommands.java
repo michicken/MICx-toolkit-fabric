@@ -12,6 +12,12 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.concurrent.CompletableFuture;
@@ -63,6 +69,13 @@ public final class JevCommands {
                         opt(request, "style", ""), optInt(request, "duration_ms", 350),
                         request.has("sprint") && request.get("sprint").getAsBoolean()));
                 case "clear_combat_move" -> onClient(JevMoveFix::clear);
+                case "poi_use_block" -> onClient(client -> poiUseBlock(client,
+                        optInt(request, "x", Integer.MIN_VALUE), optInt(request, "y", Integer.MIN_VALUE),
+                        optInt(request, "z", Integer.MIN_VALUE), opt(request, "face", "up"),
+                        optFloat(request, "yaw", Float.NaN), optFloat(request, "pitch", Float.NaN)));
+                case "poi_click_slot" -> onClient(client -> poiClickSlot(client,
+                        optInt(request, "slot", -1), optInt(request, "button", 0),
+                        opt(request, "input", "PICKUP")));
                 case "set" -> set(request);
                 default -> "error: unknown op '" + op + "'";
             };
@@ -149,6 +162,57 @@ public final class JevCommands {
         }
     }
 
+    /**
+     * Performs one evidence-backed POI block interaction through vanilla's normal game-mode path.
+     * The external agent may only supply a nearby, recorded block and face; this does not create or
+     * send a custom movement/interaction packet.
+     */
+    private static String poiUseBlock(Minecraft client, int x, int y, int z, String faceName,
+                                      float yaw, float pitch) {
+        if (client.player == null || client.level == null || client.gameMode == null) return "error: no world";
+        if (x == Integer.MIN_VALUE || y == Integer.MIN_VALUE || z == Integer.MIN_VALUE) {
+            return "error: missing poi block";
+        }
+        BlockPos pos = new BlockPos(x, y, z);
+        if (client.player.distanceToSqr(Vec3.atCenterOf(pos)) > 36.0) return "error: poi block too far";
+        Direction face = Direction.byName(faceName == null ? "" : faceName.toLowerCase());
+        if (face == null) face = Direction.UP;
+        // Use the recorded normal camera orientation, never a silent server-only rotation.
+        if (Float.isFinite(yaw)) {
+            client.player.setYRot(yaw);
+            client.player.setYHeadRot(yaw);
+            client.player.setYBodyRot(yaw);
+        }
+        if (Float.isFinite(pitch)) client.player.setXRot(Math.max(-90.0f, Math.min(90.0f, pitch)));
+        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), face, pos, false);
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
+        return "poi-use-block";
+    }
+
+    /**
+     * Replays exactly one human-observed container input only while a real container is open.
+     * Its container id comes from the live menu, never from a stale recording.
+     */
+    private static String poiClickSlot(Minecraft client, int slot, int button, String inputName) {
+        if (client.player == null || client.gameMode == null || client.gui == null
+                || !(client.gui.screen() instanceof AbstractContainerScreen<?>)) {
+            return "error: no open container";
+        }
+        if (slot < 0 || slot >= client.player.containerMenu.slots.size()) return "error: container slot out of range";
+        ContainerInput input;
+        try {
+            input = ContainerInput.valueOf(inputName == null ? "PICKUP" : inputName.toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return "error: unsupported container input";
+        }
+        if (input != ContainerInput.PICKUP && input != ContainerInput.QUICK_MOVE) {
+            return "error: container input not allowed";
+        }
+        client.gameMode.handleContainerInput(client.player.containerMenu.containerId, slot,
+                Math.max(0, Math.min(1, button)), input, client.player);
+        return "poi-container-click";
+    }
+
     private static String set(JsonObject request) {
         String key = opt(request, "key", "");
         return switch (key) {
@@ -223,6 +287,14 @@ public final class JevCommands {
     private static int optInt(JsonObject request, String key, int fallback) {
         try {
             return request.has(key) ? request.get(key).getAsInt() : fallback;
+        } catch (Throwable t) {
+            return fallback;
+        }
+    }
+
+    private static float optFloat(JsonObject request, String key, float fallback) {
+        try {
+            return request.has(key) ? request.get(key).getAsFloat() : fallback;
         } catch (Throwable t) {
             return fallback;
         }
