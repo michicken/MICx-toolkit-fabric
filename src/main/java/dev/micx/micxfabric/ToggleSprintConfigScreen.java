@@ -11,39 +11,39 @@ public final class ToggleSprintConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public ToggleSprintConfigScreen(Screen parent) {
-        super(parent, "ToggleSprint", "疾跑切换 · 客户端状态");
+        super(parent, UiText.shown("疾跑切换", "ToggleSprint"), UiText.shown("ToggleSprint · 客户端状态", "疾跑切换 · 客户端状态"));
     }
 
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         ToggleSprintModule module = ToggleSprintModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "启用后沿用原版 sprint 条件与同步逻辑。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("打开后仍然沿用原版的冲刺条件和同步逻辑。", "启用后沿用原版 sprint 条件与同步逻辑。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Sprint lock", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("锁定疾跑", "Sprint lock"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "按主键切换锁定状态；关闭时恢复物理按键状态。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "HUD Text", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "屏幕左下角显示 [Sprint] / [Sprint OFF] 状态字样。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("HUD 文字", "HUD Text"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("在屏幕左下角显示 [Sprint] / [Sprint OFF] 状态字样。", "屏幕左下角显示 [Sprint] / [Sprint OFF] 状态字样。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.hudEnabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
-        graphics.text(font, "Primary", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("主键", "Primary"), contentLeft(), y + 4, TEXT);
         String label = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(module.keyCode()).label();
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 34;
-        y = wrapped(graphics, "绑定语义与原 1.8.9 一致：键盘使用 GLFW key code，鼠标使用 -100 + button。",
+        y = wrapped(graphics, UiText.shown("绑定的规则和原 1.8.9 完全一样。", "绑定语义与原 1.8.9 一致：键盘使用 GLFW key code，鼠标使用 -100 + button。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

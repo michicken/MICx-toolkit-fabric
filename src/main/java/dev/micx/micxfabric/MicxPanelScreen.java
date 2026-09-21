@@ -65,6 +65,8 @@ public final class MicxPanelScreen extends Screen {
     private int hudLayoutW;
     private int guideX;
     private int guideW;
+    private int textModeX;
+    private int textModeW;
 
     public MicxPanelScreen(Screen parent) {
         super(Component.literal("MICx Toolkit"));
@@ -195,6 +197,24 @@ public final class MicxPanelScreen extends Screen {
         boolean guideHovered = guideX <= lastMouseX && lastMouseX < guideX + guideW
                 && hudLayoutY <= lastMouseY && lastMouseY < hudLayoutY + 16;
         drawHeaderEntry(graphics, "Guide", guideX, hudLayoutY, guideW, guideHovered);
+
+        // 文案版本开关：切到旧版时整块按钮转琥珀色，避免看着旧文案却以为是自己改错了。
+        textModeW = 74;
+        textModeX = guideX - 6 - textModeW;
+        boolean textModeHovered = textModeX <= lastMouseX && lastMouseX < textModeX + textModeW
+                && hudLayoutY <= lastMouseY && lastMouseY < hudLayoutY + 16;
+        drawTextModeEntry(graphics, textModeX, hudLayoutY, textModeW, textModeHovered);
+    }
+
+    /** 「文案 新版 / 旧版」开关：面板里所有模块名、介绍与配置项说明都跟着它切换。 */
+    private void drawTextModeEntry(GuiGraphicsExtractor graphics, int x, int y, int w, boolean hovered) {
+        boolean legacy = UiText.legacy();
+        graphics.fill(x, y, x + w, y + 16, hovered ? BG_HOVER : BG_RAISED);
+        outline(graphics, x, y, w, 16, legacy ? AMBER_DIM : (hovered ? LINE_HI : LINE));
+        String label = "文案 " + UiText.modeLabel();
+        int textWidth = font.width(label);
+        graphics.text(font, label, x + Math.max(2, (w - textWidth) / 2), y + 4,
+                legacy ? AMBER : (hovered ? TEXT : TEXT_DIM));
     }
 
     private int lastMouseX;
@@ -224,9 +244,10 @@ public final class MicxPanelScreen extends Screen {
             if (y + entry.height < headerBottom || y > footerTop) continue;
             if (entry.header) {
                 ModulePanelRegistry.GroupMetadata group = ModulePanelRegistry.group(entry.group);
-                graphics.text(font, group.displayName(), railX + PAD, y + 6, AMBER_DIM);
-                int groupX = railX + PAD + font.width(group.displayName()) + 6;
-                graphics.text(font, group.chineseName(), groupX, y + 6, TEXT_FAINT);
+                String groupTitle = group.chineseName();
+                graphics.text(font, groupTitle, railX + PAD, y + 6, AMBER_DIM);
+                int groupX = railX + PAD + font.width(groupTitle) + 6;
+                graphics.text(font, group.displayName(), groupX, y + 6, TEXT_FAINT);
                 continue;
             }
 
@@ -247,24 +268,25 @@ public final class MicxPanelScreen extends Screen {
             if (entry.subId != null) {
                 ModulePanelRegistry.SubmoduleDescriptor submodule = ModulePanelRegistry.submodule(entry.id, entry.subId);
                 int textX = railX + PAD + 20;
-                String label = "· " + (submodule == null ? entry.subId : submodule.displayName());
+                String label = "· " + (submodule == null ? entry.subId : submodule.chineseName());
                 graphics.text(font, trim(label, Math.max(0, paneX - 6 - textX)), textX,
                         y + 7, selected ? TEXT : TEXT_DIM);
                 if (submodule != null) {
-                    int chineseX = textX + font.width(label) + 6;
-                    if (chineseX + font.width(submodule.chineseName()) < paneX - 5) {
-                        graphics.text(font, submodule.chineseName(), chineseX, y + 7, TEXT_FAINT);
+                    int englishX = textX + font.width(label) + 6;
+                    if (englishX + font.width(submodule.displayName()) < paneX - 5) {
+                        graphics.text(font, submodule.displayName(), englishX, y + 7, TEXT_FAINT);
                     }
                 }
                 continue;
             }
             drawStateDot(graphics, railX + PAD - 2, y + entry.height / 2, on);
             int textX = railX + PAD + 10;
-            graphics.text(font, trim(descriptor.displayName(), Math.max(0, paneX - 6 - textX)), textX,
+            String moduleTitle = descriptor.chineseName();
+            graphics.text(font, trim(moduleTitle, Math.max(0, paneX - 6 - textX)), textX,
                     y + 7, selected ? TEXT : TEXT_DIM);
-            int chineseX = textX + font.width(descriptor.displayName()) + 6;
-            if (chineseX + font.width(descriptor.chineseName()) < paneX - 5) {
-                graphics.text(font, descriptor.chineseName(), chineseX, y + 7, TEXT_FAINT);
+            int englishX = textX + font.width(moduleTitle) + 6;
+            if (englishX + font.width(descriptor.displayName()) < paneX - 5) {
+                graphics.text(font, descriptor.displayName(), englishX, y + 7, TEXT_FAINT);
             }
             if (!descriptor.isMigrated()) {
                 graphics.text(font, "·", paneX - 15, y + 7, TEXT_FAINT);
@@ -286,9 +308,9 @@ public final class MicxPanelScreen extends Screen {
         if (selectedSubId != null) {
             ModulePanelRegistry.SubmoduleDescriptor submodule = ModulePanelRegistry.submodule(selectedId, selectedSubId);
             if (submodule != null) {
-                graphics.text(font, submodule.displayName(), x, y, TEXT, true);
-                int chineseX = x + font.width(submodule.displayName()) + 7;
-                if (chineseX < right - 50) graphics.text(font, submodule.chineseName(), chineseX, y + 2, TEXT_DIM);
+                graphics.text(font, submodule.chineseName(), x, y, TEXT, true);
+                int englishX = x + font.width(submodule.chineseName()) + 7;
+                if (englishX < right - 50) graphics.text(font, submodule.displayName(), englishX, y + 2, TEXT_DIM);
                 y += 14;
                 graphics.text(font, selectedId + " / " + selectedSubId, x, y, TEXT_FAINT);
                 y += 18;
@@ -301,11 +323,11 @@ public final class MicxPanelScreen extends Screen {
                 y += 12;
                 if (!descriptor.isMigrated()) {
                     graphics.text(font, "NOT MIGRATED / 未迁移", x, y + 3, AMBER_DIM);
-                    graphics.text(font, "此子分区仅保留原 1.8.9 入口，Fabric 运行逻辑尚未迁移。", x, y + 15, TEXT_FAINT);
+                    graphics.text(font, UiText.shown("这个分区只保留了原 1.8.9 的入口，Fabric 上的运行逻辑还没迁移过来。", "此子分区仅保留原 1.8.9 入口，Fabric 运行逻辑尚未迁移。"), x, y + 15, TEXT_FAINT);
                 } else {
                     boolean parentOn = descriptor.module().enabled();
-                    graphics.text(font, "Enable", x, y + 3, TEXT);
-                    graphics.text(font, "切换 ZombiesAssist 父模块；Display / Alerts / Auto 不是独立模块。",
+                    graphics.text(font, UiText.shown("启用模块", "Enable"), x, y + 3, TEXT);
+                    graphics.text(font, UiText.shown("这里切的是 ZombiesAssist 父模块；Display / Alerts / Auto 是分区，不是独立模块。", "切换 ZombiesAssist 父模块；Display / Alerts / Auto 不是独立模块。"),
                             x, y + 15, TEXT_FAINT);
                     int toggleX = right - 44;
                     drawToggle(graphics, toggleX, y + 2, 44, 16, parentOn,
@@ -320,10 +342,10 @@ public final class MicxPanelScreen extends Screen {
                 return;
             }
         }
-        String title = descriptor.displayName();
+        String title = descriptor.chineseName();
         graphics.text(font, title, x, y, TEXT, true);
-        int chineseX = x + font.width(title) + 7;
-        if (chineseX < right - 50) graphics.text(font, descriptor.chineseName(), chineseX, y + 2, TEXT_DIM);
+        int englishX = x + font.width(title) + 7;
+        if (englishX < right - 50) graphics.text(font, descriptor.displayName(), englishX, y + 2, TEXT_DIM);
         y += 14;
         graphics.text(font, descriptor.id(), x, y, TEXT_FAINT);
 
@@ -348,7 +370,7 @@ public final class MicxPanelScreen extends Screen {
             return;
         }
 
-        graphics.text(font, Component.literal("Enable"), x, y + 3, TEXT);
+        graphics.text(font, Component.literal(UiText.shown("启用模块", "Enable")), x, y + 3, TEXT);
         graphics.text(font, Component.literal("打开或关闭该模块"), x, y + 15, TEXT_FAINT);
         int toggleX = right - 44;
         int toggleY = y + 2;
@@ -363,10 +385,10 @@ public final class MicxPanelScreen extends Screen {
         }
 
         if (descriptor.hasConfigScreen()) {
-            drawAction(graphics, x, y, right - x, 18, "Configure >",
+            drawAction(graphics, x, y, right - x, 18, UiText.shown("打开配置 ›", "Configure >"),
                     mouseX >= x && mouseX < right && mouseY >= y && mouseY < y + 18);
         } else {
-            graphics.text(font, Component.literal("No extra settings"), x, y + 3, TEXT_DIM);
+            graphics.text(font, Component.literal(UiText.shown("没有额外设置项", "No extra settings")), x, y + 3, TEXT_DIM);
             graphics.text(font, Component.literal("此模块当前没有额外可调项"), x, y + 15, TEXT_FAINT);
         }
 
@@ -377,7 +399,9 @@ public final class MicxPanelScreen extends Screen {
     }
 
     private void drawFooter(GuiGraphicsExtractor graphics) {
-        String footer = "ESC 关闭 · 左键选择频道 · 左栏滚轮滚动";
+        String footer = UiText.legacy()
+                ? "ESC 关闭 · 左键选择频道 · 左栏滚轮滚动 · 当前显示改写前的原文案"
+                : "ESC 关闭 · 左键选择频道 · 左栏滚轮滚动";
         graphics.text(font, footer, railX + PAD, footerTop + 6, TEXT_FAINT);
         String unavailable = "Tutorial 未迁移 · HUD Layout 可编辑";
         graphics.text(font, unavailable, cardX + cardW - PAD - font.width(unavailable), footerTop + 6, TEXT_FAINT);
@@ -461,6 +485,14 @@ public final class MicxPanelScreen extends Screen {
         int layoutX = tutorialX - 6 - layoutW;
         int layoutY = cardY + 7;
         int guideX = layoutX - 6 - 58;
+        int textModeW = 74;
+        int textModeX = guideX - 6 - textModeW;
+        if (mouseX >= textModeX && mouseX < textModeX + textModeW
+                && mouseY >= layoutY && mouseY < layoutY + 16) {
+            UiText.toggle();
+            errorMessage = null;
+            return true;
+        }
         if (mouseX >= guideX && mouseX < guideX + 58
                 && mouseY >= layoutY && mouseY < layoutY + 16) {
             minecraft.setScreenAndShow(new StarterGuideScreen(this));

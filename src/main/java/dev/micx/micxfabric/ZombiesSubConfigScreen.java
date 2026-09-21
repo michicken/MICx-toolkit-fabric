@@ -42,8 +42,8 @@ abstract class ZombiesSubConfigScreen extends ModuleConfigScreen {
     protected final void drawParentModuleToggle(GuiGraphicsExtractor graphics, int y,
                                                 int mouseX, int mouseY) {
         ZombiesAssistModule module = ZombiesAssistModule.instance();
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "启用或关闭 ZombiesAssist 全部运行逻辑。",
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("打开或关闭 ZombiesAssist 的全部运行逻辑。", "启用或关闭 ZombiesAssist 全部运行逻辑。"),
                 contentLeft(), y + 17, TEXT_DIM);
         int toggleX = contentRight() - 44;
         drawToggle(graphics, toggleX, y + 1, 44, 16, module.enabled(),
@@ -56,11 +56,11 @@ abstract class ZombiesSubConfigScreen extends ModuleConfigScreen {
 
     @Override
     protected final void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
-        section(graphics, "MODULE / 模块", y);
+        section(graphics, UiText.shown("模块开关", "MODULE / 模块"), y);
         y += 20;
         drawParentModuleToggle(graphics, y, mouseX, mouseY);
         y += 38;
-        section(graphics, "OPTIONS / 选项", y);
+        section(graphics, UiText.shown("选项", "OPTIONS / 选项"), y);
         y += 20;
         for (ToggleRow row : toggleRows()) {
             graphics.text(font, row.label(), contentLeft(), y + 4, TEXT);
@@ -76,7 +76,7 @@ abstract class ZombiesSubConfigScreen extends ModuleConfigScreen {
         if (!numericFields.isEmpty()) {
             graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
             y += 14;
-            section(graphics, "HUD POSITION / 位置与缩放", y);
+            section(graphics, UiText.shown("HUD 位置与缩放", "HUD POSITION / 位置与缩放"), y);
             y += 20;
             for (NumericField field : numericFields) {
                 NumericSpec spec = field.spec;
@@ -93,7 +93,7 @@ abstract class ZombiesSubConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        info(graphics, "修改在离开页面时校验并保存；整数和缩放值均按 Forge 范围限制。", y);
+        info(graphics, UiText.shown("离开这个页面时会校验并保存；整数和缩放都按 Forge 的范围限制。", "修改在离开页面时校验并保存；整数和缩放值均按 Forge 范围限制。"), y);
         y += 34;
         setContentHeight(y - contentTop() + scrollOffset());
     }

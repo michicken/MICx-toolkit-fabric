@@ -21,7 +21,7 @@ public final class PacketLogConfigScreen extends ModuleConfigScreen {
     }
 
     public PacketLogConfigScreen(Screen parent) {
-        super(parent, "PacketLog", "封包日志 · 抓买弹现场");
+        super(parent, UiText.shown("封包日志", "PacketLog"), UiText.shown("PacketLog · 抓买弹现场", "封包日志 · 抓买弹现场"));
     }
 
     @Override
@@ -31,7 +31,7 @@ public final class PacketLogConfigScreen extends ModuleConfigScreen {
         Minecraft client = Minecraft.getInstance();
         int pointerY = mouseY + scrollOffset();
 
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
         graphics.text(font, "启用 / Enable", contentLeft(), y + 4, TEXT);
         boolean toggleHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
@@ -47,7 +47,7 @@ public final class PacketLogConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "OPTIONS / 选项", y);
+        section(graphics, UiText.shown("选项", "OPTIONS / 选项"), y);
         y += 20;
         graphics.text(font, "记录全部（含移动包）", contentLeft(), y + 4, TEXT);
         boolean allHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
@@ -61,7 +61,7 @@ public final class PacketLogConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "ACTIONS / 操作", y);
+        section(graphics, UiText.shown("操作", "ACTIONS / 操作"), y);
         y += 20;
         int buttonW = 96;
         boolean markHovered = isInside(mouseX, pointerY, contentLeft(), y, buttonW, 18);
@@ -83,7 +83,7 @@ public final class PacketLogConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "RECENT / 最近事件", y);
+        section(graphics, UiText.shown("最近事件", "RECENT / 最近事件"), y);
         y += 18;
         List<String> recent = module.recent();
         if (recent.isEmpty()) {

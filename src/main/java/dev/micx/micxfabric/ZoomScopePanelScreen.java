@@ -12,34 +12,34 @@ public final class ZoomScopePanelScreen extends ModuleConfigScreen {
     private int plusY;
 
     public ZoomScopePanelScreen(Screen parent, ZoomScopeModule mod) {
-        super(parent, "ZoomScope", "放大镜 · 按住放大 + 滚轮调倍率");
+        super(parent, UiText.shown("放大镜", "ZoomScope"), UiText.shown("ZoomScope · 按住放大 + 滚轮调倍率", "放大镜 · 按住放大 + 滚轮调倍率"));
         this.mod = mod;
     }
 
     @Override
     protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY, int y) {
-        section(g, "STATUS / 状态", y);
+        section(g, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        g.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        g.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         toggleY = y + 1;
         drawToggle(g, contentRight() - 44, y + 1, 44, 16, mod.enabled(), isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 34;
 
         g.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 12;
-        section(g, "KEYBIND / 快捷键", y);
+        section(g, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
-        y = wrapped(g, "按住局部放大，松开恢复；按住时滚轮调 2~8x。单键绑定，支持鼠标侧键。", contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
+        y = wrapped(g, UiText.shown("按住才放大，松开恢复；按住期间滚轮调 2~8 倍。单键绑定，支持鼠标侧键。", "按住局部放大，松开恢复；按住时滚轮调 2~8x。单键绑定，支持鼠标侧键。"), contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
         y += 6;
         g.text(font, "当前倍率：" + mod.zoomFactor() + "x（范围 2~8x）", contentLeft(), y, TEXT);
         y += 14;
-        y = wrapped(g, "按住放大键期间滚动滚轮：上滚放大 / 下滚缩小，调整后立即保存。", contentLeft(), y, TEXT_FAINT, contentWidth()) + 6;
+        y = wrapped(g, UiText.shown("按住放大键时滚轮上滚放大、下滚缩小，调完立即保存。", "按住放大键期间滚动滚轮：上滚放大 / 下滚缩小，调整后立即保存。"), contentLeft(), y, TEXT_FAINT, contentWidth()) + 6;
 
         g.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 12;
-        section(g, "SENSITIVITY / 灵敏度", y);
+        section(g, UiText.shown("灵敏度", "SENSITIVITY / 灵敏度"), y);
         y += 20;
-        y = wrapped(g, "放大时灵敏度 = k/倍率。k=1 为 1:1 手感（4x→1/4），k=2 整体抬高（4x→1/2）。", contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
+        y = wrapped(g, UiText.shown("放大后的灵敏度 = k ÷ 倍率。k=1 是等比手感（4 倍时变成 1/4），k=2 整体抬高（4 倍时是 1/2）。", "放大时灵敏度 = k/倍率。k=1 为 1:1 手感（4x→1/4），k=2 整体抬高（4x→1/2）。"), contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
         String label = String.format(java.util.Locale.ROOT, "Sensitivity K: %.1f  (4x→1/%.1f)", mod.sensitivityK(), Math.max(1.0, 4.0 / mod.sensitivityK()));
         g.text(font, label, contentLeft(), y + 4, TEXT);
         int minusX = contentRight() - 80;
@@ -52,10 +52,10 @@ public final class ZoomScopePanelScreen extends ModuleConfigScreen {
 
         g.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 12;
-        section(g, "ABOUT / 说明", y);
+        section(g, UiText.shown("说明", "ABOUT / 说明"), y);
         y += 20;
-        y = wrapped(g, "按住快捷键：屏幕中央 16:9 矩形内显示清晰的局部放大画面（当前为全屏 FOV 缩放，画中画二期用小 FBO 实现），周边保持正常视野，松开立即消失，无平滑过渡。", contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
-        y = wrapped(g, "放大时鼠标灵敏度按 k/倍率降低，每个倍率固定对应、即时生效。纯客户端渲染，不发包。", contentLeft(), y, TEXT_DIM, contentWidth()) + 6;
+        y = wrapped(g, UiText.shown("按住快捷键时，屏幕中央按 16:9 放大显示局部画面，周边保持正常视野，松开立刻消失、没有过渡动画。目前用全屏 FOV 缩放实现，画中画版本还没做。", "按住快捷键：屏幕中央 16:9 矩形内显示清晰的局部放大画面（当前为全屏 FOV 缩放，画中画二期用小 FBO 实现），周边保持正常视野，松开立即消失，无平滑过渡。"), contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
+        y = wrapped(g, UiText.shown("放大时鼠标灵敏度按 k ÷ 倍率降低，每个倍率对应一个固定值，即时生效。纯客户端渲染，不发包。", "放大时鼠标灵敏度按 k/倍率降低，每个倍率固定对应、即时生效。纯客户端渲染，不发包。"), contentLeft(), y, TEXT_DIM, contentWidth()) + 6;
 
         setContentHeight(y - contentTop() + scrollOffset());
     }

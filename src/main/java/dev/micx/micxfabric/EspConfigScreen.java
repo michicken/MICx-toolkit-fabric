@@ -14,7 +14,7 @@ public final class EspConfigScreen extends ModuleConfigScreen {
     private EditBox gateMobsBox;
 
     public EspConfigScreen(Screen parent) {
-        super(parent, "ESP", "线框透视 · 26.2 submit pipeline");
+        super(parent, UiText.shown("线框透视", "ESP"), UiText.shown("ESP · 提交线框绘制", "线框透视 · 26.2 submit pipeline"));
     }
 
     @Override
@@ -40,52 +40,52 @@ public final class EspConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         EspModule module = EspModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "提交非玩家实体线框；不会修改全局 OpenGL 状态。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("打开后就提交非玩家实体的线框。", "提交非玩家实体线框；不会修改全局 OpenGL 状态。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Active", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "关闭时保留模块配置但不提交线框。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("实际生效", "Active"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("关掉只是停止提交线框，模块配置保留，随时可以再开回来。", "关闭时保留模块配置但不提交线框。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "RANGE / 范围", y);
+        section(graphics, UiText.shown("生效范围", "RANGE / 范围"), y);
         y += 20;
-        graphics.text(font, "Range", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("生效距离", "Range"), contentLeft(), y + 4, TEXT);
         rangeBox.setX(contentRight() - 72);
         rangeBox.setY(y);
         y += 28;
-        graphics.text(font, "Opacity %", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("不透明度 %", "Opacity %"), contentLeft(), y + 4, TEXT);
         alphaBox.setX(contentRight() - 72);
         alphaBox.setY(y);
         y += 34;
-        y = wrapped(graphics, "范围 8–256 格；透明度 5–100%。普通实体使用默认红色，Golem/Wither 使用独立颜色。",
+        y = wrapped(graphics, UiText.shown("生效距离 8–256 格，不透明度 5–100%。普通实体用默认红色，Golem 和 Wither 各有自己的颜色。", "范围 8–256 格；透明度 5–100%。普通实体使用默认红色，Golem/Wither 使用独立颜色。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 14;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "AUTO GATE / 自动门控", y);
+        section(graphics, UiText.shown("自动门控", "AUTO GATE / 自动门控"), y);
         y += 20;
-        graphics.text(font, "Auto Gate", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("自动门控", "Auto Gate"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "Round 达到阈值且 Left 不低于门槛时暂停普通 ESP。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.autoGate(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Gate Round", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("起效回合", "Gate Round"), contentLeft(), y + 4, TEXT);
         gateRoundBox.setX(contentRight() - 72);
         gateRoundBox.setY(y);
         y += 28;
-        graphics.text(font, "Show Under", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("剩余怪少于", "Show Under"), contentLeft(), y + 4, TEXT);
         gateMobsBox.setX(contentRight() - 72);
         gateMobsBox.setY(y);
         y += 34;
-        y = wrapped(graphics, "Gate Round 10–110；Show Under 1–100。TOO/Giant 优先目标和完整 TeamSync white target 仍待后续接入。",
+        y = wrapped(graphics, UiText.shown("起效回合可填 10–110，剩余怪阈值可填 1–100。TOO / Giant 优先目标和完整的 TeamSync 白名单目标还没接进来。", "Gate Round 10–110；Show Under 1–100。TOO/Giant 优先目标和完整 TeamSync white target 仍待后续接入。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
         setContentHeight(y - contentTop() + scrollOffset());

@@ -17,7 +17,7 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     private int protectToggleY = -1;
 
     public KeyboardClickerConfigScreen(Screen parent) {
-        super(parent, "KeyboardClicker", "键盘连点 · 原生按键队列");
+        super(parent, UiText.shown("自动切枪", "KeyboardClicker"), UiText.shown("KeyboardClicker · 原生按键队列", "键盘连点 · 原生按键队列"));
     }
 
     @Override
@@ -32,25 +32,25 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         KeyboardClickerModule module = KeyboardClickerModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "只排队原版 KeyMapping click（数字键 / Q），不直接构造点击包。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Right-click gate", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("右键门控", "Right-click gate"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "启用后仅在按住原生右键时连点。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.rightClickTrigger(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "MODES / 模式", y);
+        section(graphics, UiText.shown("模式", "MODES / 模式"), y);
         y += 20;
-        graphics.text(font, "Current", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("当前状态", "Current"), contentLeft(), y + 4, TEXT);
         graphics.text(font, module.modeName(), contentLeft() + 70, y + 4, AMBER);
-        graphics.text(font, "Interval (ms)", contentLeft() + 150, y + 4, TEXT);
+        graphics.text(font, UiText.shown("间隔 ms", "Interval (ms)"), contentLeft() + 150, y + 4, TEXT);
         intervalBox.setX(contentRight() - 64);
         intervalBox.setY(y);
         y += 30;
@@ -59,18 +59,18 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         for (int i = 0; i < modeNames.length; i++) {
             modeToggleX[i] = contentRight() - 44;
             modeToggleY[i] = y;
-            graphics.text(font, "Mode " + modeNames[i], contentLeft(), y + 4, TEXT);
+            graphics.text(font, UiText.shown("模式 ", "Mode ") + modeNames[i], contentLeft(), y + 4, TEXT);
             drawToggle(graphics, modeToggleX[i], y, 44, 16, enabled[i],
                     isInside(mouseX, mouseY, modeToggleX[i], y, 44, 16));
             y += 24;
         }
         y += 2;
-        y = wrapped(graphics, "可同时勾选多个组合；V 只在已勾选模式间循环，` 切换连点开关。至少保留 1 项，范围 40–100 ms。",
+        y = wrapped(graphics, UiText.shown("可以同时勾选多个组合；V 键只在勾选到的模式之间循环，` 键切换连点开关。至少要留 1 项，间隔范围 40–100 毫秒。", "可同时勾选多个组合；V 只在已勾选模式间循环，` 切换连点开关。至少保留 1 项，范围 40–100 ms。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "JAM PROTECT / 防卡弹", y);
+        section(graphics, UiText.shown("防卡弹", "JAM PROTECT / 防卡弹"), y);
         y += 20;
         protectToggleY = y;
         graphics.text(font, "保护模式（模式 B）", contentLeft(), y + 4, TEXT);
@@ -84,19 +84,19 @@ public final class KeyboardClickerConfigScreen extends ModuleConfigScreen {
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYS / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYS / 快捷键"), y);
         y += 20;
-        graphics.text(font, "Toggle", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("开关快捷键", "Toggle"), contentLeft(), y + 4, TEXT);
         drawButton(graphics, listeningToggle ? "按键..." : new InputBinding(module.toggleKey()).label(),
                 contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 28;
-        graphics.text(font, "Mode", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("模式", "Mode"), contentLeft(), y + 4, TEXT);
         drawButton(graphics, listeningMode ? "按键..." : new InputBinding(module.modeKey()).label(),
                 contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 34;
-        y = wrapped(graphics, "按 1 可暂停，按 2/3/4 可恢复原版模式；所有操作受世界与 Screen 状态保护。",
+        y = wrapped(graphics, UiText.shown("按 1 暂停，按 2 / 3 / 4 恢复成原版模式。这些按键只在游戏内、且没开界面时才会响应。", "按 1 可暂停，按 2/3/4 可恢复原版模式；所有操作受世界与 Screen 状态保护。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

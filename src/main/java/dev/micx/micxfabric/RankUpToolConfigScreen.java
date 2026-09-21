@@ -26,7 +26,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
     }
 
     public RankUpToolConfigScreen(Screen parent) {
-        super(parent, "RankUpTool", "求 Rank · 定时发送");
+        super(parent, UiText.shown("求 Rank", "RankUpTool"), UiText.shown("RankUpTool · 定时发送", "求 Rank · 定时发送"));
     }
 
     @Override
@@ -49,7 +49,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
         // 命中判定要加回滚动量：本屏记录的是绘制坐标（已含滚动偏移）。
         int pointerY = mouseY + scrollOffset();
 
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
         graphics.text(font, "启用 / Enable", contentLeft(), y + 4, TEXT);
         boolean toggleHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
@@ -62,13 +62,13 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
                 : "已关闭";
         graphics.text(font, status, contentLeft(), y, module.enabled() ? ON : TEXT_DIM);
         y += 14;
-        y = wrapped(graphics, "任何界面打开时都不发送（含聊天栏输入和本面板）；换世界会重新计时。"
+        y = wrapped(graphics, UiText.shown("只要有界面开着就不会发送（包括正在打字和开着这个面板）。换世界会重新计时。", "任何界面打开时都不发送（含聊天栏输入和本面板）；换世界会重新计时。")
                 + "模块开启时切到别的应用不会自动弹暂停界面，会一直照发。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "BOOK ALERT / 书本警报", y);
+        section(graphics, UiText.shown("书本提醒", "BOOK ALERT / 书本警报"), y);
         y += 20;
         y = wrapped(graphics, "打开成书 / 书与笔 / 签名页任一书本界面后，每 0.5 秒「叮」一声（音符盒铃铛音），"
                 + "最长响 1 分钟；书本界面一关立即安静，重新打开重新计时。",
@@ -76,7 +76,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "RANK / 档位", y);
+        section(graphics, UiText.shown("档位", "RANK / 档位"), y);
         y += 20;
         int width = rankButtonWidth();
         List<String> ranks = RankUpToolRules.RANKS;
@@ -98,7 +98,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "MESSAGE / 话术", y);
+        section(graphics, UiText.shown("话术", "MESSAGE / 话术"), y);
         y += 20;
         graphics.text(font, "固定文本 / Fixed", contentLeft(), y + 4, TEXT);
         boolean fixedHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
@@ -127,7 +127,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "TIMING / 节奏", y);
+        section(graphics, UiText.shown("节奏", "TIMING / 节奏"), y);
         y += 20;
         graphics.text(font, "发送间隔 / Interval", contentLeft(), y + 4, TEXT);
         intervalBox.setX(contentRight() - INTERVAL_BOX_W - 16);
@@ -144,7 +144,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
         hits.add(new Hit(contentLeft(), y, sendW, 18,
                 () -> module.sendNow(Minecraft.getInstance())));
         y += 26;
-        y = wrapped(graphics, "「立即发一条」按一次只补发一条，并重置自动计时，不会连着再发一条。",
+        y = wrapped(graphics, UiText.shown("「立即发一条」按一次只补一条，并重置自动计时，不会连着多发。", "「立即发一条」按一次只补发一条，并重置自动计时，不会连着再发一条。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

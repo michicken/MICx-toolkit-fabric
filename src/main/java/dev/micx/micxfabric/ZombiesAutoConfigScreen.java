@@ -7,7 +7,7 @@ import java.util.List;
 /** Forge ZombiesAutoPanelScreen equivalent for Fabric 26.2. */
 public final class ZombiesAutoConfigScreen extends ZombiesSubConfigScreen {
     public ZombiesAutoConfigScreen(Screen parent) {
-        super(parent, "Zombies · Auto & Chat", "记分板 / 消息 · 自动行为");
+        super(parent, UiText.shown("记分板 / 消息", "ZombiesAssist · Auto"), UiText.shown("ZombiesAssist · Auto & Chat", "记分板 / 消息 · 自动行为"));
     }
 
     @Override

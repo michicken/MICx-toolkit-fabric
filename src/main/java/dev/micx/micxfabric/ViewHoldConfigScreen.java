@@ -7,22 +7,22 @@ public final class ViewHoldConfigScreen extends ModuleConfigScreen {
     private static final int BUTTON_W = 110;
 
     public ViewHoldConfigScreen(Screen parent) {
-        super(parent, "ViewHold", "按住切视角 · 目标视角与俯仰镜像");
+        super(parent, UiText.shown("临时视角", "ViewHold"), UiText.shown("ViewHold · 按住切换，松开恢复", "按住切视角 · 目标视角与俯仰镜像"));
     }
 
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         ViewHoldModule mod = ViewHoldModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, mod.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 34;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 12;
-        section(graphics, "TARGET VIEW / 目标视角", y);
+        section(graphics, UiText.shown("目标视角", "TARGET VIEW / 目标视角"), y);
         y += 20;
         boolean behind = mod.getTargetView() == 1;
         String viewLabel = behind ? "背面视角" : "正面视角";
@@ -39,7 +39,7 @@ public final class ViewHoldConfigScreen extends ModuleConfigScreen {
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, mod.isPitchMirror(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 26;
-        y = wrapped(graphics, "正面视角时渲染帧内取反 pitch（相机翻到面前上方俯视自己）。", contentLeft(), y, TEXT_DIM, contentWidth()) + 6;
+        y = wrapped(graphics, UiText.shown("切到正面视角时会在这一帧里取反俯仰角，相机就像翻到你面前上方往下看你。", "正面视角时渲染帧内取反 pitch（相机翻到面前上方俯视自己）。"), contentLeft(), y, TEXT_DIM, contentWidth()) + 6;
 
         setContentHeight(y - contentTop() + scrollOffset());
     }

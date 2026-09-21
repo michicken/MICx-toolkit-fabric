@@ -11,7 +11,7 @@ public final class ChamsConfigScreen extends ModuleConfigScreen {
     private EditBox rangeBox;
 
     public ChamsConfigScreen(Screen parent) {
-        super(parent, "Chams", "原贴图模型透墙 · 仅遮挡目标");
+        super(parent, UiText.shown("模型透视", "Chams"), UiText.shown("Chams · 只画被遮挡的目标", "原贴图模型透墙 · 仅遮挡目标"));
     }
 
     @Override
@@ -25,9 +25,9 @@ public final class ChamsConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         ChamsModule module = ChamsModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "只替换被方块遮挡目标的 vanilla 模型材质；ESP 线框独立控制。",
                 contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
@@ -35,19 +35,19 @@ public final class ChamsConfigScreen extends ModuleConfigScreen {
         y += 42;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "RANGE / 范围", y);
+        section(graphics, UiText.shown("生效范围", "RANGE / 范围"), y);
         y += 20;
-        graphics.text(font, "Range", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("生效距离", "Range"), contentLeft(), y + 4, TEXT);
         rangeBox.setX(contentRight() - 72);
         rangeBox.setY(y);
         y += 32;
-        y = wrapped(graphics, "范围 8–128 格。可见实体保持原版渲染；只有玩家眼睛到实体中心的方块射线命中时才启用模型 Chams。",
+        y = wrapped(graphics, UiText.shown("生效距离 8–128 格。看得见的怪仍然按原版渲染；只有从你的眼睛到怪物中心被方块挡住时，才换成模型透视。", "范围 8–128 格。可见实体保持原版渲染；只有玩家眼睛到实体中心的方块射线命中时才启用模型 Chams。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "BOUNDARY / 边界", y);
+        section(graphics, UiText.shown("使用限制", "BOUNDARY / 边界"), y);
         y += 20;
-        y = wrapped(graphics, "不复用 ESP 的线框管线，不绘制纯色方框；模块关闭、断开或切世界时会清空遮挡缓存。",
+        y = wrapped(graphics, UiText.shown("它画的是模型而不是方框，和 ESP 的线框各管各的。关闭模块、断线或换世界时会清掉已经记录的遮挡。", "不复用 ESP 的线框管线，不绘制纯色方框；模块关闭、断开或切世界时会清空遮挡缓存。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

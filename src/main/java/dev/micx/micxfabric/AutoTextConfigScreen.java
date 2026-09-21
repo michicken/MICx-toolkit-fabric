@@ -19,7 +19,7 @@ public final class AutoTextConfigScreen extends ModuleConfigScreen {
     private int listeningRow = -1;
 
     public AutoTextConfigScreen(Screen parent) {
-        super(parent, "AutoText", "快捷文本 · 绑定列表");
+        super(parent, UiText.shown("快捷文本", "AutoText"), UiText.shown("AutoText · 绑定列表", "快捷文本 · 绑定列表"));
     }
 
     @Override
@@ -46,16 +46,16 @@ public final class AutoTextConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         AutoTextModule module = AutoTextModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "任何 Screen 打开时不会触发；释放绑定键只发送一次。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "BINDINGS / 快捷文本", y);
+        section(graphics, UiText.shown("快捷文本绑定", "BINDINGS / 快捷文本"), y);
         y += 20;
         for (int i = 0; i < textBoxes.size(); i++) {
             EditBox box = textBoxes.get(i);
@@ -75,7 +75,7 @@ public final class AutoTextConfigScreen extends ModuleConfigScreen {
                     isInside(mouseX, mouseY, contentLeft(), y + 2, 92, 18));
             y += 30;
         }
-        y = wrapped(graphics, "文本按原配置逐项保存到 AutoText；空文本或未绑定行不会发送。",
+        y = wrapped(graphics, UiText.shown("每行文本各自保存；空文本或者没绑键的行不会被发出去。", "文本按原配置逐项保存到 AutoText；空文本或未绑定行不会发送。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

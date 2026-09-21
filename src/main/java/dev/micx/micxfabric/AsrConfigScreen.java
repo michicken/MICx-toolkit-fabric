@@ -16,14 +16,14 @@ public final class AsrConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public AsrConfigScreen(Screen parent) {
-        super(parent, "ASR", "语音输入 · StepFun Realtime");
+        super(parent, UiText.shown("语音输入", "ASR"), UiText.shown("ASR · StepFun Realtime", "语音输入 · StepFun Realtime"));
         draftApiKey = AsrModule.instance().apiKey();
         pttKey = AsrModule.instance().pttKey();
     }
 
     @Override
     protected void rebuildWidgets() {
-        apiKeyBox = new EditBox(font, 0, 0, 160, 20, Component.literal("API key"));
+        apiKeyBox = new EditBox(font, 0, 0, 160, 20, Component.literal(UiText.shown("API 密钥", "API key")));
         apiKeyBox.setMaxLength(512);
         apiKeyBox.setValue(draftApiKey == null ? "" : draftApiKey);
         apiKeyBox.setBordered(true);
@@ -33,21 +33,21 @@ public final class AsrConfigScreen extends ModuleConfigScreen {
 
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
-        section(graphics, "CREDENTIALS / 凭据", y);
+        section(graphics, UiText.shown("登录凭据", "CREDENTIALS / 凭据"), y);
         y += 20;
-        graphics.text(font, "API key", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("API 密钥", "API key"), contentLeft(), y + 4, TEXT);
         apiKeyBox.setX(contentRight() - 160);
         apiKeyBox.setY(y);
         apiKeyBox.setWidth(160);
         y += 32;
-        y = wrapped(graphics, "输入框默认掩码显示；保存时不会把完整 key 写入日志、聊天或错误提示。",
+        y = wrapped(graphics, UiText.shown("输入框里的密钥默认打码显示，保存时也不会把完整密钥写进日志、聊天或报错提示里。", "输入框默认掩码显示；保存时不会把完整 key 写入日志、聊天或错误提示。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "PUSH TO TALK / 按键说话", y);
+        section(graphics, UiText.shown("按键说话", "PUSH TO TALK / 按键说话"), y);
         y += 20;
-        graphics.text(font, "PTT key", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("按键说话键", "PTT key"), contentLeft(), y + 4, TEXT);
         String keyText = listening ? "按键或鼠标键 · ESC 取消" : KeyChord.keyName(pttKey);
         int clearX = contentRight() - 52;
         int buttonX = clearX - 164;
@@ -56,14 +56,14 @@ public final class AsrConfigScreen extends ModuleConfigScreen {
         drawButton(graphics, "Clear", clearX, y, 52, 20,
                 isInside(mouseX, mouseY, clearX, y, 52, 20));
         y += 34;
-        y = wrapped(graphics, "默认按键为 V。模型和 WebSocket endpoint 当前由模块固定，不在面板中伪装为可编辑设置。",
+        y = wrapped(graphics, UiText.shown("默认按键是 V。模型和 WebSocket 地址目前固定在模块里，面板上不会摆一个只能看不能改的假输入框。", "默认按键为 V。模型和 WebSocket endpoint 当前由模块固定，不在面板中伪装为可编辑设置。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "BOUNDARY / 边界", y);
+        section(graphics, UiText.shown("使用限制", "BOUNDARY / 边界"), y);
         y += 20;
-        y = wrapped(graphics, "识别结果按 Enter 发送，Escape 取消；连接、录音和最终确认超时沿用当前模块实现。",
+        y = wrapped(graphics, UiText.shown("识别结果按 Enter 发送，按 Escape 取消。连接、录音和确认的超时时间沿用模块里的固定值。", "识别结果按 Enter 发送，Escape 取消；连接、录音和最终确认超时沿用当前模块实现。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         setContentHeight(Math.max(y, 160) - contentTop() + scrollOffset());
     }

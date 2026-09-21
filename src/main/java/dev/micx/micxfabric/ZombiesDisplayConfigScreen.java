@@ -7,14 +7,14 @@ import java.util.List;
 /** Forge ZombiesDisplayPanelScreen equivalent for Fabric 26.2. */
 public final class ZombiesDisplayConfigScreen extends ZombiesSubConfigScreen {
     public ZombiesDisplayConfigScreen(Screen parent) {
-        super(parent, "Zombies · Display", "显示区域 · HUD 与 Power-up");
+        super(parent, UiText.shown("显示开关", "ZombiesAssist · Display"), UiText.shown("ZombiesAssist · Display", "显示区域 · HUD 与 Power-up"));
     }
 
     @Override
     protected List<ToggleRow> toggleRows() {
         ZombiesConfig c = ZombiesAssistModule.instance().config();
         return List.of(
-                toggle("HUD Overlay", "显示顶部波次、剩余僵尸和战术信息。", () -> c.overlayEnabled, v -> c.overlayEnabled = v),
+                toggle(UiText.shown("HUD 叠层", "HUD Overlay"), "显示顶部波次、剩余僵尸和战术信息。", () -> c.overlayEnabled, v -> c.overlayEnabled = v),
                 toggle("Mobs Left", "显示当前回合怪物剩余数。", () -> c.showMobs, v -> c.showMobs = v),
                 toggle("PU Forecast", "显示已锁定的 Max Ammo / Insta Kill / Shopping Spree 预测。", () -> c.showPowerups, v -> c.showPowerups = v),
                 toggle("PU Beam", "显示掉落 Power-up 的世界光柱；不影响 tracker 计时。", () -> c.puBeam, v -> c.puBeam = v),
@@ -45,7 +45,7 @@ public final class ZombiesDisplayConfigScreen extends ZombiesSubConfigScreen {
                         z -> z.ecoHudScale, (z, v) -> z.ecoHudScale = v.floatValue()),
                 integer("topHudXOffset", "Top X offset", "顶部 HUD 水平偏移。", -5_000, 5_000,
                         z -> z.topHudXOffset, (z, v) -> z.topHudXOffset = v.intValue()),
-                integer("topHudY", "Top Y", "顶部 HUD 垂直位置。", -5_000, 5_000,
+                integer("topHudY", UiText.shown("顶部 Y 坐标", "Top Y"), "顶部 HUD 垂直位置。", -5_000, 5_000,
                         z -> z.topHudY, (z, v) -> z.topHudY = v.intValue()),
                 decimal("topHudScale", "Top scale", "顶部 HUD 缩放。", 0.5f, 2.0f,
                         z -> z.topHudScale, (z, v) -> z.topHudScale = v.floatValue()),

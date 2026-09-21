@@ -95,9 +95,9 @@ public final class SimpleModuleScreen extends ModuleConfigScreen {
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         toggleRects.clear();
         nextBoxIndex = 0;
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         toggleRects.add(new int[]{contentRight() - 44, y + 1});

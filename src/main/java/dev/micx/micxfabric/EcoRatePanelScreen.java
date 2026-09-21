@@ -12,7 +12,7 @@ public final class EcoRatePanelScreen extends ModuleConfigScreen {
     private EditBox durationBox;
 
     public EcoRatePanelScreen(Screen parent) {
-        super(parent, "EcoRate", "经济速率闪烁 · 每 2 分钟纯增长");
+        super(parent, UiText.shown("经济增速", "EcoRate"), UiText.shown("EcoRate · 每 2 分钟净增长", "经济速率闪烁 · 每 2 分钟纯增长"));
         this.mod = EcoRateModule.instance();
     }
 
@@ -31,23 +31,23 @@ public final class EcoRatePanelScreen extends ModuleConfigScreen {
 
     @Override
     protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY, int y) {
-        section(g, "MODULE / 模块", y); y+=20;
-        g.text(font, "Enable", contentLeft(), y+4, TEXT);
-        g.text(font, "右侧经济表周期性把金币切为每2分钟纯增长速率（绿字）。", contentLeft(), y+17, TEXT_DIM);
+        section(g, UiText.shown("模块开关", "MODULE / 模块"), y); y+=20;
+        g.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y+4, TEXT);
+        g.text(font, UiText.shown("右侧经济表会定期把金币换成「每 2 分钟净增多少」，绿色显示。", "右侧经济表周期性把金币切为每2分钟纯增长速率（绿字）。"), contentLeft(), y+17, TEXT_DIM);
         drawToggle(g, contentRight()-44, y+1, 44, 16, mod.enabled(), isInside(mouseX, mouseY, contentRight()-44, y+1, 44, 16));
         y+=38;
         // numeric rows
-        section(g, "FLASH / 闪烁节奏", y); y+=20;
-        g.text(font, "Flash Interval (s)", contentLeft(), y+4, TEXT);
+        section(g, UiText.shown("闪烁节奏", "FLASH / 闪烁节奏"), y); y+=20;
+        g.text(font, UiText.shown("闪烁间隔（秒）", "Flash Interval (s)"), contentLeft(), y+4, TEXT);
         g.text(font, "每隔多少秒闪一次速率（2-30）。", contentLeft(), y+17, TEXT_DIM);
         intervalBox.setX(contentRight()-72); intervalBox.setY(y);
         y+=34;
-        g.text(font, "Flash Duration (s)", contentLeft(), y+4, TEXT);
+        g.text(font, UiText.shown("闪烁时长（秒）", "Flash Duration (s)"), contentLeft(), y+4, TEXT);
         g.text(font, "速率显示多久后切回金币（1-10，且 < 间隔）。", contentLeft(), y+17, TEXT_DIM);
         durationBox.setX(contentRight()-72); durationBox.setY(y);
         y+=34;
         g.fill(contentLeft(), y, contentRight(), y+1, LINE); y+=14;
-        info(g, "速率 = 过去2分钟纯增长（买装备不影响）：自己按聊天 +Gold 事件，队友按记分板正增量；数值每10秒刷新一次。模块关闭时后台采集继续，中途开启立即有数据。", y);
+        info(g, UiText.shown("增速 = 过去 2 分钟的净增长（买装备不计入）：你自己的按聊天里的 +Gold 事件算，队友的按记分板正增量算；数值每 10 秒刷新一次。模块关着时后台照样在采集，中途打开立刻就有数据。", "速率 = 过去2分钟纯增长（买装备不影响）：自己按聊天 +Gold 事件，队友按记分板正增量；数值每10秒刷新一次。模块关闭时后台采集继续，中途开启立即有数据。"), y);
         y+=46;
         setContentHeight(y - contentTop() + scrollOffset());
     }

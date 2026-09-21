@@ -28,7 +28,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     }
 
     public RemoteShopConfigScreen(Screen parent) {
-        super(parent, "RemoteShop", "远程商店 · 远程买弹");
+        super(parent, UiText.shown("远程商店", "RemoteShop"), UiText.shown("RemoteShop · 远程买弹", "远程商店 · 远程买弹"));
     }
 
     @Override
@@ -51,7 +51,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         // 命中判定要加回滚动量：本屏记录的是绘制坐标（已含滚动偏移）。
         int pointerY = mouseY + scrollOffset();
 
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
         graphics.text(font, "启用 / Enable", contentLeft(), y + 4, TEXT);
         boolean toggleHovered = isInside(mouseX, pointerY, contentRight() - 44, y + 1, 44, 16);
@@ -71,7 +71,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "SCAN / 附近全息", y);
+        section(graphics, UiText.shown("扫描附近全息", "SCAN / 附近全息"), y);
         y += 20;
         int scanW = 96;
         boolean scanHovered = isInside(mouseX, pointerY, contentLeft(), y, scanW, 18);
@@ -103,25 +103,25 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
             graphics.text(font, summary, contentLeft(), y, TEXT_FAINT);
             y += 16;
             if (nearest == null) {
-                y = wrapped(graphics, "没有命中关键词的目标——把你看到的全息文字填进下面的关键词再重扫。",
+                y = wrapped(graphics, UiText.shown("没有扫到符合关键词的目标。把你看到的全息文字填进下面的关键词，再扫一次。", "没有命中关键词的目标——把你看到的全息文字填进下面的关键词再重扫。"),
                         contentLeft(), y, AMBER, contentWidth()) + 4;
             }
         }
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYWORD / 关键词", y);
+        section(graphics, UiText.shown("关键词", "KEYWORD / 关键词"), y);
         y += 20;
         keywordsBox.setX(contentLeft());
         keywordsBox.setY(y);
         y += KEYWORDS_BOX_H + 6;
-        y = wrapped(graphics, "逗号或空格分隔，名字里含任意一个就算目标（不分大小写）。"
+        y = wrapped(graphics, UiText.shown("用逗号或空格分隔；名字里含其中任意一个就算目标，不分大小写。", "逗号或空格分隔，名字里含任意一个就算目标（不分大小写）。")
                 + "当前：" + RemoteShopRules.keywordsText(module.keywords()),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "ACTION / 买一次", y);
+        section(graphics, UiText.shown("买一次", "ACTION / 买一次"), y);
         y += 20;
         int buyW = 148;
         boolean buyHovered = isInside(mouseX, pointerY, contentLeft(), y, buyW, 18);
@@ -129,7 +129,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         hits.add(new Hit(contentLeft(), y, buyW, 18, () -> module.triggerNearest(client)));
         y += 24;
         y = wrapped(graphics, "上次：" + module.lastReport(), contentLeft(), y, TEXT, contentWidth()) + 6;
-        y = wrapped(graphics, "只按一下发一次（1 秒冷却），不会自动连买。目标超出 5.5 格时只报告、不发包。",
+        y = wrapped(graphics, UiText.shown("按一下只买一次，带 1 秒冷却，不会自动连买。目标超过 5.5 格时只报告、不发包。", "只按一下发一次（1 秒冷却），不会自动连买。目标超出 5.5 格时只报告、不发包。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

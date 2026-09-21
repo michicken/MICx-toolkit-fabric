@@ -14,7 +14,7 @@ public final class PlayerVisibilityConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public PlayerVisibilityConfigScreen(Screen parent) {
-        super(parent, "PlayerVisibility", "玩家隐身 · 隐藏或透明");
+        super(parent, UiText.shown("玩家隐身", "PlayerVisibility"), UiText.shown("PlayerVisibility · 隐藏或淡化", "玩家隐身 · 隐藏或透明"));
     }
 
     @Override
@@ -35,47 +35,47 @@ public final class PlayerVisibilityConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         PlayerVisibilityModule module = PlayerVisibilityModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "渲染钩子只作用于其他玩家；自己和睡觉玩家保留。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("只对其他玩家生效；你自己和已经倒下的玩家不受影响。", "渲染钩子只作用于其他玩家；自己和睡觉玩家保留。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Active", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("实际生效", "Active"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "主键只切换当前生效状态，不改变模块注册。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Hide mode", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "隐藏模式取消附近玩家和其乘坐实体的渲染。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("隐藏方式", "Hide mode"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("隐藏模式会让附近的玩家以及他们骑着的实体完全不渲染。", "隐藏模式取消附近玩家和其乘坐实体的渲染。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.hideMode(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "RANGE / 范围", y);
+        section(graphics, UiText.shown("生效范围", "RANGE / 范围"), y);
         y += 20;
-        graphics.text(font, "Blocks", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("方块遮挡", "Blocks"), contentLeft(), y + 4, TEXT);
         rangeBox.setX(contentRight() - 68);
         rangeBox.setY(y);
         y += 28;
-        graphics.text(font, "Opacity", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("不透明度", "Opacity"), contentLeft(), y + 4, TEXT);
         opacityBox.setX(contentRight() - 68);
         opacityBox.setY(y);
         y += 34;
-        y = wrapped(graphics, "范围 0.5–64 格；透明度 0.05–1.0。旧配置中的 rangeSq 会按平方根转换。",
+        y = wrapped(graphics, UiText.shown("作用距离 0.5–64 格，淡化的不透明度 0.05–1.0，都可以调。", "范围 0.5–64 格；透明度 0.05–1.0。旧配置中的 rangeSq 会按平方根转换。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 14;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
         String label = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(module.keyCode()).label();
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 32;
-        y = wrapped(graphics, "Fabric 透明模式使用实体 extraction state 的 translucent render type，不修改全局 OpenGL 状态。",
+        y = wrapped(graphics, UiText.shown("淡化是用半透明渲染实现的，不改动全局渲染状态。", "Fabric 透明模式使用实体 extraction state 的 translucent render type，不修改全局 OpenGL 状态。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

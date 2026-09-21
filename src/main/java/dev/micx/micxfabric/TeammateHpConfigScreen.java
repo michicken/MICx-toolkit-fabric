@@ -14,7 +14,7 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public TeammateHpConfigScreen(Screen parent) {
-        super(parent, "TeammateHP", "队友血量卡片 · 最多显示四名玩家");
+        super(parent, UiText.shown("队友血量", "TeammateHP"), UiText.shown("TeammateHP · 最多显示四名玩家", "队友血量卡片 · 最多显示四名玩家"));
     }
 
     @Override
@@ -33,34 +33,34 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         TeammateHpModule module = TeammateHpModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "注册队友卡片 HUD 和 H 键切换。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("注册队友卡片 HUD 和 H 键开关。", "注册队友卡片 HUD 和 H 键切换。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Show Cards", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("显示卡片", "Show Cards"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "主键只切换显示状态，不卸载模块。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "In-Game overlay", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "是否在游戏 HUD 上绘制队友卡片。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("游戏内叠层", "In-Game overlay"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("在游戏 HUD 上画出队友卡片。", "是否在游戏 HUD 上绘制队友卡片。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.overlayEnabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Show Hidden", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "包含被客户端标记为 invisible 的队友。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("包含隐身队友", "Show Hidden"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("连被客户端标记为隐身的队友也算进去。", "包含被客户端标记为 invisible 的队友。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.showHidden(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Show Distance", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "在卡片右侧显示与自己的距离。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("显示距离", "Show Distance"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("在卡片右侧显示和你自己的距离。", "在卡片右侧显示与自己的距离。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.showDistance(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Revive Timer", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("救援计时", "Revive Timer"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "B=读倒地 holo 救援计时（服务端真值）；A=25s 本地估算。", contentLeft(), y + 17, TEXT_DIM);
         drawButton(graphics, module.isReviveHoloB() ? "B（读 hologram）" : "A（25s 本地）",
                 contentRight() - 156, y, 156, 18,
@@ -69,28 +69,28 @@ public final class TeammateHpConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "CARD / 卡片", y);
+        section(graphics, UiText.shown("卡片", "CARD / 卡片"), y);
         y += 20;
-        graphics.text(font, "Card width", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("卡片宽度", "Card width"), contentLeft(), y + 4, TEXT);
         widthBox.setX(contentRight() - 72);
         widthBox.setY(y);
         y += 28;
-        graphics.text(font, "Background alpha", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("背景不透明度", "Background alpha"), contentLeft(), y + 4, TEXT);
         alphaBox.setX(contentRight() - 72);
         alphaBox.setY(y);
         y += 34;
-        y = wrapped(graphics, "Card width 100–400；背景 alpha 0–200。X/Y、缩放和 H 键在本页以外保留默认布局。",
+        y = wrapped(graphics, UiText.shown("卡片宽度 100–400，背景不透明度 0–200。X / Y、缩放和 H 键仍用默认值，本页不提供。", "Card width 100–400；背景 alpha 0–200。X/Y、缩放和 H 键在本页以外保留默认布局。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 14;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
         String keyLabel = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(module.keyCode()).label();
         drawButton(graphics, keyLabel, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 32;
-        y = wrapped(graphics, "默认 H 键；名单优先使用当前加载的其他玩家，最多固定显示四张卡片。",
+        y = wrapped(graphics, UiText.shown("默认是 H 键。名单优先用当前已加载的其他玩家，最多同时显示四张卡片。", "默认 H 键；名单优先使用当前加载的其他玩家，最多固定显示四张卡片。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 14;
         setContentHeight(y - contentTop() + scrollOffset());

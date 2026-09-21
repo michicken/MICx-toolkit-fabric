@@ -10,24 +10,24 @@ public final class SkillCastConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public SkillCastConfigScreen(Screen parent) {
-        super(parent, "SkillCast", "技能释放 · 原生使用时序");
+        super(parent, UiText.shown("技能一键释放", "SkillCast"), UiText.shown("SkillCast · 原生使用时序", "技能释放 · 原生使用时序"));
     }
 
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         SkillCastModule module = SkillCastModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "单次触发：切槽 5、调用原生 useItem、释放后切回。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
-        graphics.text(font, "Primary", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("主键", "Primary"), contentLeft(), y + 4, TEXT);
         String label = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(module.keyCode()).label();
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));

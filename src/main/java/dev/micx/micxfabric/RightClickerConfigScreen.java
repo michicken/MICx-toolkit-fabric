@@ -17,7 +17,7 @@ public final class RightClickerConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public RightClickerConfigScreen(Screen parent) {
-        super(parent, "RightClicker", "自动右键 · 真实模拟 (20 CPS/每 tick 一发)");
+        super(parent, UiText.shown("自动右键", "RightClicker"), UiText.shown("RightClicker · 默认 20 CPS，每 tick 一发", "自动右键 · 真实模拟 (20 CPS/每 tick 一发)"));
     }
 
     @Override
@@ -37,39 +37,39 @@ public final class RightClickerConfigScreen extends ModuleConfigScreen {
     @Override
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         RightClickerModule module = RightClickerModule.instance();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "真实注入 KeyMapping.click，每 tick 一发封顶；SkillCast 期间自动让路。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("真实注入 KeyMapping.click，每 tick 最多一发。SkillCast 触发时会自动让路，不会撞在一起。", "真实注入 KeyMapping.click，每 tick 一发封顶；SkillCast 期间自动让路。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Active", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "按住原生右键时按间隔自动点击。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("实际生效", "Active"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("按住原生右键时按间隔自动点击。", "按住原生右键时按间隔自动点击。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.active(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "FIRE RATE / 射速", y);
+        section(graphics, UiText.shown("射速", "FIRE RATE / 射速"), y);
         y += 20;
         graphics.text(font, "默认 20 = 扁平每 tick 一发；上下沿不同时随机取间隔（上沿超 20 实际封顶 20）", contentLeft(), y, TEXT_DIM);
         y += 14;
-        graphics.text(font, "CPS Min", contentLeft(), y + 6, TEXT);
+        graphics.text(font, UiText.shown("CPS 下限", "CPS Min"), contentLeft(), y + 6, TEXT);
         minBox.setX(contentRight() - 140);
         minBox.setY(y);
-        graphics.text(font, "CPS Max", contentLeft() + 90, y + 6, TEXT);
+        graphics.text(font, UiText.shown("CPS 上限", "CPS Max"), contentLeft() + 90, y + 6, TEXT);
         maxBox.setX(contentRight() - 64);
         maxBox.setY(y);
         y += 30;
-        graphics.text(font, "Current: " + module.getMinCps() + " - " + module.getMaxCps() + " CPS",
+        graphics.text(font, UiText.shown("当前：", "Current: ") + module.getMinCps() + " - " + module.getMaxCps() + " CPS",
                 contentLeft(), y, AMBER);
         y += 18;
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
-        graphics.text(font, "Toggle", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("开关快捷键", "Toggle"), contentLeft(), y + 4, TEXT);
         String label = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(module.keyCode()).label();
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
@@ -77,10 +77,10 @@ public final class RightClickerConfigScreen extends ModuleConfigScreen {
         y = wrapped(graphics, "连点目标：" + module.useKeyStatus(),
                 contentLeft(), y, AMBER, contentWidth());
         y += 4;
-        y = wrapped(graphics, "按「使用键」当前绑定注入：改成左右键互换（左键=使用）后自动跟随改成左键连点，未绑定则不注入。",
+        y = wrapped(graphics, UiText.shown("按「使用键」当前的绑定来注入：如果你把左右键互换过（左键=使用），这里会自动跟着改成左键连点；没绑定就不注入。", "按「使用键」当前绑定注入：改成左右键互换（左键=使用）后自动跟随改成左键连点，未绑定则不注入。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 4;
-        y = wrapped(graphics, "区间可在 1-50 调节，Min>Max 会自动交换；与 SkillCast 互斥，不会叠加包。",
+        y = wrapped(graphics, UiText.shown("CPS 区间可以填 1-50，Min 比 Max 大时会自动交换。和 SkillCast 互斥，不会叠加发包。", "区间可在 1-50 调节，Min>Max 会自动交换；与 SkillCast 互斥，不会叠加包。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

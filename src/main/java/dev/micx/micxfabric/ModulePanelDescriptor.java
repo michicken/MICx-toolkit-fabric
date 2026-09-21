@@ -5,14 +5,20 @@ import net.minecraft.client.gui.screens.Screen;
 import java.util.Objects;
 import java.util.function.Function;
 
-/** A module entry shown by the Fabric control panel. */
+/**
+ * A module entry shown by the Fabric control panel.
+ *
+ * <p>中文名与说明都存 {@link UiText.Txt} 本体而不是已解析的字符串：描述符在
+ * {@code ModulePanelRegistry} 的静态块里一次性构造，那时候还取不到「当前显示哪一版文案」，
+ * 提前解析会把选择冻结在类加载的瞬间。渲染时再 {@link UiText#of} 解析即可实时跟随顶部开关。
+ */
 public final class ModulePanelDescriptor {
     private final String id;
     private final String displayName;
-    private final String chineseName;
+    private final UiText.Txt chineseName;
     private final String group;
     private final int order;
-    private final String description;
+    private final UiText.Txt description;
     private final Module module;
     private final Function<Screen, Screen> configScreenFactory;
     private final ModuleKeybind keybind;
@@ -23,10 +29,10 @@ public final class ModulePanelDescriptor {
     public ModulePanelDescriptor(
             String id,
             String displayName,
-            String chineseName,
+            UiText.Txt chineseName,
             String group,
             int order,
-            String description,
+            UiText.Txt description,
             Module module,
             Function<Screen, Screen> configScreenFactory,
             ModuleKeybind keybind) {
@@ -38,10 +44,10 @@ public final class ModulePanelDescriptor {
     public ModulePanelDescriptor(
             String id,
             String displayName,
-            String chineseName,
+            UiText.Txt chineseName,
             String group,
             int order,
-            String description,
+            UiText.Txt description,
             Module module,
             Function<Screen, Screen> configScreenFactory,
             ModuleKeybind keybind,
@@ -52,7 +58,7 @@ public final class ModulePanelDescriptor {
         this.chineseName = requireText(chineseName, "chineseName");
         this.group = requireText(group, "group");
         this.order = order;
-        this.description = Objects.requireNonNull(description, "description");
+        this.description = requireText(description, "description");
         this.module = Objects.requireNonNull(module, "module");
         this.configScreenFactory = configScreenFactory;
         this.keybind = keybind;
@@ -73,12 +79,14 @@ public final class ModulePanelDescriptor {
         return id;
     }
 
+    /** 模块的英文短名（面板里作小字副标）。 */
     public String displayName() {
         return displayName;
     }
 
+    /** 模块的中文名（面板里作主标题），随「新版 / 旧版文案」开关切换。 */
     public String chineseName() {
-        return chineseName;
+        return UiText.of(chineseName);
     }
 
     public String group() {
@@ -89,8 +97,9 @@ public final class ModulePanelDescriptor {
         return order;
     }
 
+    /** 模块介绍，随「新版 / 旧版文案」开关切换。 */
     public String description() {
-        return description;
+        return UiText.of(description);
     }
 
     public Module module() {
@@ -133,6 +142,13 @@ public final class ModulePanelDescriptor {
 
     private static String requireText(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name);
+        return value;
+    }
+
+    private static UiText.Txt requireText(UiText.Txt value, String name) {
+        if (value == null || value.now().isBlank() || value.was().isBlank()) {
+            throw new IllegalArgumentException(name);
+        }
         return value;
     }
 }

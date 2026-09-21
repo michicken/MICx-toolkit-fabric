@@ -25,6 +25,7 @@ public final class FabricRuntime {
         if (initialized) return;
         StarterDefaults.install(configPath());
         ModuleStateStore.initialize(configPath());
+        UiText.initialize();
         MicxClientCommands.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             FullbrightRuntime.tick(client);

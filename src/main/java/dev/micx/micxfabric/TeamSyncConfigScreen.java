@@ -18,7 +18,7 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
     private boolean listening;
 
     public TeamSyncConfigScreen(Screen parent) {
-        super(parent, "TeamSync", "队伍同步 · 安全连接与本地显示");
+        super(parent, UiText.shown("队伍同步", "TeamSync"), UiText.shown("TeamSync · 安全连接与本地显示", "队伍同步 · 安全连接与本地显示"));
     }
 
     @Override
@@ -50,87 +50,87 @@ public final class TeamSyncConfigScreen extends ModuleConfigScreen {
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         TeamSyncModule module = TeamSyncModule.instance();
         TeamSyncConfig config = module.config();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
         graphics.text(font, "连接失败只影响同步，不阻塞游戏主线程。", contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Connection", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("连接状态", "Connection"), contentLeft(), y + 4, TEXT);
         graphics.text(font, (module.connected() ? "connected" : "disconnected")
                 + (module.joined() ? " · joined" : " · waiting"), contentLeft() + 100, y + 4, TEXT_DIM);
         y += 28;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "ENDPOINT / 连接地址", y);
+        section(graphics, UiText.shown("连接地址", "ENDPOINT / 连接地址"), y);
         y += 20;
-        graphics.text(font, "WebSocket", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("WebSocket 地址", "WebSocket"), contentLeft(), y + 4, TEXT);
         place(serverUrlBox, contentRight() - 190, y);
         y += 28;
-        graphics.text(font, "Token HTTPS", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("Token 地址", "Token HTTPS"), contentLeft(), y + 4, TEXT);
         place(tokenUrlBox, contentRight() - 190, y);
         y += 34;
-        y = wrapped(graphics, "仅接受 wss / https、无 userinfo、query 或 fragment；不会显示或保存 token 内容。",
+        y = wrapped(graphics, UiText.shown("地址只接受 wss / https，且不能带 userinfo、query 或 fragment。token 内容不会被显示或保存。", "仅接受 wss / https、无 userinfo、query 或 fragment；不会显示或保存 token 内容。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "DISPLAY / 显示", y);
+        section(graphics, UiText.shown("显示", "DISPLAY / 显示"), y);
         y += 20;
-        graphics.text(font, "HUD overlay", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("HUD 叠层", "HUD overlay"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.renderOverlay,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "World markers", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("世界标记", "World markers"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.renderWorld,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Local target", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("本地瞄准兜底", "Local target"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.localAimFallback,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Show ping", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("显示延迟", "Show ping"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.showPing,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Ping Button", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("延迟测试键", "Ping Button"), contentLeft(), y + 4, TEXT);
         drawButton(graphics, pingButtonLabel(config.pingButton), contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 34;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "TIMING / 周期", y);
+        section(graphics, UiText.shown("周期", "TIMING / 周期"), y);
         y += 20;
-        graphics.text(font, "State interval", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("状态上报间隔", "State interval"), contentLeft(), y + 4, TEXT);
         place(updateIntervalBox, contentRight() - 72, y);
         y += 28;
-        graphics.text(font, "Roster check", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("队伍检测间隔", "Roster check"), contentLeft(), y + 4, TEXT);
         place(rosterCheckBox, contentRight() - 72, y);
         y += 34;
-        y = wrapped(graphics, "状态上报 50–5000 ms；队伍检测 500–10000 ms。连接和 token 请求在独立线程执行。",
+        y = wrapped(graphics, UiText.shown("状态上报间隔 50–5000 毫秒，队伍检测间隔 500–10000 毫秒。连接和取 token 都在独立线程里跑，不会卡住游戏。", "状态上报 50–5000 ms；队伍检测 500–10000 ms。连接和 token 请求在独立线程执行。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "LAYOUT / 位置", y);
+        section(graphics, UiText.shown("位置", "LAYOUT / 位置"), y);
         y += 20;
-        graphics.text(font, "Right offset", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("右侧偏移", "Right offset"), contentLeft(), y + 4, TEXT);
         place(hudOffsetBox, contentRight() - 72, y);
         y += 28;
-        graphics.text(font, "HUD Y", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("HUD 垂直位置", "HUD Y"), contentLeft(), y + 4, TEXT);
         place(hudYBox, contentRight() - 72, y);
         y += 34;
-        section(graphics, "KEYBIND / 快捷键", y);
+        section(graphics, UiText.shown("快捷键", "KEYBIND / 快捷键"), y);
         y += 20;
-        graphics.text(font, "Toggle", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("开关快捷键", "Toggle"), contentLeft(), y + 4, TEXT);
         String label = listening ? "按任意键或鼠标键 · ESC 取消" : new InputBinding(config.toggleKeyCode).label();
         drawButton(graphics, label, contentRight() - 156, y, 156, 18,
                 isInside(mouseX, mouseY, contentRight() - 156, y, 156, 18));
         y += 34;
-        y = wrapped(graphics, "主键首次按下启用模块；再次按下切换 HUD。Ping 鼠标键沿用 Forge 编码 -100 + button。",
+        y = wrapped(graphics, UiText.shown("主键第一次按是开模块，再按一次是开关 HUD。鼠标键沿用 Forge 的编码方式。", "主键首次按下启用模块；再次按下切换 HUD。Ping 鼠标键沿用 Forge 编码 -100 + button。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         setContentHeight(y - contentTop() + scrollOffset());
     }

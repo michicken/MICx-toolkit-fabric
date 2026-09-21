@@ -55,7 +55,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
     private EditBox bruteRotationWindowBox;
 
     public AimbotConfigScreen(Screen parent) {
-        super(parent, "Aimbot", "目标筛选 · AimLead 攻击点 · 三态瞄准 · 鼠标策略");
+        super(parent, UiText.shown("自动瞄准", "Aimbot"), UiText.shown("Aimbot · 目标筛选 / 攻击点 / 鼠标策略", "目标筛选 · AimLead 攻击点 · 三态瞄准 · 鼠标策略"));
     }
 
     @Override
@@ -110,15 +110,15 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         keyHits.clear();
         AimbotConfig c = module.config();
 
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "启用 Aimbot / Enable", module.enabled(),
                 () -> module.setEnabled(!module.enabled()), y,
                 "打开后才会扫描实体并接管视角；关闭时只保留配置，不会自动瞄准。默认关闭，避免进世界后误接管。 ");
-        y = wrapped(graphics, "工作边界：模块只写客户端视角，不直接构造攻击包；目标仍必须通过 AimLead 轨迹、视野/穿透和实体过滤。",
+        y = wrapped(graphics, UiText.shown("这个模块只改客户端视角，不会自己构造攻击包；目标仍然要过 AimLead 轨迹、视野/穿透和实体过滤这几道检查。", "工作边界：模块只写客户端视角，不直接构造攻击包；目标仍必须通过 AimLead 轨迹、视野/穿透和实体过滤。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "AIM STYLE / 瞄准模式", y);
+        section(graphics, UiText.shown("瞄准模式", "AIM STYLE / 瞄准模式"), y);
         y += 20;
         y = modeRow(graphics, mouseX, mouseY, "瞄准模式 / Aim Style", aimStyle(c),
                 () -> cycleAimStyle(c), y,
@@ -127,7 +127,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "拟人模式会加入平滑、微小误差和自然换目标；普通模式只做平滑锁定；暴力模式立即换目标并使用 Brute Step，并在达到「暴力扫射起始回合」后启用 BRUTE 专用扫射（FOV 内逐个精准锁定 + 超快速切换）。三种模式都继续遵守目标筛选、AimLead、穿透和特殊 pitch 规则。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "TRIGGER / 触发", y);
+        section(graphics, UiText.shown("触发条件", "TRIGGER / 触发"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "仅右键触发 / Only Fire", c.onlyFire,
                 () -> c.onlyFire = !c.onlyFire, y,
@@ -142,7 +142,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 () -> c.zombiesOnly = !c.zombiesOnly, y,
                 "开启后只在 Zombies 会话扫描目标；关闭后允许扫描其他支持的生物实体。 ");
 
-        section(graphics, "TARGET / 目标筛选", y);
+        section(graphics, UiText.shown("目标筛选", "TARGET / 目标筛选"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "忽略 TOO / Ignore TOO", c.ignoreToo,
                 () -> c.ignoreToo = !c.ignoreToo, y,
@@ -208,7 +208,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
         y = keyRow(graphics, mouseX, mouseY, "距离快捷键 / Closest Key", c::getClosestKey,
                 c::setClosestKey, y, "绑定后可快速切换距离优先。 ");
 
-        section(graphics, "AIM / 瞄准参数", y);
+        section(graphics, UiText.shown("瞄准参数", "AIM / 瞄准参数"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "预测瞄准 / Aim Lead", c.aimLead,
                 () -> c.aimLead = !c.aimLead,
@@ -236,7 +236,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "巨人专属瞄准高度系数，默认 0.999（脚上 11.988 / 箱高 12.0，比眼高高 1.548 格）。已与上方 Crits 解耦：改 Crits 不再牵动巨人，也不受 Head Clamp 影响。越接近 1.00 越贴箱顶，暴击容差越小（0.999 时距箱顶仅 0.012 格）。被遮挡时按「距该点最近、下方优先」上下兜底。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "HITBOX / 命中口径", y);
+        section(graphics, UiText.shown("命中口径", "HITBOX / 命中口径"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "服务端命中箱 / Server Dims", c.serverDims,
                 () -> c.serverDims = !c.serverDims, y,
@@ -253,7 +253,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "FOV 是相对当前视线的筛选角度，360° 表示不限制；Max Step 只影响 NORMAL，Brute Step 只在 BRUTE 生效。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "PITCH POLICY / 垂直视角规则", y);
+        section(graphics, UiText.shown("垂直视角规则", "PITCH POLICY / 垂直视角规则"), y);
         y += 20;
         y = numberRow(graphics, "地平线预留 / Horizon Reserve", "0–8°", pitchHorizonMarginBox, y);
         y = numberRow(graphics, "手动容差 / Hold Tolerance", "0.5–8°", pitchHoldToleranceBox, y);
@@ -261,7 +261,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "普通怪：当前 pitch 已落在可用范围内时，Aimbot 不与鼠标争抢；目标高于地平线时会预留指定角度，超出容差才拉回。BadHeadShot 完全按目标点瞄准；巨人自 0.2.68 起与普通怪同一套俯仰策略（已取消「只向上」限制）；贴脸 Zombie（距离不超过 Face-up Dist）会抬头看向天空。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "HUMANIZE / 拟人参数", y);
+        section(graphics, UiText.shown("拟人化参数", "HUMANIZE / 拟人参数"), y);
         y += 20;
         y = numberRow(graphics, "峰值速度 / Peak Speed", "5–120°/tick", humanPeakBox, y);
         y = numberRow(graphics, "过冲强度 / Overshoot", "0–8", humanOvershootBox, y);
@@ -274,7 +274,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "只有 HUMANIZE 会使用这组参数：峰值速度控制大角度转向上限；过冲模拟超过目标后的回拉；微摆间隔控制锁定附近的非周期漂移；最大误差限制准心偏差；Repull 是偏离过大时重新追踪的阈值；Face-up Dist 是 Zombie 进入抬头逻辑的水平距离。扫射起始回合之前的回合完全关闭锥内扫动与大幅扫描线，只锁单只。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "BRUTE SWEEP / 暴力扫射", y);
+        section(graphics, UiText.shown("暴力扫射", "BRUTE SWEEP / 暴力扫射"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "暴力扫射 / Brute Sweep", c.bruteSweep,
                 () -> c.bruteSweep = !c.bruteSweep, y,
@@ -297,7 +297,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                         + "调到 5–10ms 基本等于瞬转。Humanize 的扫射参数与这一组互不影响。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "JOYSTICK / 手动推偏", y);
+        section(graphics, UiText.shown("手动推偏", "JOYSTICK / 手动推偏"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "手动推偏 / Joystick", c.joystick,
                 () -> {
@@ -312,7 +312,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "Joystick 是独立输入路径，不套用 HUMANIZE、NORMAL、BRUTE 的 tick 旋转控制器；需要用鼠标主动推偏，甩动超过阈值后会短暂暂停自动接管。",
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
-        section(graphics, "HUD / 显示与调试", y);
+        section(graphics, UiText.shown("HUD 显示与调试", "HUD / 显示与调试"), y);
         y += 20;
         y = toggleRow(graphics, mouseX, mouseY, "显示 Aimbot HUD / Show HUD", c.showHud,
                 () -> c.showHud = !c.showHud, y, "显示目标名、当前模式、锁定状态和攻击状态；位置可在 HUD Layout 中拖动调整。");
@@ -323,7 +323,7 @@ public final class AimbotConfigScreen extends ModuleConfigScreen {
                 "整局结束时（出现 Zombies - 时间 / SURVIVED 结算那一行，赢输都算）立刻隐藏 Aimbot HUD，10 秒后自动恢复；窗口内分组快捷键不响应，也不会发任何聊天提示。");
         y = toggleRow(graphics, mouseX, mouseY, "调试视线 / Debug Line", c.debugLine,
                 () -> c.debugLine = !c.debugLine, y, "从玩家视线起点渲染到最终攻击点的绿线，用于检查目标点、AimLead 和穿透路径。");
-        y = wrapped(graphics, "Aimbot HUD 是独立显示模块，不改变瞄准逻辑；需要检查目标点时可临时打开 Debug Line，确认后建议关闭。",
+        y = wrapped(graphics, UiText.shown("Aimbot HUD 只负责显示，不影响瞄准逻辑。想确认瞄的点对不对时可以临时打开 Debug Line，看完记得关掉。", "Aimbot HUD 是独立显示模块，不改变瞄准逻辑；需要检查目标点时可临时打开 Debug Line，确认后建议关闭。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 8;
 
         setContentHeight(y - (contentTop() - scrollOffset()));

@@ -7,7 +7,7 @@ import java.util.List;
 /** Forge ZombiesAlertsPanelScreen equivalent for Fabric 26.2. */
 public final class ZombiesAlertsConfigScreen extends ZombiesSubConfigScreen {
     public ZombiesAlertsConfigScreen(Screen parent) {
-        super(parent, "Zombies · Alerts", "提示与警报 · TOO / FR / LS");
+        super(parent, UiText.shown("提示与警报", "ZombiesAssist · Alerts"), UiText.shown("ZombiesAssist · Alerts", "提示与警报 · TOO / FR / LS"));
     }
 
     @Override

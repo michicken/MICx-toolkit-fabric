@@ -14,7 +14,7 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
     private EditBox manualPingBox;
 
     public AimLeadConfigScreen(Screen parent) {
-        super(parent, "AimLead", "瞄准提前量 · server movement samples");
+        super(parent, UiText.shown("瞄准提前量", "AimLead"), UiText.shown("AimLead · 服务端移动采样", "瞄准提前量 · server movement samples"));
     }
 
     @Override
@@ -41,50 +41,50 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
     protected void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int y) {
         AimLeadModule module = AimLeadModule.instance();
         AimLeadConfig config = module.config();
-        section(graphics, "STATUS / 状态", y);
+        section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
-        graphics.text(font, "Enable", contentLeft(), y + 4, TEXT);
-        graphics.text(font, "只使用服务端 movement packet 轨迹，不伪造 serverPos。", contentLeft(), y + 17, TEXT_DIM);
+        graphics.text(font, UiText.shown("启用模块", "Enable"), contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("只用服务端 movement packet 记下来的轨迹做预测。", "只使用服务端 movement packet 轨迹，不伪造 serverPos。"), contentLeft(), y + 17, TEXT_DIM);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, module.enabled(),
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
 
-        section(graphics, "PING (LIVE) / 延迟", y);
+        section(graphics, UiText.shown("实时延迟", "PING (LIVE) / 延迟"), y);
         y += 20;
-        graphics.text(font, "Ping", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("当前延迟", "Ping"), contentLeft(), y + 4, TEXT);
         graphics.text(font, module.effectivePing() + " ms  · " + module.pingSource()
                 + "  · lead " + module.tauMs() + " ms", contentLeft() + 74, y + 4, TEXT_DIM);
         y += 26;
-        graphics.text(font, "Game RTT", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("游戏 RTT", "Game RTT"), contentLeft(), y + 4, TEXT);
         graphics.text(font, module.gameRtt() >= 0 ? module.gameRtt() + " ms" : "waiting", contentLeft() + 74, y + 4, TEXT_DIM);
         y += 28;
-        graphics.text(font, "Auto Ping", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("自动测量延迟", "Auto Ping"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.autoPing,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Game RTT probe", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("用游戏 RTT 探测", "Game RTT probe"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.gameRtt,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Zombies Only", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("仅 Zombies 生效", "Zombies Only"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.zombiesOnly,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "DIAG / 预测诊断", y);
+        section(graphics, UiText.shown("预测诊断", "DIAG / 预测诊断"), y);
         y += 20;
         // 转向/打转状态 + 提前量误差（τ 前预测点与现状的中位距离）
         AimLeadModule.LeadDiagnostics diag = module.leadDiagnostics();
         boolean turning = diag.turnDegPerSec() >= AimLeadRoundRules.TURN_DEG_PER_SEC;
         String turnLabel = diag.circling() ? "打转 · lead ×" + AimLeadRoundRules.TAU_SCALE_CIRCLING
                 : (turning ? "转向中 · lead ×" + AimLeadRoundRules.TAU_SCALE_TURNING : "直行");
-        graphics.text(font, "Turn Rate", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("转向速度", "Turn Rate"), contentLeft(), y + 4, TEXT);
         graphics.text(font, Math.round(diag.turnDegPerSec()) + " °/s · " + turnLabel,
                 contentLeft() + 74, y + 4, TEXT_DIM);
         y += 20;
-        graphics.text(font, "Lead Error", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("提前量误差", "Lead Error"), contentLeft(), y + 4, TEXT);
         graphics.text(font, diag.leadErrSamples() > 0
                         ? String.format(java.util.Locale.ROOT, "%.2f 格 · %d 样本",
                             diag.leadErrBlocks(), diag.leadErrSamples())
@@ -94,49 +94,49 @@ public final class AimLeadConfigScreen extends ModuleConfigScreen {
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "DISPLAY / 显示", y);
+        section(graphics, UiText.shown("显示", "DISPLAY / 显示"), y);
         y += 20;
-        graphics.text(font, "Ghost Box", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("幽灵框", "Ghost Box"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.renderGhost,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Fire Dot", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("开火点", "Fire Dot"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.fireDot,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Link Line", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("连线", "Link Line"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.drawLink,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
-        graphics.text(font, "Server Shadow", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("服务端影子", "Server Shadow"), contentLeft(), y + 4, TEXT);
         drawToggle(graphics, contentRight() - 44, y + 1, 44, 16, config.serverShadow,
                 isInside(mouseX, mouseY, contentRight() - 44, y + 1, 44, 16));
         y += 38;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
         y += 14;
-        section(graphics, "VALUES / 数值", y);
+        section(graphics, UiText.shown("数值", "VALUES / 数值"), y);
         y += 20;
-        graphics.text(font, "Min Dist", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("最小距离", "Min Dist"), contentLeft(), y + 4, TEXT);
         minDistBox.setX(contentRight() - 72);
         minDistBox.setY(y);
         y += 28;
-        graphics.text(font, "Max Ghosts", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("幽灵框上限", "Max Ghosts"), contentLeft(), y + 4, TEXT);
         maxGhostsBox.setX(contentRight() - 72);
         maxGhostsBox.setY(y);
         y += 28;
-        graphics.text(font, "Extra Lead", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("额外提前量", "Extra Lead"), contentLeft(), y + 4, TEXT);
         extraMsBox.setX(contentRight() - 72);
         extraMsBox.setY(y);
         y += 28;
-        graphics.text(font, "Manual Ping", contentLeft(), y + 4, TEXT);
+        graphics.text(font, UiText.shown("手动延迟", "Manual Ping"), contentLeft(), y + 4, TEXT);
         manualPingBox.setX(contentRight() - 72);
         manualPingBox.setY(y);
         y += 34;
-        y = wrapped(graphics, "Forge 语义：12 个样本、中位数速度、8 m/s 尖峰过滤、15 m/s 隐藏；预测时间 50–1200 ms，幽灵提前不足 0.3 格时不显示。",
+        y = wrapped(graphics, UiText.shown("算法沿用 Forge 版：取 12 个样本的中位数速度，滤掉 8 m/s 的异常尖峰，超过 15 m/s 就不画幽灵框。预测时间可填 50–1200 ms；提前量不到 0.3 格时也不画。", "Forge 语义：12 个样本、中位数速度、8 m/s 尖峰过滤、15 m/s 隐藏；预测时间 50–1200 ms，幽灵提前不足 0.3 格时不显示。"),
                 contentLeft(), y, TEXT_DIM, contentWidth());
         y += 8;
-        y = wrapped(graphics, "碰撞夹取只限制预测位移；实体消失、世界切换或禁用时清空轨迹。",
+        y = wrapped(graphics, UiText.shown("预测出来的位移会被方块碰撞夹一下。目标消失、换世界或关掉模块时会清空轨迹。", "碰撞夹取只限制预测位移；实体消失、世界切换或禁用时清空轨迹。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth());
         y += 16;
         setContentHeight(y - contentTop() + scrollOffset());
