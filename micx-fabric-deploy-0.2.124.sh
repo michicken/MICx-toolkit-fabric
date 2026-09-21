@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INST="/Users/micx/Library/Application Support/PrismLauncher/instances/26.2"
+INST="/Users/micx/Library/Application Support/PrismLauncher/instances/Jev26.2"
 JAR="/Users/micx/MICx-toolkit/fabric/build/libs/micx-fabric-0.2.124.jar"
 MODS_DIR="$INST/minecraft/mods"
 DESKTOP_MODS="$HOME/Desktop/mods"
@@ -112,22 +112,6 @@ else
     printf '已安装 Baritone: %s (sha %s)\n' "$(basename "$BARITONE_DST")" "$(shasum -a 256 "$BARITONE_DST" | awk '{print $1}')"
 fi
 
-# Jev26.2 是用户为这个项目单独建的实例（15:30 从 26.2 整份拷过去）：一并覆盖，别只更 26.2。
-JEV_MODS="/Users/micx/Library/Application Support/PrismLauncher/instances/Jev26.2/minecraft/mods"
-if [[ -d "$JEV_MODS" ]]; then
-    for old in "$JEV_MODS"/micx-fabric-*.jar; do
-        [[ -e "$old" ]] || continue
-        [[ "$(basename "$old")" == "$(basename "$TARGET")" ]] && continue
-        cp -p "$old" "$BACKUP_ROOT/" 2>/dev/null || true
-        rm -f "$old"
-        printf '已归档并移出 Jev26.2: %s\n' "$(basename "$old")"
-    done
-    cp -p "$JAR" "$JEV_MODS/"
-    printf 'Jev26.2 部署完成: %s\n' "$(shasum -a 256 "$JEV_MODS/$(basename "$TARGET")" | awk '{print $1}')"
-    if [[ ! -f "$JEV_MODS/baritone-api-fabric-1.19.0.jar" && -f "$BARITONE_SRC" ]]; then
-        cp -p "$BARITONE_SRC" "$JEV_MODS/"
-        printf '%s\n' 'Jev26.2: 已补装 Baritone'
-    fi
-else
-    printf '注意: Jev26.2 实例不存在，跳过\n'
-fi
+# 注意：26.2 是用户的【日常实例】，本脚本不碰它。
+# 2026-09-21 历史事故：早期部署误把 0.2.122~0.2.124 + Baritone 装进 26.2，已按用户要求还原为 0.2.121；
+# 还原留档见 ~/MICx-toolkit/.zcode/backups/restore-26.2-*/
