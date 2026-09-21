@@ -18,6 +18,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
@@ -214,6 +215,7 @@ public final class JevStateSnapshot {
                 continue;
             }
             if (me == null || entity.distanceTo(me) > ENTITY_RANGE) continue;
+            if (entity instanceof WitherBoss) continue; // User policy: never expose withers to Jev.
             if (entity instanceof LivingEntity living && living.isAlive()) {
                 if (isHostile(living)) hostiles.add(living);
                 else otherLiving.add(living);
@@ -355,7 +357,8 @@ public final class JevStateSnapshot {
     /** Same target class as combat modules: monsters plus Hypixel's golem/wolf enemy skins. */
     private static boolean isHostile(LivingEntity living) {
         String path = BuiltInRegistries.ENTITY_TYPE.getKey(living.getType()).getPath();
-        return living instanceof Monster || "iron_golem".equals(path) || "wolf".equals(path);
+        return !(living instanceof WitherBoss)
+                && (living instanceof Monster || "iron_golem".equals(path) || "wolf".equals(path));
     }
 
     /** Minecraft yaw: 0 faces +Z, so atan2(-dx, dz) is in the same convention. */
