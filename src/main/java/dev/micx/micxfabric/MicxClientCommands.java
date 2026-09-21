@@ -77,6 +77,10 @@ public final class MicxClientCommands {
     private static void poi(FabricClientCommandSource source, String[] args) {
         dev.micx.micxfabric.jev.JevPoiRecorderModule recorder =
                 dev.micx.micxfabric.jev.JevPoiRecorderModule.instance();
+        if (args.length >= 2 && "manual".equalsIgnoreCase(args[1])) {
+            enterPoiManualMode(source);
+            return;
+        }
         if (args.length >= 2 && "label".equalsIgnoreCase(args[1])) {
             if (args.length < 3) {
                 reply(source, "usage: /micx poi label <CC|增益机|Ultimate Machine|装备店>");
@@ -84,11 +88,30 @@ public final class MicxClientCommands {
             }
             String label = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
             recorder.setNextLabel(label);
-            reply(source, "POI 下一条录制标签：" + recorder.nextLabel() + "；按 F8 开始，再按 F8 结束。");
+            reply(source, "POI 下一条录制标签：" + recorder.nextLabel() + "；按反斜杠键 \\ 开始，再按一次结束。");
             return;
         }
         reply(source, "POI " + recorder.status()
-                + "。流程：/micx poi label <名称> → F8 开始 → 亲自操作 → 关容器 → F8 结束。");
+                + "。流程：/micx poi manual → /micx poi label <名称> → 反斜杠键 \\ 开始 → 亲自操作 → 关容器 → \\ 结束。");
+    }
+
+    /** Stop every module that can move the view, inject clicks, switch slots, or receive Jev commands. */
+    private static void enterPoiManualMode(FabricClientCommandSource source) {
+        String[] controlModules = {
+                "aimbot", "right_clicker", "remote_shop", "keyboard_clicker",
+                "noreload", "toggle_sprint", "magnet", "jev_bridge"
+        };
+        StringBuilder disabled = new StringBuilder();
+        for (String id : controlModules) {
+            Module module = ModuleRuntime.get(id);
+            if (module == null || !module.enabled()) continue;
+            ModuleRuntime.setEnabled(id, false);
+            if (disabled.length() > 0) disabled.append(", ");
+            disabled.append(id);
+        }
+        reply(source, disabled.length() == 0
+                ? "已进入手动模式：自动接管模块本来就是关闭的。"
+                : "已进入手动模式，已关闭：" + disabled + "。录制键为反斜杠 \\。");
     }
 
     private static int copyToClipboard(FabricClientCommandSource source, String[] args) {

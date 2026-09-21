@@ -43,7 +43,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public final class JevPoiRecorderModule implements Module {
     private static final JevPoiRecorderModule INSTANCE = new JevPoiRecorderModule();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final int DEFAULT_KEY = GLFW.GLFW_KEY_F8;
+    /** Mac-friendly dedicated recorder key: the backslash key (\\). */
+    private static final int DEFAULT_KEY = GLFW.GLFW_KEY_BACKSLASH;
     private static final int MAX_EVENTS = 1_200;
     private static final double HOLOGRAM_RANGE = 36.0;
 
@@ -152,7 +153,7 @@ public final class JevPoiRecorderModule implements Module {
         recording = true;
         append("recording_started", "Human demonstration started; recorder sends no packets.");
         captureAim(client);
-        client.player.sendSystemMessage(ChatMessageStyles.notice("POI 录制开始（F8 结束）· 标签=" + nextLabel()));
+        client.player.sendSystemMessage(ChatMessageStyles.notice("POI 录制开始（反斜杠键结束）· 标签=" + nextLabel()));
     }
 
     private void finish(Minecraft client) {
