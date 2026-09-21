@@ -10,6 +10,7 @@ import dev.micx.micxfabric.RemoteShopModule;
 import dev.micx.micxfabric.ReviveAuraModule;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 
@@ -53,6 +54,9 @@ public final class JevCommands {
                     return "ok";
                 });
                 case "use_slot" -> onClient(client -> useSlot(client, optInt(request, "slot", 0)));
+                case "hold_use" -> onClient(client -> holdUse(client,
+                        request.has("on") && request.get("on").getAsBoolean()));
+                case "close_screen" -> onClient(JevCommands::closeScreen);
                 case "set" -> set(request);
                 default -> "error: unknown op '" + op + "'";
             };
@@ -100,6 +104,45 @@ public final class JevCommands {
         return "ok";
     }
 
+    /**
+     * 虚拟按住「使用键」（默认右键）。
+     *
+     * <p>免手开火的关键：`KeyMapping.setDown(true)` 让 `options.keyUse.isDown()` 为真，
+     * 于是 (a) Aimbot 在 `onlyFire=true` 且 `holdLock=false` 时的门控通过，
+     * (b) 右键连点器（RightClicker）开始以 CPS 节奏点使用键 = 等效持续开火。
+     *
+     * <p>注意原版在打开界面时会 releaseAll 把所有键抬起，所以调用方要周期性重按（代理每 2s 重发一次）。
+     */
+    private static String holdUse(Minecraft client, boolean on) {
+        if (client.options == null || client.options.keyUse == null) return "error: no use key";
+        client.options.keyUse.setDown(on);
+        return on ? "held" : "released";
+    }
+
+    /**
+     * 关掉当前界面。按住使用键时点到商店/箱子会弹容器界面，而界面一开
+     * Aimbot 的 {@code isActiveHere} 与连点器的 {@code shouldFire} 都会直接返回 false——等于全停摆。
+     * 容器界面走原版 {@code onClose()}（会正确给服务端发关容器包），其他界面直接清屏。
+     */
+    private static String closeScreen(Minecraft client) {
+        if (client.gui == null) return "error: no gui";
+        var screen = client.gui.screen();
+        if (screen == null) return "no-screen";
+        try {
+            if (screen instanceof AbstractContainerScreen<?> containerScreen) {
+                containerScreen.onClose();
+                return "closed-container";
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            client.setScreenAndShow(null);
+            return "closed-screen";
+        } catch (Throwable t) {
+            return "error: " + t;
+        }
+    }
+
     private static String set(JsonObject request) {
         String key = opt(request, "key", "");
         return switch (key) {
@@ -118,6 +161,7 @@ public final class JevCommands {
             case "aimbot.brute" -> aimbotBool(config -> config.bruteMode = bool(request));
             case "aimbot.sweep" -> aimbotBool(config -> config.bruteSweep = bool(request));
             case "aimbot.onlyFire" -> aimbotBool(config -> config.onlyFire = bool(request));
+            case "aimbot.holdLock" -> aimbotBool(config -> config.holdLock = bool(request));
             case "aimbot.zombiesOnly" -> aimbotBool(config -> config.zombiesOnly = bool(request));
             case "aimbot.humanize" -> aimbotBool(config -> config.humanize = bool(request));
             default -> "error: unknown key '" + key + "'";
