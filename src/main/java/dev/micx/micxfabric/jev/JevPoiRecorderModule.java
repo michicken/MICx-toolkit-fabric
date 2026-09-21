@@ -37,6 +37,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /** Human-demonstration recorder for semantic Zombies points of interest. It never replays actions. */
@@ -45,8 +46,18 @@ public final class JevPoiRecorderModule implements Module {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     /** Mac-friendly dedicated recorder key: the backslash key (\\). */
     private static final int DEFAULT_KEY = GLFW.GLFW_KEY_BACKSLASH;
-    private static final int MAX_EVENTS = 1_200;
+    private static final int MAX_EVENTS = 4_096;
     private static final double HOLOGRAM_RANGE = 36.0;
+    /** Keep semantic evidence, not high-rate movement/keepalive noise. */
+    private static final Set<String> SEMANTIC_PACKET_NAMES = Set.of(
+            "ServerboundUseItemOnPacket", "ServerboundUseItemPacket", "ServerboundInteractPacket",
+            "ServerboundContainerClickPacket", "ServerboundContainerClosePacket",
+            "ClientboundOpenScreenPacket", "ClientboundContainerSetContentPacket",
+            "ClientboundContainerSetSlotPacket", "ClientboundContainerClosePacket",
+            "ClientboundSystemChatPacket", "ClientboundSetTitleTextPacket",
+            "ClientboundSetSubtitleTextPacket", "ClientboundSetActionBarTextPacket",
+            "ClientboundSoundPacket", "ClientboundBlockChangedAckPacket",
+            "ClientboundBlockUpdatePacket");
 
     private final Queue<JsonObject> networkEvents = new ConcurrentLinkedQueue<>();
     private boolean enabled;
@@ -54,6 +65,7 @@ public final class JevPoiRecorderModule implements Module {
     private String nextLabel = "";
     private JsonObject current;
     private String lastAimSignature = "";
+    private int droppedEvents;
 
     private JevPoiRecorderModule() { }
     public static JevPoiRecorderModule instance() { return INSTANCE; }
@@ -93,6 +105,7 @@ public final class JevPoiRecorderModule implements Module {
     /** Called by Connection mixin. Network-thread safe: it only creates immutable metadata and queues it. */
     public void capturePacket(boolean outbound, Packet<?> packet) {
         if (!recording || packet == null) return;
+        if (!SEMANTIC_PACKET_NAMES.contains(packet.getClass().getSimpleName())) return;
         JsonObject event = new JsonObject();
         event.addProperty("at", System.currentTimeMillis());
         event.addProperty("direction", outbound ? "out" : "in");
@@ -149,6 +162,7 @@ public final class JevPoiRecorderModule implements Module {
         current.add("anchor", playerSnapshot(client));
         current.add("nearby_holograms", holograms(client));
         current.add("events", new JsonArray());
+        droppedEvents = 0;
         lastAimSignature = "";
         recording = true;
         append("recording_started", "Human demonstration started; recorder sends no packets.");
@@ -163,6 +177,8 @@ public final class JevPoiRecorderModule implements Module {
         current.addProperty("ended_at", System.currentTimeMillis());
         current.add("end_anchor", playerSnapshot(client));
         current.add("end_nearby_holograms", holograms(client));
+        current.addProperty("event_limit", MAX_EVENTS);
+        current.addProperty("dropped_events", droppedEvents);
         append("recording_finished", "Human demonstration finished.");
         recording = false;
         Path saved = save(current);
@@ -176,7 +192,7 @@ public final class JevPoiRecorderModule implements Module {
     }
 
     private void cancel(String reason) {
-        recording = false; current = null; networkEvents.clear(); lastAimSignature = "";
+        recording = false; current = null; networkEvents.clear(); lastAimSignature = ""; droppedEvents = 0;
         MicxFabric.LOGGER.info("Discarded active Jev POI recording: {}", reason);
     }
 
@@ -204,7 +220,22 @@ public final class JevPoiRecorderModule implements Module {
     }
 
     private void append(String kind, String detail) { JsonObject e = new JsonObject(); e.addProperty("at", System.currentTimeMillis()); e.addProperty("kind", kind); e.addProperty("detail", detail); append(e); }
-    private void append(JsonObject event) { if (current != null && current.getAsJsonArray("events").size() < MAX_EVENTS) current.getAsJsonArray("events").add(event); }
+    private void append(JsonObject event) {
+        if (current == null) return;
+        JsonArray events = current.getAsJsonArray("events");
+        if (events.size() >= MAX_EVENTS) {
+            droppedEvents++;
+            // The terminal marker is useful even when a very long demonstration filled the cap.
+            if (!"recording_finished".equals(event.has("kind") ? event.get("kind").getAsString() : "")) return;
+            for (int i = 0; i < events.size(); i++) {
+                if (events.get(i).isJsonObject() && events.get(i).getAsJsonObject().has("packet")) {
+                    events.remove(i);
+                    break;
+                }
+            }
+        }
+        events.add(event);
+    }
 
     private static JsonObject playerSnapshot(Minecraft client) {
         JsonObject anchor = new JsonObject(); if (client == null || client.player == null) return anchor;
