@@ -23,7 +23,7 @@ public final class UpdateManifest {
     public static final String PLATFORM_FABRIC = "fabric-26.2";
 
     /** 一条可下载的文件描述。 */
-    public record Entry(String fileName, String url, String sha256, long size) {
+    public record Entry(String fileName, String url, String sha256, long size, String version) {
         /** 四个字段齐了才算一条能用的记录。 */
         public boolean complete() {
             return fileName != null && !fileName.isBlank()
@@ -33,14 +33,14 @@ public final class UpdateManifest {
         }
     }
 
-    private final String version;
+    private final String manifestVersion;
     private final long publishedAtMs;
     private final long delayMs;
     private final Entry entry;
     private final List<String> problems;
 
-    private UpdateManifest(String version, long publishedAtMs, long delayMs, Entry entry, List<String> problems) {
-        this.version = version;
+    private UpdateManifest(String manifestVersion, long publishedAtMs, long delayMs, Entry entry, List<String> problems) {
+        this.manifestVersion = manifestVersion;
         this.publishedAtMs = publishedAtMs;
         this.delayMs = delayMs;
         this.entry = entry;
@@ -53,7 +53,7 @@ public final class UpdateManifest {
      */
     public static UpdateManifest parse(String json, String platformKey) {
         List<String> problems = new ArrayList<>();
-        String version = null;
+        String manifestVersion = null;
         long publishedAtMs = 0L;
         long delayMs = UpdateRules.DEFAULT_DELAY_MS;
         Entry entry = null;
@@ -72,17 +72,35 @@ public final class UpdateManifest {
         }
 
         if (root != null) {
-            version = string(root, "version", problems);
+            // 顶层 version 是 Forge 遗留字段，缺了不算错；26.2 的版本号写在自己的条目里。
+            manifestVersion = string(root, "version", new ArrayList<>());
             publishedAtMs = instant(root, "publishedAt", problems);
             delayMs = minutes(root, "installDelayMinutes", UpdateRules.DEFAULT_DELAY_MS, problems);
             entry = entry(root, platformKey == null ? PLATFORM_FABRIC : platformKey, problems);
+            String resolved = (entry != null && entry.version() != null && !entry.version().isBlank())
+                    ? entry.version() : manifestVersion;
+            if (resolved == null || resolved.isBlank()) {
+                problems.add("没有可用的版本号：条目里没写 version，顶层也没有");
+            }
         }
-        return new UpdateManifest(version, publishedAtMs, delayMs, entry, problems);
+        return new UpdateManifest(manifestVersion, publishedAtMs, delayMs, entry, problems);
     }
 
-    /** 远端版本号；缺失返回 null。 */
+    /**
+     * 本产品的远端版本号：**优先用条目里的 {@code version}**，没有才退回顶层那份。
+     *
+     * <p>顶层 {@code version} 是 Forge 时代留下的字段，1.8.9 的门控读的就是它（而且拉取失败是
+     * fail-closed，直接禁止游玩）。所以 26.2 的版本号必须写在自己的条目里，不能去动顶层——
+     * 否则 Forge 那边会把 {@code 0.2.x} 当成「另一个产品的新版本」来比较。
+     */
     public String version() {
-        return version;
+        if (entry != null && entry.version() != null && !entry.version().isBlank()) return entry.version();
+        return manifestVersion;
+    }
+
+    /** 顶层 {@code version} 字段（Forge 遗留），仅用于排错。 */
+    public String manifestVersion() {
+        return manifestVersion;
     }
 
     /** 发布时刻（毫秒）；缺失或解析失败返回 0，语义是「立即生效」。 */
@@ -102,7 +120,8 @@ public final class UpdateManifest {
 
     /** 版本号与下载记录都齐了，这次更新才有得做。 */
     public boolean usable() {
-        return version != null && !version.isBlank() && entry != null && entry.complete();
+        String resolved = version();
+        return resolved != null && !resolved.isBlank() && entry != null && entry.complete();
     }
 
     /** 解析过程中遇到的问题（空表示一切正常）。 */
@@ -182,6 +201,8 @@ public final class UpdateManifest {
         String fileName = string(item, "fileName", problems);
         String url = string(item, "url", problems);
         String sha256 = string(item, "sha256", problems);
+        // 条目自己的版本号：26.2 的版本写在这里，顶层那份留给 Forge 门控，两者互不干扰。
+        String version = string(item, "version", new ArrayList<>());
         long size = 0L;
         JsonElement sizeElement = item.get("size");
         if (sizeElement == null || sizeElement.isJsonNull()) {
@@ -193,7 +214,7 @@ public final class UpdateManifest {
                 problems.add("size 不是整数");
             }
         }
-        Entry entry = new Entry(fileName, url, sha256, size);
+        Entry entry = new Entry(fileName, url, sha256, size, version);
         if (!entry.complete()) problems.add("files." + platformKey + " 字段不全，不能用");
         return entry;
     }

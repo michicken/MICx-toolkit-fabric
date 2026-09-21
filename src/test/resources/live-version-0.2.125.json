@@ -1,0 +1,16 @@
+{
+  "version": "0.2.125",
+  "publishedAt": "2026-09-21T19:13:39Z",
+  "severeDelayMinutes": 60,
+  "outdatedDelayMinutes": 10,
+  "installDelayMinutes": 0,
+  "files": {
+    "fabric-26.2": {
+      "version": "0.2.125",
+      "fileName": "micx-fabric-0.2.125.jar",
+      "url": "/zombies/dl/0.2.125/micx-fabric-0.2.125.jar",
+      "sha256": "c60aecad172efe0765be8f03d00f726c522cb49e8c845153b5a8ac2fff20619b",
+      "size": 1194325
+    }
+  }
+}
