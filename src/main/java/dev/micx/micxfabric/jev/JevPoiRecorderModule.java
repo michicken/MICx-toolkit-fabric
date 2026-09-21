@@ -39,6 +39,7 @@ import java.util.Locale;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Human-demonstration recorder for semantic Zombies points of interest. It never replays actions. */
 public final class JevPoiRecorderModule implements Module {
@@ -57,7 +58,13 @@ public final class JevPoiRecorderModule implements Module {
             "ClientboundSystemChatPacket", "ClientboundSetTitleTextPacket",
             "ClientboundSetSubtitleTextPacket", "ClientboundSetActionBarTextPacket",
             "ClientboundSoundPacket", "ClientboundBlockChangedAckPacket",
-            "ClientboundBlockUpdatePacket");
+            "ClientboundContainerClosePacket");
+    private static final Set<String> DEDUP_INBOUND_PACKET_NAMES = Set.of(
+            "ClientboundSystemChatPacket", "ClientboundSetTitleTextPacket",
+            "ClientboundSetSubtitleTextPacket", "ClientboundSetActionBarTextPacket",
+            "ClientboundSoundPacket", "ClientboundContainerSetContentPacket",
+            "ClientboundContainerSetSlotPacket", "ClientboundContainerClosePacket",
+            "ClientboundBlockChangedAckPacket");
 
     private final Queue<JsonObject> networkEvents = new ConcurrentLinkedQueue<>();
     private boolean enabled;
@@ -66,6 +73,8 @@ public final class JevPoiRecorderModule implements Module {
     private JsonObject current;
     private String lastAimSignature = "";
     private int droppedEvents;
+    private int dedupedEvents;
+    private final Set<String> seenInboundEvidence = ConcurrentHashMap.newKeySet();
 
     private JevPoiRecorderModule() { }
     public static JevPoiRecorderModule instance() { return INSTANCE; }
@@ -147,6 +156,13 @@ public final class JevPoiRecorderModule implements Module {
             event.addProperty("container_id", content.containerId());
             event.add("slots", itemSlots(content.items()));
         }
+        if (!outbound && DEDUP_INBOUND_PACKET_NAMES.contains(packet.getClass().getSimpleName())) {
+            String signature = packet.getClass().getSimpleName() + "|" + event;
+            if (!seenInboundEvidence.add(signature)) {
+                dedupedEvents++;
+                return;
+            }
+        }
         networkEvents.add(event);
     }
 
@@ -163,6 +179,8 @@ public final class JevPoiRecorderModule implements Module {
         current.add("nearby_holograms", holograms(client));
         current.add("events", new JsonArray());
         droppedEvents = 0;
+        dedupedEvents = 0;
+        seenInboundEvidence.clear();
         lastAimSignature = "";
         recording = true;
         append("recording_started", "Human demonstration started; recorder sends no packets.");
@@ -179,6 +197,7 @@ public final class JevPoiRecorderModule implements Module {
         current.add("end_nearby_holograms", holograms(client));
         current.addProperty("event_limit", MAX_EVENTS);
         current.addProperty("dropped_events", droppedEvents);
+        current.addProperty("deduped_events", dedupedEvents);
         append("recording_finished", "Human demonstration finished.");
         recording = false;
         Path saved = save(current);
@@ -192,7 +211,8 @@ public final class JevPoiRecorderModule implements Module {
     }
 
     private void cancel(String reason) {
-        recording = false; current = null; networkEvents.clear(); lastAimSignature = ""; droppedEvents = 0;
+        recording = false; current = null; networkEvents.clear(); lastAimSignature = "";
+        droppedEvents = 0; dedupedEvents = 0; seenInboundEvidence.clear();
         MicxFabric.LOGGER.info("Discarded active Jev POI recording: {}", reason);
     }
 
