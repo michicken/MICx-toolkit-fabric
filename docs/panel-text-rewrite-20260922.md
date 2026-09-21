@@ -5,9 +5,9 @@
 游戏内面板右上角的 **文案 新版 / 旧版** 按钮切换的就是这两列：
 默认显示「改写后」，按一下显示「改写前」。
 
-- 改写条数：**471**
-- 原样保留条数：39
-- 合计：510
+- 改写条数：**499**
+- 原样保留条数：41
+- 合计：540
 
 ## 一、改写过的文案
 
@@ -437,6 +437,34 @@
 | `ToroHealthConfigScreen.java` | Damage color | 伤害数字颜色 |
 | `ToroHealthConfigScreen.java` | Heal color | 治疗数字颜色 |
 | `UiText.java` |  |  |
+| `UpdateConfigScreen.java` | AutoUpdate | 自动更新 |
+| `UpdateConfigScreen.java` | AutoUpdate · 自动更新 | AutoUpdate · 服务器直推 |
+| `UpdateConfigScreen.java` | STATUS / 状态 | 开关与状态 |
+| `UpdateConfigScreen.java` | Enable | 启用模块 |
+| `UpdateConfigScreen.java` | 启用自动更新检查。 | 后台定期查服务器有没有新版。 |
+| `UpdateConfigScreen.java` | Auto Install | 自动安装 |
+| `UpdateConfigScreen.java` | 查到新版后自动下载并换装。 | 查到的同时下载并换装，重启即生效；关掉只提示不下载。 |
+| `UpdateConfigScreen.java` | VALUES / 数值 | 当前情况 |
+| `UpdateConfigScreen.java` | Local | 当前版本 |
+| `UpdateConfigScreen.java` | Remote | 服务器版本 |
+| `UpdateConfigScreen.java` | Last Check | 最近检查 |
+| `UpdateConfigScreen.java` | never | 还没查过 |
+| `UpdateConfigScreen.java` | State | 状态 |
+| `UpdateConfigScreen.java` | Check now | 立即检查更新 |
+| `UpdateConfigScreen.java` | Open folder | 打开更新文件夹 |
+| `UpdateConfigScreen.java` | ABOUT / 说明 | 说明 |
+| `UpdateConfigScreen.java` | 启动时检查服务器版本清单，有新版自动下载并换装。 | 启动后会自动查一次服务器上的版本清单，有新版就下到 config/MICxToolkit/update/ 并校验；校验通过才替换 mods/ 里的旧文件，旧的那份改名成 .bak 留着。换装当场生效不了，本次游戏仍然跑旧版，重启一次就完成。 |
+| `UpdateConfigScreen.java` | 任何一步失败都保持现状可玩。 | 任何一步不成功——查不到、下载断了、校验不过、旧文件被占用——都只是这次没更新，不影响继续玩。 |
+| `UpdateConfigScreen.java` | idle | 待检查 |
+| `UpdateConfigScreen.java` | checking | 正在检查… |
+| `UpdateConfigScreen.java` | up to date | 已是最新 |
+| `UpdateConfigScreen.java` | downloading | 正在下载… |
+| `UpdateConfigScreen.java` | installed, restart to apply | 已换装 · 重启生效 |
+| `UpdateConfigScreen.java` | needs manual swap | 需手动替换一次 |
+| `UpdateConfigScreen.java` | failed | 这次没成功 |
+| `UpdateConfigScreen.java` | just now | 刚刚 |
+| `UpdateConfigScreen.java` |  min ago |  分钟前 |
+| `UpdateConfigScreen.java` |  h ago |  小时前 |
 | `ViewHoldConfigScreen.java` | ViewHold | 临时视角 |
 | `ViewHoldConfigScreen.java` | 按住切视角 · 目标视角与俯仰镜像 | ViewHold · 按住切换，松开恢复 |
 | `ViewHoldConfigScreen.java` | STATUS / 状态 | 开关与状态 |
@@ -523,6 +551,8 @@
 | `ModulePanelRegistry.java` | 语音输入 |
 | `ModulePanelRegistry.java` | 僵尸标记 |
 | `ModulePanelRegistry.java` | 波次音效 |
+| `ModulePanelRegistry.java` | 自动更新 |
+| `ModulePanelRegistry.java` | 启动后查一次服务器上的版本清单，有新版就下到 config/MICxToolkit/update/ 并校验 sha256，通过后替换 mods/ 里的旧文件（旧版改名成 .bak 留着）。换装本次不生效，重启游戏一次即完成；任何一步失败都只是这次没更新，不影响继续玩。 |
 | `ModulePanelRegistry.java` | 显示开关 |
 | `ModulePanelRegistry.java` | 提示与警报 |
 | `ModulePanelRegistry.java` | 记分板 / 消息 |

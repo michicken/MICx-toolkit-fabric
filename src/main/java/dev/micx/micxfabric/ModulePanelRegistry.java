@@ -92,6 +92,7 @@ public final class ModulePanelRegistry {
         meta("auto_hide_visuals", GROUP_MISC, 4);
         meta("asr", GROUP_MISC, 6);
         meta("anti_reshift", GROUP_MISC, 7);
+        meta("auto_update", GROUP_MISC, 8);
         meta("legacy_sneak_visuals", GROUP_MISC, 5);
 
         GROUPS.put(GROUP_CORE, new GroupMetadata("CORE", revised("僵尸模式核心", "Zombies 核心")));
@@ -519,6 +520,12 @@ public final class ModulePanelRegistry {
                                         WaveSpawnSoundModule.instance()::getDebbCountdown,
                                         WaveSpawnSoundModule.instance()::setDebbCountdown,
                                         "最终波到来前 3-2-1 秒各给一声 pling（默认关）。"))));
+        real("auto_update", "AutoUpdate", unchanged("自动更新"), GROUP_MISC,
+                unchanged("启动后查一次服务器上的版本清单，有新版就下到 config/MICxToolkit/update/ 并校验 sha256，"
+                        + "通过后替换 mods/ 里的旧文件（旧版改名成 .bak 留着）。换装本次不生效，重启游戏一次即完成；"
+                        + "任何一步失败都只是这次没更新，不影响继续玩。"),
+                UpdateModule.instance(), UpdateConfigScreen::new);
+
         SUBMODULES.put("zombies_assist", List.of(
                 new SubmoduleDescriptor("display", "Display", unchanged("显示开关"),
                         revised("对应 Forge 版的 Display 分区：HUD、Power-up、命中统计、经济和原生 scoreboard。",
