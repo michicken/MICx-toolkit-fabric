@@ -20,6 +20,13 @@ import net.minecraft.world.entity.player.Player;
 public final class BaritoneBridge {
     private static boolean settingsApplied;
     private static String lastError = "";
+    /** Last command as observed by the external decision agent.  This is telemetry only. */
+    private static volatile long commandSequence;
+    private static volatile long commandAtMs;
+    private static volatile double targetX;
+    private static volatile double targetY;
+    private static volatile double targetZ;
+    private static volatile int targetRange;
 
     private BaritoneBridge() {
     }
@@ -58,6 +65,7 @@ public final class BaritoneBridge {
             applyZombiesSettings();
             int r = Math.max(1, Math.min(8, range));
             baritone.getCustomGoalProcess().setGoalAndPath(new GoalNear(blockPos(x, y, z), r));
+            rememberTarget(x, y, z, r);
             return "ok";
         } catch (Throwable t) {
             return fail(t);
@@ -70,6 +78,7 @@ public final class BaritoneBridge {
         try {
             applyZombiesSettings();
             baritone.getCustomGoalProcess().setGoalAndPath(new GoalBlock(blockPos(x, y, z)));
+            rememberTarget(x, y, z, 0);
             return "ok";
         } catch (Throwable t) {
             return fail(t);
@@ -97,6 +106,8 @@ public final class BaritoneBridge {
         try {
             baritone.getFollowProcess().cancel();
             baritone.getPathingBehavior().cancelEverything();
+            commandSequence++;
+            commandAtMs = System.currentTimeMillis();
             return "ok";
         } catch (Throwable t) {
             return fail(t);
@@ -127,6 +138,39 @@ public final class BaritoneBridge {
 
     public static String lastError() {
         return lastError;
+    }
+
+    public static long commandSequence() {
+        return commandSequence;
+    }
+
+    public static long commandAtMs() {
+        return commandAtMs;
+    }
+
+    public static double targetX() {
+        return targetX;
+    }
+
+    public static double targetY() {
+        return targetY;
+    }
+
+    public static double targetZ() {
+        return targetZ;
+    }
+
+    public static int targetRange() {
+        return targetRange;
+    }
+
+    private static void rememberTarget(double x, double y, double z, int range) {
+        targetX = x;
+        targetY = y;
+        targetZ = z;
+        targetRange = range;
+        commandAtMs = System.currentTimeMillis();
+        commandSequence++;
     }
 
     private static BlockPos blockPos(double x, double y, double z) {

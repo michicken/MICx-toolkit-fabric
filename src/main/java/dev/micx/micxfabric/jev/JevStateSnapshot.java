@@ -253,14 +253,29 @@ public final class JevStateSnapshot {
             WindowSpawnCounterModule.WindowDef def = defs.get(i);
             JsonObject w = new JsonObject();
             w.addProperty("id", def.id);
-            w.addProperty("x", round(def.x));
-            w.addProperty("y", round(def.y));
-            w.addProperty("z", round(def.z));
+            // def is the server's raw spawn marker, not a walkable destination.  Keep it
+            // explicitly separate so external agents cannot accidentally path into a window.
+            JsonObject spawn = new JsonObject();
+            spawn.addProperty("x", round(def.x));
+            spawn.addProperty("y", round(def.y));
+            spawn.addProperty("z", round(def.z));
+            w.add("spawn", spawn);
+            JsonObject edge = JevWindowAnchors.edgeFor(def.id);
+            if (edge != null) {
+                w.add("edge", edge);
+                // Compatibility fields now mean the walkable edge, never the raw spawn marker.
+                w.addProperty("x", edge.get("x").getAsDouble());
+                w.addProperty("y", edge.get("y").getAsDouble());
+                w.addProperty("z", edge.get("z").getAsDouble());
+            }
+            w.addProperty("edge_available", edge != null);
             if (i < counts.length) w.addProperty("count", counts[i]);
             if (i < totals.length) w.addProperty("total", totals[i]);
             if (me != null) {
-                double dx = def.x - me.getX();
-                double dz = def.z - me.getZ();
+                double wx = edge == null ? def.x : edge.get("x").getAsDouble();
+                double wz = edge == null ? def.z : edge.get("z").getAsDouble();
+                double dx = wx - me.getX();
+                double dz = wz - me.getZ();
                 w.addProperty("dist", round(Math.sqrt(dx * dx + dz * dz)));
             }
             out.add(w);
@@ -371,6 +386,17 @@ public final class JevStateSnapshot {
             out.addProperty("version", BaritoneSupport.version());
             out.addProperty("pathing", BaritoneBridge.pathing());
             out.addProperty("goal", BaritoneBridge.goalString());
+            out.addProperty("command_seq", BaritoneBridge.commandSequence());
+            long commandAt = BaritoneBridge.commandAtMs();
+            if (commandAt > 0L) {
+                out.addProperty("command_age_ms", Math.max(0L, System.currentTimeMillis() - commandAt));
+                JsonObject target = new JsonObject();
+                target.addProperty("x", round(BaritoneBridge.targetX()));
+                target.addProperty("y", round(BaritoneBridge.targetY()));
+                target.addProperty("z", round(BaritoneBridge.targetZ()));
+                target.addProperty("range", BaritoneBridge.targetRange());
+                out.add("target", target);
+            }
             String error = BaritoneBridge.lastError();
             if (error != null && !error.isEmpty()) out.addProperty("last_error", error);
         } catch (Throwable t) {

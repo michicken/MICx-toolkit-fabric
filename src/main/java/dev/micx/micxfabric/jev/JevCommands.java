@@ -57,6 +57,8 @@ public final class JevCommands {
                 case "hold_use" -> onClient(client -> holdUse(client,
                         request.has("on") && request.get("on").getAsBoolean()));
                 case "close_screen" -> onClient(JevCommands::closeScreen);
+                case "calibrate_window" -> onClient(client -> JevWindowAnchors.calibrate(
+                        opt(request, "id", ""), client.player));
                 case "set" -> set(request);
                 default -> "error: unknown op '" + op + "'";
             };
