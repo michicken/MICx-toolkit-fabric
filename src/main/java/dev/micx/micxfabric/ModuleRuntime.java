@@ -70,6 +70,7 @@ public final class ModuleRuntime {
         register(ZoomScopeModule.instance());
         register(dev.micx.micxfabric.jev.HeadlessModule.instance());
         register(dev.micx.micxfabric.jev.JevBridgeModule.instance());
+        register(dev.micx.micxfabric.jev.JevPoiRecorderModule.instance());
         registerMutex("noreload", "keyboard_clicker");
         for (Module module : MODULES.values()) {
             boolean want = ModuleStateStore.get(module.id(), module.defaultEnabled());

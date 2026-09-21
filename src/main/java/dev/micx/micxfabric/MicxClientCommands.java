@@ -67,10 +67,28 @@ public final class MicxClientCommands {
             case "sr", "speedrun" -> speedrun(source, args);
             case "lr" -> lr(source, args);
             case "hs" -> HsDispatchService.instance().dispatch(source, args);
+            case "poi" -> poi(source, args);
             case "reset" -> reset(source);
             default -> printList(source);
         }
         return 1;
+    }
+
+    private static void poi(FabricClientCommandSource source, String[] args) {
+        dev.micx.micxfabric.jev.JevPoiRecorderModule recorder =
+                dev.micx.micxfabric.jev.JevPoiRecorderModule.instance();
+        if (args.length >= 2 && "label".equalsIgnoreCase(args[1])) {
+            if (args.length < 3) {
+                reply(source, "usage: /micx poi label <CC|增益机|Ultimate Machine|装备店>");
+                return;
+            }
+            String label = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
+            recorder.setNextLabel(label);
+            reply(source, "POI 下一条录制标签：" + recorder.nextLabel() + "；按 F8 开始，再按 F8 结束。");
+            return;
+        }
+        reply(source, "POI " + recorder.status()
+                + "。流程：/micx poi label <名称> → F8 开始 → 亲自操作 → 关容器 → F8 结束。");
     }
 
     private static int copyToClipboard(FabricClientCommandSource source, String[] args) {

@@ -143,7 +143,7 @@ public final class PacketLogModule implements Module {
         String simpleName = packet.getClass().getSimpleName();
         if (!PacketLogRules.shouldLog(outbound, simpleName, logAll)) return;
         enqueue(PacketLogRules.line(sessionStartMs < 0L ? System.currentTimeMillis() : sessionStartMs,
-                System.currentTimeMillis(), outbound, render(packet)));
+                System.currentTimeMillis(), outbound, describe(packet)));
     }
 
     public void mark(String label) {
@@ -257,7 +257,8 @@ public final class PacketLogModule implements Module {
 
     // ---- 渲染 ----
 
-    private static String render(Packet<?> packet) {
+    /** Shared readable packet metadata for PacketLog and POI demonstration recordings. */
+    public static String describe(Packet<?> packet) {
         if (packet instanceof ServerboundUseItemOnPacket p) {
             return "UseItemOn（右键方块） " + block(p.getHitResult()) + " 手=" + p.getHand();
         }

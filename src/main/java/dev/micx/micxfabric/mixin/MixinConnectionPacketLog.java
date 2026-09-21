@@ -1,6 +1,7 @@
 package dev.micx.micxfabric.mixin;
 
 import dev.micx.micxfabric.PacketLogModule;
+import dev.micx.micxfabric.jev.JevPoiRecorderModule;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -27,12 +28,14 @@ public final class MixinConnectionPacketLog {
     private void micx$logOutbound(Packet<?> packet, CallbackInfo callbackInfo) {
         if (!micx$isPlayerConnection()) return;
         PacketLogModule.instance().capture(true, packet);
+        JevPoiRecorderModule.instance().capturePacket(true, packet);
     }
 
     @Inject(method = "channelRead0", at = @At("HEAD"))
     private void micx$logInbound(ChannelHandlerContext context, Packet<?> packet, CallbackInfo callbackInfo) {
         if (!micx$isPlayerConnection()) return;
         PacketLogModule.instance().capture(false, packet);
+        JevPoiRecorderModule.instance().capturePacket(false, packet);
     }
 
     private boolean micx$isPlayerConnection() {
