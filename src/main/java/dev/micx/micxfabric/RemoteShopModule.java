@@ -34,9 +34,9 @@ import java.util.Properties;
  *
  * <p><b>硬上限在服务端，不在客户端</b>（26.2 原版字节码实测，2026-09-15）：服务端只接受
  * 眼球到实体碰撞箱 &lt; 6 格、到方块 &lt; 5.5 格的交互，超出<b>静默丢包</b>，插件连事件都收不到。
- * 所以超过 6 格时模块不会发（面板直接告诉你还差几格），任何客户端手法都过不去。
+ * 所以超过 4.9 格时模块不会发（2026-09-23 实测定稿：5.0 就会被拦），任何客户端手法都过不去。
  *
- * <p>安全边界：不自动发、不循环发——只有按面板按钮/快捷键那一下才发一次，1 秒冷却；
+ * <p>安全边界：不自动发、不循环发——只有按面板按钮/快捷键那一下才发一次（冷却已按用户要求去除）；
  * 目标不在射程内就只报告不发。
  */
 public final class RemoteShopModule implements Module {
@@ -68,7 +68,6 @@ public final class RemoteShopModule implements Module {
     private InputBinding binding = new InputBinding(DEFAULT_KEY);
     private boolean enabled;
     private boolean configLoaded;
-    private long lastTriggerMs = -1L;
     private String lastReport = "还没触发过";
     private List<Candidate> cachedScan = List.of();
     private long cachedScanMs = -1L;
@@ -158,14 +157,9 @@ public final class RemoteShopModule implements Module {
         }
     }
 
-    /** 触发前置检查（冷却/目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
+    /** 触发前置检查（目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
     private void beginBuy(Minecraft client, int gun) {
-        long now = System.currentTimeMillis();
         String label = "枪" + (gun + 1);
-        if (!RemoteShopRules.due(now, lastTriggerMs)) {
-            notify(client, label + "买弹：冷却中（1 秒一次）");
-            return;
-        }
         Candidate target = firstMatched(client);
         if (target == null) {
             notify(client, label + "买弹：附近 " + Math.round(RemoteShopRules.SCAN_RADIUS)
@@ -182,7 +176,6 @@ public final class RemoteShopModule implements Module {
             notify(client, label + "买弹：目标跑掉了，再按一次试试");
             return;
         }
-        lastTriggerMs = now;
         buyGun = gun;
         buyTarget = target;
         buyRestoreSlot = client.player.getInventory().getSelectedSlot();
@@ -295,8 +288,6 @@ public final class RemoteShopModule implements Module {
     public String triggerNearest(Minecraft client) {
         loadConfig();
         if (client == null || client.player == null || client.level == null) return report("世界未加载");
-        long now = System.currentTimeMillis();
-        if (!RemoteShopRules.due(now, lastTriggerMs)) return report("冷却中（1 秒一次）");
         Candidate target = null;
         for (Candidate candidate : scan(client, true)) {
             if (candidate.matched()) {
@@ -315,7 +306,6 @@ public final class RemoteShopModule implements Module {
         }
         Entity entity = client.level.getEntity(target.entityId());
         if (entity == null) return report("目标跑掉了，再按一次试试");
-        lastTriggerMs = now;
         return report(fire(client, entity, target));
     }
 

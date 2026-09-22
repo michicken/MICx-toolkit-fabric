@@ -13,20 +13,18 @@ import java.util.Locale;
  * （6 格有视野 / 3 格隔墙）；右键方块由服务端按朝眼<b>重新 rayTrace 校验</b>（生存 4.5 / 创造 5.0 格）。
  * 26.2 原版是实体 6 格 / 方块 5.5 格。落在闸门外的包会被<b>静默丢弃</b>，插件连事件都收不到。
  *
- * <p>触发阈值取 5.5 格：贴着实体闸门、留半格给移动与延迟；方块型商店在 1.8 上只到 4.5 格，
- * 所以隔墙/超远都过不去——想更远只能换通道（先用 PacketLog 抓清楚它到底走哪条）。
+ * <p>触发阈值取 4.9 格（用户定稿 2026-09-23）：实测 5.0 格就会被服务端拦截；方块型商店在 1.8 上
+ * 只到 4.5 格，所以隔墙/超远都过不去——想更远只能换通道（先用 PacketLog 抓清楚它到底走哪条）。
  */
 public final class RemoteShopRules {
     /** 服务端允许的最远实体交互距离（有视野）。 */
     public static final double SERVER_ENTITY_LIMIT = 6.0;
     /** 服务端允许的最远方块交互距离（1.8：服务端 rayTrace，生存模式 4.5 格）。 */
     public static final double SERVER_BLOCK_LIMIT = 4.5;
-    /** 实际触发阈值：比服务端上限再收半格。 */
-    public static final double TRIGGER_LIMIT = 5.5;
+    /** 实际触发阈值（用户定稿 2026-09-23）：实测 5.0 格就会被拦截，收到 4.9。 */
+    public static final double TRIGGER_LIMIT = 4.9;
     /** 客户端射程抬高到的值（原版准星只有实体 3 格 / 方块 4.5 格）。 */
     public static final double CLIENT_RANGE = 5.5;
-    /** 两次触发之间的最小间隔，别把机器点成连点。 */
-    public static final long TRIGGER_COOLDOWN_MS = 1_000L;
     /** 扫描半径：够看到对面墙上的全息就行，不做全图扫。 */
     public static final double SCAN_RADIUS = 32.0;
     /** 默认关键词：Hypixel Zombies 的补弹台全息上写着 Refill / Ammo。 */
@@ -77,13 +75,5 @@ public final class RemoteShopRules {
         if (distance <= SERVER_BLOCK_LIMIT) return "闸门内（方块 4.5 / 实体 6 格）";
         if (distance <= SERVER_ENTITY_LIMIT) return "擦边（1.8 实体 6 格有视野，方块只到 4.5）";
         return "超出服务端闸门，原版通道会丢包";
-    }
-
-    /** 冷却是否走完（时钟被往回改时别卡死）。 */
-    public static boolean due(long nowMs, long lastTriggerMs) {
-        if (lastTriggerMs < 0L) return true;
-        long elapsed = nowMs - lastTriggerMs;
-        if (elapsed < 0L) return true;
-        return elapsed >= TRIGGER_COOLDOWN_MS;
     }
 }

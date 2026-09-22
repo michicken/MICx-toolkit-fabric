@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 远程商店的离线回归：关键词匹配、距离判定、冷却。 */
+/** 远程商店的离线回归：关键词匹配、距离判定。 */
 class RemoteShopRulesTest {
 
     @Test
@@ -32,12 +32,11 @@ class RemoteShopRulesTest {
 
     @Test
     void rangeLimitSitsBelowTheServerCeiling() {
-        assertTrue(RemoteShopRules.TRIGGER_LIMIT <= RemoteShopRules.SERVER_ENTITY_LIMIT);
-        // 触发阈值贴着实体闸门，但比方块闸门（1.8 rayTrace 4.5）松——方块型商店在 1.8 上摸不到 5 格
+        // 用户定稿 2026-09-23：实测 5.0 格就会被拦截，触发上限收到 4.9（仍在方块闸门 4.5 之上）
         assertTrue(RemoteShopRules.TRIGGER_LIMIT <= RemoteShopRules.SERVER_ENTITY_LIMIT);
         assertTrue(RemoteShopRules.TRIGGER_LIMIT > RemoteShopRules.SERVER_BLOCK_LIMIT);
-        assertTrue(RemoteShopRules.withinTriggerRange(5.5));
-        assertFalse(RemoteShopRules.withinTriggerRange(5.5001));
+        assertTrue(RemoteShopRules.withinTriggerRange(4.9));
+        assertFalse(RemoteShopRules.withinTriggerRange(5.0));
         assertFalse(RemoteShopRules.withinTriggerRange(-1.0));
     }
 
@@ -47,14 +46,5 @@ class RemoteShopRulesTest {
         assertEquals("闸门内（方块 4.5 / 实体 6 格）", RemoteShopRules.distanceVerdict(4.5));
         assertEquals("擦边（1.8 实体 6 格有视野，方块只到 4.5）", RemoteShopRules.distanceVerdict(5.8));
         assertEquals("超出服务端闸门，原版通道会丢包", RemoteShopRules.distanceVerdict(9.3));
-    }
-
-    @Test
-    void triggerHonoursCooldownAndBackwardsClock() {
-        assertTrue(RemoteShopRules.due(1_000L, -1L));
-        assertFalse(RemoteShopRules.due(1_500L, 1_000L));
-        assertTrue(RemoteShopRules.due(2_000L, 1_000L));
-        // 时钟往回改：不该卡死到永远点不动
-        assertTrue(RemoteShopRules.due(500L, 10_000L));
     }
 }

@@ -135,7 +135,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         hits.add(new Hit(contentLeft(), y, buyW, 18, () -> module.triggerNearest(client)));
         y += 24;
         y = wrapped(graphics, "上次：" + module.lastReport(), contentLeft(), y, TEXT, contentWidth()) + 6;
-        y = wrapped(graphics, UiText.shown("按一下只买一次，带 1 秒冷却，不会自动连买。目标超过 5.5 格时只报告、不发包。", "只按一下发一次（1 秒冷却），不会自动连买。目标超出 5.5 格时只报告、不发包。"),
+        y = wrapped(graphics, UiText.shown("按一下只买一次，不会自动连买。目标超过 4.9 格时只报告、不发包（实测 5.0 会被服务端拦截）。", "只按一下发一次，不会自动连买。目标超出 4.9 格时只报告、不发包（实测 5.0 会被拦截）。"),
                 contentLeft(), y, TEXT_FAINT, contentWidth()) + 8;
 
         graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
@@ -147,7 +147,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         y = gunKeyRow(graphics, mouseX, mouseY, "枪三（槽位4）", 2, y);
         y = wrapped(graphics, UiText.shown(
                 "范围内按下即买：切到这把枪 → 对商店发包 → 切回原枪，全程键盘连点被按住；键盘连点开着时交互包发出后 50 毫秒即放行（不等切回），关着时切回后 50 毫秒放行。"
-                        + "没扫到目标/超程/冷却中只提示、不切槽。模块关着时无效。",
+                        + "没扫到目标/超程只提示、不切槽。模块关着时无效。",
                 "按下激活：切槽→发包→切回；键盘连点临时暂停，发包后 50ms 放行。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
         setContentHeight(y - contentTop() + scrollOffset());
