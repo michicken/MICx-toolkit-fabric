@@ -373,9 +373,25 @@ public final class UpdateModule implements Module {
     private Path ownJarPath() {
         try {
             URL location = UpdateModule.class.getProtectionDomain().getCodeSource().getLocation();
-            if (location == null) return null;
-            Path path = Path.of(location.toURI());
-            return Files.isRegularFile(path) ? path : null;
+            if (location != null) {
+                Path path;
+                try {
+                    path = Path.of(location.toURI());
+                } catch (java.net.URISyntaxException spaced) {
+                    // Knot 在含空格的安装路径上给出未编码的 file: URL（macOS「Application Support」），
+                    // toURI() 直接抛异常 → 0.2.131 的「拿不到当前 jar 路径」。手动解码 path 段。
+                    path = Path.of(java.net.URLDecoder.decode(
+                            location.getPath(), java.nio.charset.StandardCharsets.UTF_8));
+                }
+                if (Files.isRegularFile(path)) return path;
+            }
+        } catch (Throwable ignored) {
+        }
+        // 兜底：mods/ 里恰好只有一份本 mod 的 jar 时，它就是换装对象（唯一候选不会认错）。
+        try {
+            List<Path> jars = UpdateInstaller.ownJars(
+                    FabricLoader.getInstance().getGameDir().resolve("mods"));
+            return jars.size() == 1 ? jars.get(0) : null;
         } catch (Throwable ignored) {
             return null;
         }
@@ -393,8 +409,9 @@ public final class UpdateModule implements Module {
     private void announcePending(Minecraft client) {
         String message = pendingChat;
         if (message == null) return;
-        pendingChat = null;
+        // 还没进世界（标题界面）时不丢消息：留在队列里，进世界后的第一个 tick 再发
         if (client == null || client.player == null) return;
+        pendingChat = null;
         client.player.sendSystemMessage(ChatMessageStyles.notice("MICx 更新：" + message));
     }
 
