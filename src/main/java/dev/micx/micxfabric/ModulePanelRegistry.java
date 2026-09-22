@@ -578,13 +578,20 @@ public final class ModulePanelRegistry {
         // zoom_scope MUST use single-key adapter; other single-binding modules also use single-key adapter
         InputBinding single = module.primaryBinding();
         if (single != null) {
-            String singleDesc = "主快捷键（单键，空为未绑定）";
-            return new ModuleKeybindAdapter(id, singleDesc, module::primaryBinding, code -> setPrimarySingle(module, code));
+            // zoom_scope / view_hold 是按住语义（自有轮询），只收单键；其余单键模块 2026-09-22 起
+            // 也可录组合键（存面板侧、优先于自带单键，清掉组合键回落单键）。
+            boolean holdOnly = HOLD_ONLY_SINGLE.contains(id);
+            return new ModuleKeybindAdapter(id,
+                    holdOnly ? "主快捷键（单键，空为未绑定）" : desc,
+                    module::primaryBinding, code -> setPrimarySingle(module, code), !holdOnly);
         }
         // 无自带绑定的模块：组合键存面板侧（micx-panel-bindings.properties），HotkeyRuntime 统一触发开关
         return new ModuleChordAdapter(id, desc,
                 () -> panelChord(id), codes -> setPanelChord(id, codes));
     }
+
+    /** 按住语义（自有轮询 binding.down）的模块：组合键无法驱动按住行为，保持单键专用。 */
+    private static final java.util.Set<String> HOLD_ONLY_SINGLE = java.util.Set.of("zoom_scope", "view_hold");
 
     /* ---- 面板侧统一绑定：给没有自有快捷键字段的模块补“每个模块都能绑” ---- */
 
@@ -594,21 +601,28 @@ public final class ModulePanelRegistry {
     private static void ensurePanelChordsLoaded() {
         if (panelChordsLoaded) return;
         panelChordsLoaded = true;
-        Properties p = ConfigProperties.load(
-                FabricRuntime.configPath().resolve("micx-panel-bindings.properties"), null);
-        for (String key : p.stringPropertyNames()) {
-            int[] codes = KeyChord.parse(p.getProperty(key, ""));
-            if (!KeyChord.isEmpty(codes)) PANEL_CHORDS.put(key, codes);
+        try {
+            Properties p = ConfigProperties.load(
+                    FabricRuntime.configPath().resolve("micx-panel-bindings.properties"), null);
+            for (String key : p.stringPropertyNames()) {
+                int[] codes = KeyChord.parse(p.getProperty(key, ""));
+                if (!KeyChord.isEmpty(codes)) PANEL_CHORDS.put(key, codes);
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // 非 Fabric 运行时（单测环境）没有配置目录：按无面板组合键处理。
+            // FabricRuntime 静态初始化失败抛 ExceptionInInitializerError（LinkageError 子类），
+            // 且失败后后续访问抛 NoClassDefFoundError，两者都要挡。
         }
     }
 
-    /** 面板侧为该模块保存的组合键；未绑定返回 null。 */
+    /** 面板侧为该模块保存的组合键（覆盖自带单键）；未绑定/空返回 null。 */
     public static int[] panelChord(String id) {
         ensurePanelChordsLoaded();
         return PANEL_CHORDS.get(id);
     }
 
-    private static void setPanelChord(String id, int[] codes) {
+    /** 写入/清除面板侧组合键（public：单键模块的组合键也存这里，2026-09-22）。 */
+    public static void setPanelChord(String id, int[] codes) {
         ensurePanelChordsLoaded();
         int[] normalized = KeyChord.normalize(codes);
         HotkeyRuntime.clearModule(id);
