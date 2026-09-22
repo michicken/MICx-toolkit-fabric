@@ -1023,6 +1023,27 @@ public final class AimbotRules {
     }
 
     /**
+     * MID 区域地面高度（AA 地面层 y≈71~75 之上）。坠落过滤与「MID 空中」高度判定共用，
+     * 从 AimbotModule 上移集中（2026-09-22）。
+     */
+    public static final double MID_GROUND_Y = 76.0;
+
+    /**
+     * P5+MID 模式的 MID 窗怪是否「在空中」（用户定稿 2026-09-22）：脚底高于 MID 地面
+     * aboveHeightBlocks 格，或高于玩家脚底 aboveHeightBlocks 格。空中 MID 降到 P5 窗怪
+     * 之后（{@link #RANK_WINDOW_MID_AIR}），落地 MID 反超 P5（{@link #RANK_WINDOW_MID_GROUND}）。
+     *
+     * <p>只在 P5+MID 模式有影响：其余模式的 priorityWindows 不含 "MID"，midAir 参数
+     * 在 {@link #priorityRank} 里不会命中窗怪分支。R21 豁免由调用方把关
+     * （{@code aboveExempt} 时不调用本方法，MID 全部按落地算）。
+     */
+    public static boolean isMidAir(String windowId, double footY, double playerFootY, double threshold) {
+        if (!"MID".equals(windowId)) return false;
+        return isTooHighAbove(footY, MID_GROUND_Y, threshold)
+                || isTooHighAbove(footY, playerFootY, threshold);
+    }
+
+    /**
      * 高速自由落体判定。三个条件同时成立才算：
      * <ol>
      *   <li>脚底仍明显高于地面（{@code y > groundY}）——窗户下落是贴地短距，直接排除；</li>
@@ -1274,7 +1295,13 @@ public final class AimbotRules {
      * 高档只有在所有更高档「没有任何可打点（含被墙挡光）」时才参与。
      * <ul>
      *   <li>{@link #RANK_MODE_GIANT}：P5+MID 模式默认优先的巨人（prioClown 开启时不打此标）；</li>
-     *   <li>{@link #RANK_WINDOW}：SR 模式窗内出生的怪（含窗内 TOO/baby——窗优先压过类型忽略）；</li>
+     *   <li>{@link #RANK_WINDOW_MID_GROUND}：P5+MID 模式 MID 窗怪已落地（2026-09-22 定稿：
+     *       反超 P5 排最高优先窗怪）；</li>
+     *   <li>{@link #RANK_WINDOW}：SR 模式窗内出生的怪（含窗内 TOO/baby——窗优先压过类型忽略）；
+     *       P5+MID 模式下即 P5 窗怪（MID 已拆出）；</li>
+     *   <li>{@link #RANK_WINDOW_MID_AIR}：P5+MID 模式 MID 窗怪在空中（高于 MID 地面或玩家
+     *       aboveHeightBlocks 格，含 UFO 坠落中——2026-09-22 定稿：坠落不再整体排除，降级可打，
+     *       R21 豁免回合恢复最高优先）；</li>
      *   <li>{@link #RANK_WINDOW_GOLEM}：模式锚点半径内的铁傀儡（窗怪清空才轮到）；</li>
      *   <li>{@link #RANK_NORMAL}：普通怪（现有 group ≥ 0）；</li>
      *   <li>{@link #RANK_DEMOTED}：高处怪 / Clown 模式巨人（group &lt; 0 且非 baby）；</li>
@@ -1283,12 +1310,14 @@ public final class AimbotRules {
      * </ul>
      */
     public static final int RANK_MODE_GIANT = 0;
-    public static final int RANK_WINDOW = 1;
-    public static final int RANK_WINDOW_GOLEM = 2;
-    public static final int RANK_NORMAL = 3;
-    public static final int RANK_DEMOTED = 4;
-    public static final int RANK_IGNORED = 5;
-    /** 动态排除（坠怪/高处怪等）仍完全不进候选，不走档位。 */
+    public static final int RANK_WINDOW_MID_GROUND = 1;
+    public static final int RANK_WINDOW = 2;
+    public static final int RANK_WINDOW_MID_AIR = 3;
+    public static final int RANK_WINDOW_GOLEM = 4;
+    public static final int RANK_NORMAL = 5;
+    public static final int RANK_DEMOTED = 6;
+    public static final int RANK_IGNORED = 7;
+    /** 动态排除（坠怪/高处怪等）仍完全不进候选，不走档位；MID 窗怪不在此列（见 collectCandidates）。 */
     public static final int RANK_EXCLUDED = Integer.MAX_VALUE;
 
     /** 模式对应的优先窗 id 集合（{@code P1..P5/ULT/ALT/MID}，与 WindowSpawnCounterModule 同名）；关/未知返回空集。 */
@@ -1432,22 +1461,30 @@ public final class AimbotRules {
 
     /**
      * 单只怪的档位判定（collectCandidates 每怪一次）。旧签名（无傀儡标）保留给历史用例，
-     * 等价于「打标未知」。
+     * 等价于「打标未知、不在空中」。
      */
     public static int priorityRank(int mode, String windowId, boolean modeGiant,
                                    boolean golemInAnchor, boolean demotedGroup,
                                    boolean typeIgnored) {
-        return priorityRank(mode, windowId, null, modeGiant, golemInAnchor, demotedGroup, typeIgnored);
+        return priorityRank(mode, windowId, null, modeGiant, golemInAnchor, false, demotedGroup, typeIgnored);
+    }
+
+    /** 旧签名（打标未知）保留给历史用例，等价于「不在空中」。 */
+    public static int priorityRank(int mode, String windowId, String golemTag, boolean modeGiant,
+                                   boolean golemInAnchor, boolean demotedGroup,
+                                   boolean typeIgnored) {
+        return priorityRank(mode, windowId, golemTag, modeGiant, golemInAnchor, false, demotedGroup, typeIgnored);
     }
 
     /**
      * 单只怪的档位判定（collectCandidates 每怪一次）。
      *
-     * <p>档位内容随模式变化（用户定稿 2026-09-19）：
+     * <p>档位内容随模式变化（用户定稿 2026-09-19，MID 拆档 2026-09-22）：
      * <ul>
      *   <li><b>P234</b>：① RC-G 傀儡 ② P2/P3/P4 窗怪 ③ ENT-G1/ENT-G2 傀儡（+ P4 圈内未打标傀儡）；</li>
      *   <li><b>P1+ULT</b>：① P1/ULT 窗怪 ② ULT-G 傀儡（+ P5 圈内未打标傀儡）；</li>
-     *   <li><b>P5+MID</b>：① 巨人（prioClown 开启时不打此标）② P5/MID 窗怪。</li>
+     *   <li><b>P5+MID</b>：① 巨人（prioClown 开启时不打此标）② MID 落地怪 ③ P5 窗怪
+     *       ④ MID 空中怪（坠落/悬空都不再整体排除，2026-09-22 定稿）。</li>
      * </ul>
      *
      * @param mode           窗优先模式（{@code WP_OFF} 时窗/傀儡/模式巨人档不参与）
@@ -1455,14 +1492,19 @@ public final class AimbotRules {
      * @param golemTag       出生点打标（{@link #golemTagFor}，null = 未打标）
      * @param modeGiant      P5+MID 模式默认优先的巨人（prioClown 开启时调用方须传 false）
      * @param golemInAnchor  铁傀儡且落在模式锚点半径内（模式关闭时调用方须传 false）
+     * @param midAir         MID 窗怪在空中（{@link #isMidAir} 或坠落中；仅 P5+MID 模式生效）
      * @param demotedGroup   现有 group &lt; 0 且非 baby（高处怪 / Clown 模式巨人）
      * @param typeIgnored    baby / ignoreToo/ignoreGolem/ignoreSlime 命中
      */
     public static int priorityRank(int mode, String windowId, String golemTag, boolean modeGiant,
-                                   boolean golemInAnchor, boolean demotedGroup,
+                                   boolean golemInAnchor, boolean midAir, boolean demotedGroup,
                                    boolean typeIgnored) {
         if (modeGiant || isTopGolem(mode, golemTag)) return RANK_MODE_GIANT;
-        if (mode != WP_OFF && windowId != null && priorityWindows(mode).contains(windowId)) return RANK_WINDOW;
+        if (mode != WP_OFF && windowId != null && priorityWindows(mode).contains(windowId)) {
+            if (midAir && "MID".equals(windowId)) return RANK_WINDOW_MID_AIR;
+            if ("MID".equals(windowId)) return RANK_WINDOW_MID_GROUND;
+            return RANK_WINDOW;
+        }
         if (isWindowGolem(mode, golemTag, golemInAnchor)) return RANK_WINDOW_GOLEM;
         if (demotedGroup) return RANK_DEMOTED;
         if (typeIgnored) return RANK_IGNORED;

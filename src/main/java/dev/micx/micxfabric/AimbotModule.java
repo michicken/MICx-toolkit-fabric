@@ -95,9 +95,8 @@ public final class AimbotModule implements Module {
     /**
      * AA 地面层 y≈72（实测 71~75）。高于此值才算"尚未落地"；
      * 窗户下落的怪贴地生成（y≤74 且只掉 1~2 格），会被这条排除。
+     * 常量已上移 {@link AimbotRules#MID_GROUND_Y}（与「MID 空中」高度判定共用）。
      */
-    private static final double MID_GROUND_Y = 76.0;
-    /** mid 坠怪判定的水平速度上限（格/tick）：被击退/打飞的怪水平位移明显，不能忽略。 */
     private static final double MID_FALL_MAX_HORIZONTAL = 0.5;
     private static final long STRAFE_SWEEP_GRACE_MS = 150L;
     private static final double TREMOR_YAW_DEG = 0.1;
@@ -468,9 +467,10 @@ public final class AimbotModule implements Module {
         }
         all.sort(Comparator.comparingDouble(meta -> meta.angle));
 
-        // 六档选靶（P5+MID模式巨人 > 窗怪 > 窗傀儡 > 普通 > 降级 > 忽略）：按 rank 从低到高逐档扫描，
-        // 第一档「扫得出瞄点」的目标即为靶池。高档只有当更高档全空/全被挡时才参与——
-        // 优先怪被墙挡光先放行打其他怪，露头（扫出点）下一 tick 自动切回（用户定稿 2026-09-19）。
+        // 八档选靶（P5+MID模式巨人 > MID落地怪 > P5窗怪 > MID空中怪 > 窗傀儡 > 普通 > 降级 > 忽略）：
+        // 按 rank 从低到高逐档扫描，第一档「扫得出瞄点」的目标即为靶池。高档只有当更高档
+        // 全空/全被挡时才参与——优先怪被墙挡光先放行打其他怪，露头（扫出点）下一 tick 自动切回
+        // （用户定稿 2026-09-19；MID 落地/空中拆档 2026-09-22）。
         List<Scored> scored = List.of();
         for (int rank = AimbotRules.RANK_MODE_GIANT;
              rank <= AimbotRules.RANK_IGNORED && scored.isEmpty(); rank++) {
@@ -652,14 +652,35 @@ public final class AimbotModule implements Module {
             boolean golem = living instanceof IronGolem;
             // TOO 也是 baby 体型，但归 TOO 类不算 baby（signature 优先）。
             boolean baby = living instanceof Zombie zombie && zombie.isBaby() && !too;
+            // 窗优先（AA 局内生效）：出生窗归档（含 UFO 口 = MID）+ 出生点傀儡标（RC-G/ULT-G/
+            // ENT-G1/G2，2026-09-19 实测定稿）→ 八档 rank。锚点半径只作未打标傀儡的兜底。
+            // 窗怪档压过类型忽略：P2 的 TOO/Baby 也是窗怪（先清窗的语义优先于「别打它」）。
+            // 窗 id 在坠怪判定之前取：MID 窗怪不再被坠怪规则整体排除（2026-09-22 定稿）。
+            String windowId = null;
+            String golemTag = null;
+            boolean golemInAnchor = false;
+            boolean modeGiant = false;
+            if (wpActive) {
+                windowId = WindowSpawnCounterModule.instance().birthWindowIdOf(living.getId());
+                golemTag = golem ? WindowSpawnCounterModule.instance().golemTagOf(living.getId()) : null;
+                golemInAnchor = golem
+                        && AimbotRules.withinGolemAnchor(wpAnchor, living.getX(), living.getZ());
+                // P5+MID 默认优先打巨人；选了 Clown 优先就不抢（Clown 自带巨人降档，2026-09-19 定稿）。
+                modeGiant = wpMode == AimbotRules.WP_P5 && giant && !c.prioClown;
+            }
             if (instaWindow && (giant || isGhast(living))) continue;
             // 类型忽略（TOO/傀儡/史莱姆）从「完全不打」改为 RANK_IGNORED 末位档：
             // 场上只剩它们（或普通怪全被挡）时可打。
             // baby 并入忽略档（用户定稿 2026-09-19：忽略 Baby 而非优先，BRUTE 扫射也不再提前）。
             boolean typeIgnored = (c.ignoreToo && too) || (c.ignoreGolem && golem)
                     || (c.ignoreSlime && slime) || baby;
-            if (c.ignoreVerticalFall && isVerticalFalling(living)) continue;
-            if (c.ignoreMidFall && isMidFallDrop(living)) continue;
+            // 坠怪排除（2026-09-22 定稿）：MID 窗怪例外——不再被垂直下坠/mid 高空坠怪两条
+            // 规则整体排除（UFO 坠怪两条都会命中），降级到「MID 空中」档可打；仅 P5+MID
+            // 模式生效，其余模式与非 MID 怪维持原排除语义。
+            boolean verticalFalling = c.ignoreVerticalFall && isVerticalFalling(living);
+            boolean midFallDrop = c.ignoreMidFall && isMidFallDrop(living);
+            boolean midWindowMob = wpMode == AimbotRules.WP_P5 && "MID".equals(windowId);
+            if ((verticalFalling || midFallDrop) && !midWindowMob) continue;
             // 头顶高处（高度差 > aboveHeightBlocks，默认 5 格）：不再硬排除，改为降到
             // 「普通怪之后」档——地面怪全部不可打时才锁它们（用户定稿 2026-09-14）。
             // R21 仍整条豁免（aboveExempt）；恶魂是飞行怪，照旧不参与该判定。
@@ -686,24 +707,14 @@ public final class AimbotModule implements Module {
             if (highAbove) {
                 group = Math.min(group, AimbotRules.GROUP_HIGH_ABOVE);
             }
-            // 窗优先（AA 局内生效）：出生窗归档（含 UFO 口 = MID）+ 出生点傀儡标（RC-G/ULT-G/
-            // ENT-G1/G2，2026-09-19 实测定稿）→ 六档 rank。锚点半径只作未打标傀儡的兜底。
-            // 窗怪档压过类型忽略：P2 的 TOO/Baby 也是窗怪（先清窗的语义优先于「别打它」）。
-            String windowId = null;
-            String golemTag = null;
-            boolean golemInAnchor = false;
-            boolean modeGiant = false;
-            if (wpActive) {
-                windowId = WindowSpawnCounterModule.instance().birthWindowIdOf(living.getId());
-                golemTag = golem ? WindowSpawnCounterModule.instance().golemTagOf(living.getId()) : null;
-                golemInAnchor = golem
-                        && AimbotRules.withinGolemAnchor(wpAnchor, living.getX(), living.getZ());
-                // P5+MID 默认优先打巨人；选了 Clown 优先就不抢（Clown 自带巨人降档，2026-09-19 定稿）。
-                modeGiant = wpMode == AimbotRules.WP_P5 && giant && !c.prioClown;
-            }
+            // MID 空中（用户定稿 2026-09-22）：坠落中（垂直下坠/mid 坠怪任一命中）或脚底
+            // 高于 MID 地面/玩家 aboveHeightBlocks 格。R21 豁免回合整条不判——全部按落地算，
+            // MID 恢复最高优先窗怪（与「忽略头顶高处」豁免同口径）。
+            boolean midAir = midWindowMob && !aboveExempt && (verticalFalling || midFallDrop
+                    || AimbotRules.isMidAir(windowId, living.getY(), py, c.aboveHeightBlocks));
             // baby 走 typeIgnored 忽略档；demoted 档只剩高处怪与 Clown 模式巨人（group<0 且非 baby）。
             int rank = AimbotRules.priorityRank(wpMode, windowId, golemTag, modeGiant, golemInAnchor,
-                    group < 0 && !baby, typeIgnored);
+                    midAir, group < 0 && !baby, typeIgnored);
             result.add(new CandidateMeta(living, threat, too, giant, group, angle,
                     Math.sqrt(distSq), windowId, rank));
         }
@@ -2274,8 +2285,8 @@ public final class AimbotModule implements Module {
         if (!AimbotRules.isInsideMidCell(entity.getX(), entity.getZ())) return false;
         Vec3 motion = entity.getDeltaMovement();
         double horizontal = Math.hypot(motion.x, motion.z);
-        return AimbotRules.isHighSpeedFall(entity.getY(), motion.y, horizontal,
-                MID_GROUND_Y, config.midFallSpeed, MID_FALL_MAX_HORIZONTAL);
+        return AimbotRules.isHighSpeedFall(entity.getY(), motion.y,
+                horizontal, AimbotRules.MID_GROUND_Y, config.midFallSpeed, MID_FALL_MAX_HORIZONTAL);
     }
 
     /**

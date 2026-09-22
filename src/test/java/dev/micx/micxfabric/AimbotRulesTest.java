@@ -1179,8 +1179,8 @@ class AimbotRulesTest {
         // RC-G / ENT-G 在 P1+ULT 里不参与优先档
         assertEquals(AimbotRules.RANK_DEMOTED, AimbotRules.priorityRank(
                 AimbotRules.WP_P1_ULT, null, AimbotRules.GOLEM_TAG_RC, false, false, true, false));
-        // P5+MID 不受傀儡标影响（它只有巨人档 + 窗怪档）
-        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+        // P5+MID 不受傀儡标影响（它只有巨人档 + MID/P5 窗怪档）；旧签名未判空中，MID 按落地算
+        assertEquals(AimbotRules.RANK_WINDOW_MID_GROUND, AimbotRules.priorityRank(
                 AimbotRules.WP_P5, "MID", AimbotRules.GOLEM_TAG_ULT, false, false, false, false));
     }
 
@@ -1244,8 +1244,8 @@ class AimbotRulesTest {
                 AimbotRules.WP_P234, "P2", false, false, false, false));
         assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
                 AimbotRules.WP_P234, "P2", false, false, true, true));
-        // P5+MID 的 MID 怪（birthWindowIdOf 返回 "MID"）与 P5 窗怪同档。
-        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+        // P5+MID 的 MID 怪（birthWindowIdOf 返回 "MID"）未判空中按落地算，反超 P5 窗怪（2026-09-22）。
+        assertEquals(AimbotRules.RANK_WINDOW_MID_GROUND, AimbotRules.priorityRank(
                 AimbotRules.WP_P5, "MID", false, false, false, false));
         assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
                 AimbotRules.WP_P5, "P5", false, false, false, false));
@@ -1269,5 +1269,51 @@ class AimbotRulesTest {
                 AimbotRules.WP_OFF, "P2", false, false, false, false));
         assertEquals(AimbotRules.RANK_IGNORED, AimbotRules.priorityRank(
                 AimbotRules.WP_OFF, null, false, false, false, true));
+    }
+
+    @Test
+    void midSplitsIntoGroundAndAirTiersForP5ModeOnly() {
+        // 2026-09-22 定稿：MID 落地怪反超 P5；MID 空中怪（坠落/悬空）降到 P5 之后。
+        // 八档链：巨人 < MID 落地 < P5 窗怪 < MID 空中 < 窗傀儡 < 普通 < 降级 < 忽略。
+        assertTrue(AimbotRules.RANK_MODE_GIANT < AimbotRules.RANK_WINDOW_MID_GROUND);
+        assertTrue(AimbotRules.RANK_WINDOW_MID_GROUND < AimbotRules.RANK_WINDOW);
+        assertTrue(AimbotRules.RANK_WINDOW < AimbotRules.RANK_WINDOW_MID_AIR);
+        assertTrue(AimbotRules.RANK_WINDOW_MID_AIR < AimbotRules.RANK_WINDOW_GOLEM);
+        assertTrue(AimbotRules.RANK_WINDOW_GOLEM < AimbotRules.RANK_NORMAL);
+        assertTrue(AimbotRules.RANK_NORMAL < AimbotRules.RANK_DEMOTED);
+        assertTrue(AimbotRules.RANK_DEMOTED < AimbotRules.RANK_IGNORED);
+
+        assertEquals(AimbotRules.RANK_WINDOW_MID_GROUND, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "MID", null, false, false, false, false, false));
+        assertEquals(AimbotRules.RANK_WINDOW_MID_AIR, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "MID", null, false, false, true, false, false));
+        // P5 窗怪没有空中/落地之分，midAir 参数对它无效。
+        assertEquals(AimbotRules.RANK_WINDOW, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "P5", null, false, false, true, false, false));
+        // MID 空中仍在窗怪族内：压过高处降级与类型忽略（与原窗怪语义一致）。
+        assertEquals(AimbotRules.RANK_WINDOW_MID_AIR, AimbotRules.priorityRank(
+                AimbotRules.WP_P5, "MID", null, false, false, true, true, true));
+        // 其他模式的 MID 怪根本不是窗怪：midAir 不产生任何窗档（P234 完全不受影响）。
+        assertEquals(AimbotRules.RANK_NORMAL, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, "MID", null, false, false, true, false, false));
+        assertEquals(AimbotRules.RANK_IGNORED, AimbotRules.priorityRank(
+                AimbotRules.WP_P234, "MID", null, false, false, true, false, true));
+    }
+
+    @Test
+    void midAirNeedsMidTagAndFiveBlockClearance() {
+        double threshold = 5.0;
+        // 高于 MID 地面(y=76) 5 格内按落地算，超过才算空中（玩家站同层，隔离出地面基准）。
+        assertFalse(AimbotRules.isMidAir("MID",
+                AimbotRules.MID_GROUND_Y + 5.0, AimbotRules.MID_GROUND_Y, threshold));
+        assertTrue(AimbotRules.isMidAir("MID",
+                AimbotRules.MID_GROUND_Y + 5.5, AimbotRules.MID_GROUND_Y, threshold));
+        // 玩家在高台时：怪高于玩家 5 格也算空中。
+        assertTrue(AimbotRules.isMidAir("MID", 74.0, 68.0, threshold));
+        // 玩家站得比怪高不把怪算空中（只判怪高于基准）。
+        assertFalse(AimbotRules.isMidAir("MID", 72.0, 90.0, threshold));
+        // 非 MID 窗怪（P5/未归档）永不判空中。
+        assertFalse(AimbotRules.isMidAir("P5", 105.0, 72.0, threshold));
+        assertFalse(AimbotRules.isMidAir(null, 105.0, 72.0, threshold));
     }
 }
