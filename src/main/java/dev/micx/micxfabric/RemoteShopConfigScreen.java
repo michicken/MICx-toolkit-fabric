@@ -23,6 +23,8 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     private static final int MAX_LISTED = 8;
     private final List<Hit> hits = new ArrayList<>();
     private EditBox keywordsBox;
+    /** 正在录制买弹快捷键的槽位（0=枪一 1=枪二 2=枪三；-1=不在录制）。 */
+    private int listeningGun = -1;
 
     private record Hit(int x, int y, int w, int h, Runnable action) {
     }
@@ -130,8 +132,33 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         y += 24;
         y = wrapped(graphics, "上次：" + module.lastReport(), contentLeft(), y, TEXT, contentWidth()) + 6;
         y = wrapped(graphics, UiText.shown("按一下只买一次，带 1 秒冷却，不会自动连买。目标超过 5.5 格时只报告、不发包。", "只按一下发一次（1 秒冷却），不会自动连买。目标超出 5.5 格时只报告、不发包。"),
-                contentLeft(), y, TEXT_FAINT, contentWidth());
+                contentLeft(), y, TEXT_FAINT, contentWidth()) + 8;
+
+        graphics.fill(contentLeft(), y, contentRight(), y + 1, LINE);
+        y += 14;
+        section(graphics, UiText.shown("三槽买弹快捷键（按下激活）", "GUN KEYS / 按键买弹"), y);
+        y += 20;
+        y = gunKeyRow(graphics, mouseX, mouseY, "枪一（槽位2）", 0, y);
+        y = gunKeyRow(graphics, mouseX, mouseY, "枪二（槽位3）", 1, y);
+        y = gunKeyRow(graphics, mouseX, mouseY, "枪三（槽位4）", 2, y);
+        y = wrapped(graphics, UiText.shown(
+                "范围内按下即买：切到这把枪 → 对商店发包 → 切回原枪，全程键盘连点被按住（发包完成后 50 毫秒放行）。"
+                        + "没扫到目标/超程/冷却中只提示、不切槽。模块关着时无效。",
+                "按下激活：切槽→发包→切回；键盘连点临时暂停。"),
+                contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
         setContentHeight(y - contentTop() + scrollOffset());
+    }
+
+    private int gunKeyRow(GuiGraphicsExtractor graphics, int mouseX, int mouseY, String label, int gun, int y) {
+        RemoteShopModule module = RemoteShopModule.instance();
+        graphics.text(font, label, contentLeft(), y + 4, TEXT);
+        int x = contentRight() - 174;
+        int w = 174;
+        boolean listening = listeningGun == gun;
+        String text = listening ? "按键 · ESC取消" : KeyChord.keyName(module.buyKeyCode(gun));
+        drawButton(graphics, text, x, y, w, 18, isInside(mouseX, mouseY, x, y, w, 18));
+        hits.add(new Hit(x, y, w, 18, () -> listeningGun = listening ? -1 : gun));
+        return y + 26;
     }
 
     @Override
@@ -146,6 +173,20 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
             }
         }
         return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (listeningGun >= 0) {
+            if (event.isEscape()) {
+                listeningGun = -1;
+                return true;
+            }
+            RemoteShopModule.instance().setBuyKeyCode(listeningGun, event.key());
+            listeningGun = -1;
+            return true;
+        }
+        return super.keyPressed(event);
     }
 
     @Override

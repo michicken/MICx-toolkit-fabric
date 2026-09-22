@@ -46,6 +46,16 @@ public final class RemoteShopModule implements Module {
     /** 扫描结果缓存：面板每帧都画，不能每帧重扫实体表。 */
     private static final long SCAN_CACHE_MS = 1_000L;
 
+    /**
+     * 三把枪的固定槽位（用户定稿 2026-09-22）：物品栏槽位 2/3/4 = 快捷栏索引 1/2/3。
+     * 枪一→槽位2、枪二→槽位3、枪三→槽位4；只可改快捷键，不可改槽位。
+     */
+    private static final int[] BUY_SLOTS = {1, 2, 3};
+    /** 买弹序列每个阶段续期的外部保护窗时长（毫秒）：覆盖到下一阶段刷新。 */
+    private static final long BUY_HOLD_MS = 400L;
+    /** 发完购买/交互包并切回原枪后，键盘连点再被按住的尾巴（用户定稿：50 毫秒）。 */
+    private static final long BUY_TAIL_MS = 50L;
+
     /** 一条候选：全息文字、实体类型、距离、是否命中关键词、实体 id（触发时按 id 找回）。 */
     public record Candidate(int entityId, String name, String kind, double distance, boolean matched, Vec3 position) {
         public String kindLabel() {
@@ -62,6 +72,15 @@ public final class RemoteShopModule implements Module {
     private String lastReport = "还没触发过";
     private List<Candidate> cachedScan = List.of();
     private long cachedScanMs = -1L;
+
+    /* ---- 三槽买弹（按下激活，2026-09-22）：切到枪N → 对商店发包 → 切回原槽 ---- */
+    private final int[] buyKeys = new int[3];
+    /** 0 = 空闲；1 = 待切槽；2 = 已切槽待发包；3 = 已发包待切回。 */
+    private int buyStage;
+    private int buyGun = -1;
+    private int buyRestoreSlot = -1;
+    private Candidate buyTarget;
+    private final KeyEdgeTracker buyEdges = new KeyEdgeTracker();
 
     private RemoteShopModule() {
     }
@@ -107,10 +126,128 @@ public final class RemoteShopModule implements Module {
         triggerNearest(client);
     }
 
+    /**
+     * 三槽买弹（按下激活，非开关；模块关着时无效——用户定稿 2026-09-22）：
+     * 按下枪 N 键 → 范围内有目标就切到枪 N → 对商店自绘射线发包 → 切回原槽。
+     * 切槽前一刻到发包完成后 50ms，键盘连点被外部保护窗完全按住。
+     */
+    @Override
+    public void tick(Minecraft client) {
+        loadConfig();
+        if (buyStage != 0) {
+            advanceBuy(client);
+            return;
+        }
+        if (!enabled || client == null || client.player == null || client.level == null
+                || client.gui.screen() != null || client.isPaused()) return;
+        for (int gun = 0; gun < buyKeys.length; gun++) {
+            if (buyKeys[gun] == 0) continue;
+            if (buyEdges.pressed(id() + ":buy" + gun, new InputBinding(buyKeys[gun]), client, false)) {
+                beginBuy(client, gun);
+                return;
+            }
+        }
+    }
+
+    /** 触发前置检查（冷却/目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
+    private void beginBuy(Minecraft client, int gun) {
+        long now = System.currentTimeMillis();
+        String label = "枪" + (gun + 1);
+        if (!RemoteShopRules.due(now, lastTriggerMs)) {
+            notify(client, label + "买弹：冷却中（1 秒一次）");
+            return;
+        }
+        Candidate target = firstMatched(client);
+        if (target == null) {
+            notify(client, label + "买弹：附近 " + Math.round(RemoteShopRules.SCAN_RADIUS)
+                    + " 格内没有关键词目标");
+            return;
+        }
+        if (!RemoteShopRules.withinTriggerRange(target.distance())) {
+            notify(client, String.format(Locale.ROOT, "%s买弹：目标在 %.1f 格外，没发",
+                    label, target.distance()));
+            return;
+        }
+        Entity entity = client.level.getEntity(target.entityId());
+        if (entity == null) {
+            notify(client, label + "买弹：目标跑掉了，再按一次试试");
+            return;
+        }
+        lastTriggerMs = now;
+        buyGun = gun;
+        buyTarget = target;
+        buyRestoreSlot = client.player.getInventory().getSelectedSlot();
+        buyStage = 1;
+        KeyboardClickerModule.instance().holdExternalFor(BUY_HOLD_MS);
+    }
+
+    /** 三阶段推进（照 SkillCast 的节奏：切槽 → 发包 → 切回，各占一 tick）。 */
+    private void advanceBuy(Minecraft client) {
+        if (client == null || client.player == null || client.level == null
+                || client.gui.screen() != null || client.isPaused()) {
+            abortBuy(client);
+            return;
+        }
+        String label = "枪" + (buyGun + 1);
+        if (buyStage == 1) {
+            KeyboardClickerModule.instance().holdExternalFor(BUY_HOLD_MS);
+            client.player.getInventory().setSelectedSlot(BUY_SLOTS[buyGun]);
+            buyStage = 2;
+            return;
+        }
+        if (buyStage == 2) {
+            KeyboardClickerModule.instance().holdExternalFor(BUY_HOLD_MS);
+            Entity entity = client.level.getEntity(buyTarget.entityId());
+            String result = entity == null
+                    ? "目标跑掉了，没发"
+                    : fire(client, entity, buyTarget);
+            notify(client, label + "：" + result);
+            buyStage = 3;
+            return;
+        }
+        // stage 3：切回原枪，保护窗只剩 50ms 尾巴，到点立刻放行键盘连点
+        if (buyRestoreSlot >= 0 && buyRestoreSlot < 9) {
+            client.player.getInventory().setSelectedSlot(buyRestoreSlot);
+        }
+        KeyboardClickerModule.instance().holdExternalFor(BUY_TAIL_MS);
+        buyStage = 0;
+        buyGun = -1;
+        buyTarget = null;
+        buyRestoreSlot = -1;
+    }
+
+    /** 序列中断（开界面/暂停/换世界）：恢复原槽、清状态、立刻放行键盘连点。 */
+    private void abortBuy(Minecraft client) {
+        if (buyStage >= 1 && buyStage <= 3 && client != null && client.player != null
+                && buyRestoreSlot >= 0 && buyRestoreSlot < 9) {
+            client.player.getInventory().setSelectedSlot(buyRestoreSlot);
+        }
+        buyStage = 0;
+        buyGun = -1;
+        buyTarget = null;
+        buyRestoreSlot = -1;
+    }
+
+    private Candidate firstMatched(Minecraft client) {
+        for (Candidate candidate : scan(client, true)) {
+            if (candidate.matched()) return candidate;
+        }
+        return null;
+    }
+
+    private void notify(Minecraft client, String message) {
+        report(message);
+        if (client != null && client.player != null) {
+            client.player.sendSystemMessage(ChatMessageStyles.notice(message));
+        }
+    }
+
     @Override
     public void resetState() {
         cachedScan = List.of();
         cachedScanMs = -1L;
+        abortBuy(Minecraft.getInstance());
+        buyEdges.clear();
     }
 
     /**
@@ -248,6 +385,24 @@ public final class RemoteShopModule implements Module {
         saveConfig();
     }
 
+    /** 枪 N（0 起）的买弹快捷键；0 = 未绑定。 */
+    public int buyKeyCode(int gun) {
+        loadConfig();
+        return gun >= 0 && gun < buyKeys.length ? buyKeys[gun] : 0;
+    }
+
+    public void setBuyKeyCode(int gun, int code) {
+        loadConfig();
+        if (gun < 0 || gun >= buyKeys.length) return;
+        buyKeys[gun] = code == 0 ? 0 : Math.max(-108, Math.min(GLFW.GLFW_KEY_LAST, code));
+        saveConfig();
+    }
+
+    /** 枪 N 的固定槽位（快捷栏索引）：枪一=槽位2(1)、枪二=槽位3(2)、枪三=槽位4(3)。 */
+    public static int buySlot(int gun) {
+        return gun >= 0 && gun < BUY_SLOTS.length ? BUY_SLOTS[gun] : -1;
+    }
+
     private void loadConfig() {
         if (configLoaded) return;
         configLoaded = true;
@@ -257,6 +412,10 @@ public final class RemoteShopModule implements Module {
         keywords = RemoteShopRules.parseKeywords(keywordsRaw);
         binding = new InputBinding(ConfigProperties.integer(properties, "keyCode", DEFAULT_KEY,
                 -108, GLFW.GLFW_KEY_LAST));
+        for (int gun = 0; gun < buyKeys.length; gun++) {
+            buyKeys[gun] = ConfigProperties.integer(properties, "buyKey" + (gun + 1), 0,
+                    -108, GLFW.GLFW_KEY_LAST);
+        }
     }
 
     private void saveConfig() {
@@ -264,6 +423,9 @@ public final class RemoteShopModule implements Module {
         Properties properties = new Properties();
         properties.setProperty("keywords", keywordsRaw);
         properties.setProperty("keyCode", Integer.toString(binding.code()));
+        for (int gun = 0; gun < buyKeys.length; gun++) {
+            properties.setProperty("buyKey" + (gun + 1), Integer.toString(buyKeys[gun]));
+        }
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("remote-shop.properties"), properties,
                     "MICx RemoteShop configuration");

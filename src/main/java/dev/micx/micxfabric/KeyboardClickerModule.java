@@ -73,6 +73,8 @@ public final class KeyboardClickerModule implements Module {
     /** 槽位最近 8 秒内的防卡弹触发时刻（升序），第 3 次命中升级档后清零；出窗即剪。 */
     private final Map<Integer, ArrayDeque<Long>> slotProtectHistory = new HashMap<>();
     private long stuckPauseUntil;
+    /** 外部保护窗截止毫秒（RemoteShop 买弹序列用）：窗口内本模块完全不动作。 */
+    private long externalHoldUntil;
     private JamProtectionSequence pendingProtection;
     private final Map<Integer, Long> slotVeryLowSince = new HashMap<>();
     private final Map<Integer, Integer> slotLastDamage = new HashMap<>();
@@ -172,6 +174,9 @@ public final class KeyboardClickerModule implements Module {
             resetProtectionState();
             return;
         }
+        // 外部保护窗（RemoteShop 买弹序列等）：期间本模块完全不动作——含卡弹保护在内的一切
+        // 切槽都暂停，窗口结束后续跑（状态保留，不会乱）。
+        if (now < externalHoldUntil) return;
 
         advanceProtectionSequence(client, now);
         advanceDownJamProtection(client, now);
@@ -599,6 +604,7 @@ public final class KeyboardClickerModule implements Module {
         sequenceIndex = 0;
         lastClick = 0L;
         paused = false;
+        externalHoldUntil = 0L;
         java.util.Arrays.fill(hotbarPrevDown, false);
         // 金铲子"一局只适配一次"的标志不在这里清：模块中途关开（resetInput 会在停用时触发）
         // 不算新的一局，清了就会在下次看到铲子时重复改键位模式（用户定稿 2026-09-19）。
@@ -615,6 +621,20 @@ public final class KeyboardClickerModule implements Module {
 
     public int modeIndex() {
         return modeIndex;
+    }
+
+    /**
+     * 外部保护窗：从现在起 {@code durationMs} 毫秒内本模块完全不动作（含卡弹保护的一切切槽）。
+     * RemoteShop 买弹序列在切槽前调用、每个阶段续期；发包完成切回原槽后调 50ms——
+     * 50ms 到点立刻放行（用户定稿 2026-09-22）。以最近一次调用为准（可长可短）。
+     * 模块停用/断线（resetInput/resetState）即清。
+     */
+    public void holdExternalFor(long durationMs) {
+        externalHoldUntil = System.currentTimeMillis() + Math.max(0L, durationMs);
+    }
+
+    public boolean isExternallyHeld() {
+        return System.currentTimeMillis() < externalHoldUntil;
     }
 
     public String modeName() {
