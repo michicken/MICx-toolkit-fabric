@@ -79,6 +79,8 @@ public final class RemoteShopModule implements Module {
     private final boolean[] buyChordPrev = new boolean[3];
     /** 各枪发包后的独立冷却截止（用户定稿 2026-09-23）：只在真正发出交互包后计时。 */
     private final long[] buyCooldownUntil = new long[3];
+    /** 上一 tick 末的槽位：组合键含数字键时原版会先切槽，用它作为「按键前原槽」参照。 */
+    private int lastTickSlot = -1;
     /** 0 = 空闲；1 = 待切槽；2 = 已切槽待发包；3 = 已发包待切回。 */
     private int buyStage;
     private int buyGun = -1;
@@ -139,8 +141,17 @@ public final class RemoteShopModule implements Module {
         loadConfig();
         if (buyStage != 0) {
             advanceBuy(client);
-            return;
+        } else {
+            pollBuyChords(client);
         }
+        // 记录本 tick 末的槽位：组合键含数字键（如 Cmd+2）时，Minecraft 会在本 tick 的
+        // 输入阶段就原版切槽，我们的 END-tick 看到的是切完之后——上个 tick 末才是「按键前原槽」。
+        if (client != null && client.player != null) {
+            lastTickSlot = client.player.getInventory().getSelectedSlot();
+        }
+    }
+
+    private void pollBuyChords(Minecraft client) {
         if (client == null || client.player == null || client.level == null) return;
         boolean blocked = !enabled || client.gui.screen() != null || client.isPaused();
         for (int gun = 0; gun < buyKeys.length; gun++) {
@@ -159,31 +170,55 @@ public final class RemoteShopModule implements Module {
         }
     }
 
+    /**
+     * 原版数字键抢切撤销：组合键里带原版快捷栏键（2/3/4）时，原版自己会把槽位切到这把枪的
+     * 槽位——那不是本流程的行为（用户定稿 2026-09-23：距离不达标连切槽都不发生）。
+     * 只有原版确实刚把槽位切到这把枪的槽位时才切回；组合键不含数字键时槽位没动，直接跳过。
+     */
+    private void revertVanillaSwitch(Minecraft client, int gun, int slotBefore) {
+        if (client == null || client.player == null) return;
+        if (slotBefore < 0 || slotBefore >= 9) return;
+        int now = client.player.getInventory().getSelectedSlot();
+        if (slotBefore != now && now == BUY_SLOTS[gun]) {
+            client.player.getInventory().setSelectedSlot(slotBefore);
+        }
+    }
+
     /** 触发前置检查（冷却/目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
     private void beginBuy(Minecraft client, int gun) {
+        int slotBefore = lastTickSlot;
         // 该枪的 0.8s 冷却只在真正发出交互包后计时（连点没触发不进冷却）；冷却中静默忽略，
         // 连点时不刷聊天（用户定稿 2026-09-23）。
-        if (System.currentTimeMillis() < buyCooldownUntil[gun]) return;
+        if (System.currentTimeMillis() < buyCooldownUntil[gun]) {
+            revertVanillaSwitch(client, gun, slotBefore);
+            return;
+        }
         String label = "枪" + (gun + 1);
         Candidate target = firstMatched(client);
         if (target == null) {
+            revertVanillaSwitch(client, gun, slotBefore);
             notify(client, label + "买弹：附近 " + Math.round(RemoteShopRules.SCAN_RADIUS)
                     + " 格内没有关键词目标");
             return;
         }
         if (!RemoteShopRules.withinTriggerRange(target.distance())) {
+            revertVanillaSwitch(client, gun, slotBefore);
             notify(client, String.format(Locale.ROOT, "%s买弹：目标在 %.1f 格外，没发",
                     label, target.distance()));
             return;
         }
         Entity entity = client.level.getEntity(target.entityId());
         if (entity == null) {
+            revertVanillaSwitch(client, gun, slotBefore);
             notify(client, label + "买弹：目标跑掉了，再按一次试试");
             return;
         }
         buyGun = gun;
         buyTarget = target;
-        buyRestoreSlot = client.player.getInventory().getSelectedSlot();
+        // 组合键含数字键时原版已把槽位切走：restore 回「按键前原槽」而不是切完后的枪槽
+        buyRestoreSlot = slotBefore >= 0 && slotBefore < 9
+                ? slotBefore
+                : client.player.getInventory().getSelectedSlot();
         buyStage = 1;
         KeyboardClickerModule.instance().holdExternalFor(BUY_HOLD_MS);
     }
@@ -267,6 +302,7 @@ public final class RemoteShopModule implements Module {
         abortBuy(Minecraft.getInstance());
         java.util.Arrays.fill(buyChordPrev, false);
         java.util.Arrays.fill(buyCooldownUntil, 0L);
+        lastTickSlot = -1;
     }
 
     /**
