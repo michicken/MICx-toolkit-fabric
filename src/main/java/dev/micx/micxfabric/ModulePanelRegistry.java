@@ -580,7 +580,9 @@ public final class ModulePanelRegistry {
         if (single != null) {
             // zoom_scope / view_hold 是按住语义（自有轮询），只收单键；其余单键模块 2026-09-22 起
             // 也可录组合键（存面板侧、优先于自带单键，清掉组合键回落单键）。
-            boolean holdOnly = HOLD_ONLY_SINGLE.contains(id);
+            // 注意：这里不能引用本类静态字段——real() 的静态注册先于任何字段声明执行
+            //（0.2.129 因此炸过：HOLD_ONLY_SINGLE 在 <clinit> 里还是 null），就地内联。
+            boolean holdOnly = id.equals("zoom_scope") || id.equals("view_hold");
             return new ModuleKeybindAdapter(id,
                     holdOnly ? "主快捷键（单键，空为未绑定）" : desc,
                     module::primaryBinding, code -> setPrimarySingle(module, code), !holdOnly);
@@ -589,9 +591,6 @@ public final class ModulePanelRegistry {
         return new ModuleChordAdapter(id, desc,
                 () -> panelChord(id), codes -> setPanelChord(id, codes));
     }
-
-    /** 按住语义（自有轮询 binding.down）的模块：组合键无法驱动按住行为，保持单键专用。 */
-    private static final java.util.Set<String> HOLD_ONLY_SINGLE = java.util.Set.of("zoom_scope", "view_hold");
 
     /* ---- 面板侧统一绑定：给没有自有快捷键字段的模块补“每个模块都能绑” ---- */
 
