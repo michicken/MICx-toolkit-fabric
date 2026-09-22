@@ -202,14 +202,21 @@ public final class RemoteShopModule implements Module {
                     ? "目标跑掉了，没发"
                     : fire(client, entity, buyTarget);
             notify(client, label + "：" + result);
+            // 键盘连点开着：交互包发出即进入 50ms 放行倒计时，不再等切回原槽
+            // （用户定稿 2026-09-22，与技能释放"动作包完成即恢复"同一节奏）。
+            if (KeyboardClickerModule.instance().enabled()) {
+                KeyboardClickerModule.instance().holdExternalFor(BUY_TAIL_MS);
+            }
             buyStage = 3;
             return;
         }
-        // stage 3：切回原枪，保护窗只剩 50ms 尾巴，到点立刻放行键盘连点
+        // stage 3：切回原枪；键盘连点关着时保护窗再续 50ms（开着的已在发包后放行）
         if (buyRestoreSlot >= 0 && buyRestoreSlot < 9) {
             client.player.getInventory().setSelectedSlot(buyRestoreSlot);
         }
-        KeyboardClickerModule.instance().holdExternalFor(BUY_TAIL_MS);
+        if (!KeyboardClickerModule.instance().enabled()) {
+            KeyboardClickerModule.instance().holdExternalFor(BUY_TAIL_MS);
+        }
         buyStage = 0;
         buyGun = -1;
         buyTarget = null;

@@ -142,9 +142,9 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         y = gunKeyRow(graphics, mouseX, mouseY, "枪二（槽位3）", 1, y);
         y = gunKeyRow(graphics, mouseX, mouseY, "枪三（槽位4）", 2, y);
         y = wrapped(graphics, UiText.shown(
-                "范围内按下即买：切到这把枪 → 对商店发包 → 切回原枪，全程键盘连点被按住（发包完成后 50 毫秒放行）。"
+                "范围内按下即买：切到这把枪 → 对商店发包 → 切回原枪，全程键盘连点被按住；键盘连点开着时交互包发出后 50 毫秒即放行（不等切回），关着时切回后 50 毫秒放行。"
                         + "没扫到目标/超程/冷却中只提示、不切槽。模块关着时无效。",
-                "按下激活：切槽→发包→切回；键盘连点临时暂停。"),
+                "按下激活：切槽→发包→切回；键盘连点临时暂停，发包后 50ms 放行。"),
                 contentLeft(), y, TEXT_DIM, contentWidth()) + 4;
         setContentHeight(y - contentTop() + scrollOffset());
     }
