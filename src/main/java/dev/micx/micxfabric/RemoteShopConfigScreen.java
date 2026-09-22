@@ -23,8 +23,11 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     private static final int MAX_LISTED = 8;
     private final List<Hit> hits = new ArrayList<>();
     private EditBox keywordsBox;
-    /** 正在录制买弹快捷键的槽位（0=枪一 1=枪二 2=枪三；-1=不在录制）。 */
+    /** 正在录制买弹组合键的槽位（0=枪一 1=枪二 2=枪三；-1=不在录制）。 */
     private int listeningGun = -1;
+    /** 累积式组合键捕获（照面板语义）：1–3 键，ESC/Enter 提交，重复键忽略。 */
+    private final int[] capturedKeys = new int[KeyChord.MAX_KEYS];
+    private int capturedCount;
 
     private record Hit(int x, int y, int w, int h, Runnable action) {
     }
@@ -156,14 +159,25 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         int x = contentRight() - 174;
         int w = 174;
         boolean listening = listeningGun == gun;
-        String text = listening ? "按键 · ESC取消" : KeyChord.keyName(module.buyKeyCode(gun));
+        String text = listening
+                ? "按下键 " + (capturedCount + 1) + "/" + KeyChord.MAX_KEYS + " · ESC 完成"
+                : KeyChord.display(module.buyKeyCodes(gun));
         drawButton(graphics, text, x, y, w, 18, isInside(mouseX, mouseY, x, y, w, 18));
-        hits.add(new Hit(x, y, w, 18, () -> listeningGun = listening ? -1 : gun));
+        hits.add(new Hit(x, y, w, 18, () -> {
+            listeningGun = listening ? -1 : gun;
+            capturedCount = 0;
+            java.util.Arrays.fill(capturedKeys, 0);
+        }));
         return y + 26;
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (listeningGun >= 0 && event.button() == 0) {
+            // 录制中：鼠标左键也算组合键成员（与面板一致），不当作点击
+            captureGunKey(-100 + event.button());
+            return true;
+        }
         if (event.button() == 0) {
             double pointerY = event.y();
             for (Hit hit : hits) {
@@ -180,14 +194,40 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
         if (listeningGun >= 0) {
             if (event.isEscape()) {
-                listeningGun = -1;
+                // 与面板同语义：没捕获到键只退出录制；已有 1–3 键则提交
+                finishGunCapture();
                 return true;
             }
-            RemoteShopModule.instance().setBuyKeyCode(listeningGun, event.key());
-            listeningGun = -1;
+            int code = event.key();
+            if (code == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER
+                    || code == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+                finishGunCapture();
+                return true;
+            }
+            if (code != 0) captureGunKey(code);
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    private void captureGunKey(int code) {
+        for (int i = 0; i < capturedCount; i++) {
+            if (capturedKeys[i] == code) return;
+        }
+        if (capturedCount >= KeyChord.MAX_KEYS) return;
+        capturedKeys[capturedCount++] = code;
+        if (capturedCount >= KeyChord.MAX_KEYS) finishGunCapture();
+    }
+
+    private void finishGunCapture() {
+        int gun = listeningGun;
+        int count = capturedCount;
+        int[] captured = java.util.Arrays.copyOf(capturedKeys, count);
+        listeningGun = -1;
+        capturedCount = 0;
+        java.util.Arrays.fill(capturedKeys, 0);
+        if (gun < 0 || count == 0) return;
+        RemoteShopModule.instance().setBuyKeyCodes(gun, captured);
     }
 
     @Override

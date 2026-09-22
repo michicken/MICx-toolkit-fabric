@@ -74,13 +74,15 @@ public final class RemoteShopModule implements Module {
     private long cachedScanMs = -1L;
 
     /* ---- 三槽买弹（按下激活，2026-09-22）：切到枪N → 对商店发包 → 切回原槽 ---- */
-    private final int[] buyKeys = new int[3];
+    /** 每把枪一个组合键（1–3 键，2026-09-23 起支持组合录制）；空数组 = 未绑定。 */
+    private final int[][] buyKeys = new int[3][KeyChord.MAX_KEYS];
+    /** 各枪组合键的「全按下」边沿状态（照 HotkeyRuntime.handleChord 的语义）。 */
+    private final boolean[] buyChordPrev = new boolean[3];
     /** 0 = 空闲；1 = 待切槽；2 = 已切槽待发包；3 = 已发包待切回。 */
     private int buyStage;
     private int buyGun = -1;
     private int buyRestoreSlot = -1;
     private Candidate buyTarget;
-    private final KeyEdgeTracker buyEdges = new KeyEdgeTracker();
 
     private RemoteShopModule() {
     }
@@ -128,7 +130,7 @@ public final class RemoteShopModule implements Module {
 
     /**
      * 三槽买弹（按下激活，非开关；模块关着时无效——用户定稿 2026-09-22）：
-     * 按下枪 N 键 → 范围内有目标就切到枪 N → 对商店自绘射线发包 → 切回原槽。
+     * 组合键全按下的上升沿 → 范围内有目标就切到枪 N → 对商店自绘射线发包 → 切回原槽。
      * 切槽前一刻到发包完成后 50ms，键盘连点被外部保护窗完全按住。
      */
     @Override
@@ -138,14 +140,21 @@ public final class RemoteShopModule implements Module {
             advanceBuy(client);
             return;
         }
-        if (!enabled || client == null || client.player == null || client.level == null
-                || client.gui.screen() != null || client.isPaused()) return;
+        if (client == null || client.player == null || client.level == null) return;
+        boolean blocked = !enabled || client.gui.screen() != null || client.isPaused();
         for (int gun = 0; gun < buyKeys.length; gun++) {
-            if (buyKeys[gun] == 0) continue;
-            if (buyEdges.pressed(id() + ":buy" + gun, new InputBinding(buyKeys[gun]), client, false)) {
-                beginBuy(client, gun);
-                return;
+            if (KeyChord.isEmpty(buyKeys[gun])) {
+                buyChordPrev[gun] = false;
+                continue;
             }
+            // 边沿状态无论是否 blocked 都要推进（GUI 里按下的组合不跨屏触发），
+            // 触发只发生在未屏蔽时的上升沿——与 HotkeyRuntime.handleChord 同语义。
+            boolean down = KeyChord.isAllDown(buyKeys[gun], client);
+            boolean old = buyChordPrev[gun];
+            buyChordPrev[gun] = down;
+            if (blocked || !down || old) continue;
+            beginBuy(client, gun);
+            return;
         }
     }
 
@@ -254,7 +263,7 @@ public final class RemoteShopModule implements Module {
         cachedScan = List.of();
         cachedScanMs = -1L;
         abortBuy(Minecraft.getInstance());
-        buyEdges.clear();
+        java.util.Arrays.fill(buyChordPrev, false);
     }
 
     /**
@@ -392,16 +401,17 @@ public final class RemoteShopModule implements Module {
         saveConfig();
     }
 
-    /** 枪 N（0 起）的买弹快捷键；0 = 未绑定。 */
-    public int buyKeyCode(int gun) {
+    /** 枪 N（0 起）的买弹组合键；空数组 = 未绑定。 */
+    public int[] buyKeyCodes(int gun) {
         loadConfig();
-        return gun >= 0 && gun < buyKeys.length ? buyKeys[gun] : 0;
+        if (gun < 0 || gun >= buyKeys.length) return KeyChord.EMPTY;
+        return buyKeys[gun].clone();
     }
 
-    public void setBuyKeyCode(int gun, int code) {
+    public void setBuyKeyCodes(int gun, int[] codes) {
         loadConfig();
         if (gun < 0 || gun >= buyKeys.length) return;
-        buyKeys[gun] = code == 0 ? 0 : Math.max(-108, Math.min(GLFW.GLFW_KEY_LAST, code));
+        buyKeys[gun] = KeyChord.normalize(codes);
         saveConfig();
     }
 
@@ -420,8 +430,8 @@ public final class RemoteShopModule implements Module {
         binding = new InputBinding(ConfigProperties.integer(properties, "keyCode", DEFAULT_KEY,
                 -108, GLFW.GLFW_KEY_LAST));
         for (int gun = 0; gun < buyKeys.length; gun++) {
-            buyKeys[gun] = ConfigProperties.integer(properties, "buyKey" + (gun + 1), 0,
-                    -108, GLFW.GLFW_KEY_LAST);
+            // 优先新组合键字段（逗号串），为空时迁移旧单键字段
+            buyKeys[gun] = KeyChord.readConfig(properties, "buyKeys" + (gun + 1), "buyKey" + (gun + 1), 0);
         }
     }
 
@@ -431,7 +441,7 @@ public final class RemoteShopModule implements Module {
         properties.setProperty("keywords", keywordsRaw);
         properties.setProperty("keyCode", Integer.toString(binding.code()));
         for (int gun = 0; gun < buyKeys.length; gun++) {
-            properties.setProperty("buyKey" + (gun + 1), Integer.toString(buyKeys[gun]));
+            KeyChord.writeConfig(properties, "buyKeys" + (gun + 1), "buyKey" + (gun + 1), buyKeys[gun]);
         }
         try {
             AtomicProperties.store(FabricRuntime.configPath().resolve("remote-shop.properties"), properties,
