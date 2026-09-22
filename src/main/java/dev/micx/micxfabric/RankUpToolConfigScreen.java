@@ -47,7 +47,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
         RankUpToolModule module = RankUpToolModule.instance();
         String rank = module.rank();
         // 命中判定要加回滚动量：本屏记录的是绘制坐标（已含滚动偏移）。
-        int pointerY = mouseY + scrollOffset();
+        int pointerY = mouseY; // 命中框记录的是当前滚动下的屏幕位置，直接同坐标系比较（不可再加 scrollOffset）
 
         section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
@@ -158,7 +158,7 @@ public final class RankUpToolConfigScreen extends ModuleConfigScreen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         if (event.button() == 0) {
-            double pointerY = event.y() + scrollOffset();
+            double pointerY = event.y();
             for (Hit hit : hits) {
                 if (isInside(event.x(), pointerY, hit.x(), hit.y(), hit.w(), hit.h())) {
                     hit.action().run();

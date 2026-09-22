@@ -50,8 +50,9 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
         hits.clear();
         RemoteShopModule module = RemoteShopModule.instance();
         Minecraft client = Minecraft.getInstance();
-        // 命中判定要加回滚动量：本屏记录的是绘制坐标（已含滚动偏移）。
-        int pointerY = mouseY + scrollOffset();
+        // 命中判定用屏幕坐标直判：命中框记录的就是当前滚动下的绘制位置（= 屏幕位置），
+        // 不能再加 scrollOffset——加了之后只要滚动过，点击/悬停整体偏移滚动量（0.2.130 踩坑）。
+        int pointerY = mouseY;
 
         section(graphics, UiText.shown("开关与状态", "STATUS / 状态"), y);
         y += 20;
@@ -164,7 +165,7 @@ public final class RemoteShopConfigScreen extends ModuleConfigScreen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         if (event.button() == 0) {
-            double pointerY = event.y() + scrollOffset();
+            double pointerY = event.y();
             for (Hit hit : hits) {
                 if (isInside(event.x(), pointerY, hit.x(), hit.y(), hit.w(), hit.h())) {
                     hit.action().run();
