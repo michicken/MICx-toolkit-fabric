@@ -77,6 +77,8 @@ public final class RemoteShopModule implements Module {
     private final int[][] buyKeys = new int[3][KeyChord.MAX_KEYS];
     /** 各枪组合键的「全按下」边沿状态（照 HotkeyRuntime.handleChord 的语义）。 */
     private final boolean[] buyChordPrev = new boolean[3];
+    /** 各枪发包后的独立冷却截止（用户定稿 2026-09-23）：只在真正发出交互包后计时。 */
+    private final long[] buyCooldownUntil = new long[3];
     /** 0 = 空闲；1 = 待切槽；2 = 已切槽待发包；3 = 已发包待切回。 */
     private int buyStage;
     private int buyGun = -1;
@@ -157,8 +159,11 @@ public final class RemoteShopModule implements Module {
         }
     }
 
-    /** 触发前置检查（目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
+    /** 触发前置检查（冷却/目标/射程）：任何一条不过都不切槽不发包，只报告 + 聊天提示。 */
     private void beginBuy(Minecraft client, int gun) {
+        // 该枪的 0.8s 冷却只在真正发出交互包后计时（连点没触发不进冷却）；冷却中静默忽略，
+        // 连点时不刷聊天（用户定稿 2026-09-23）。
+        if (System.currentTimeMillis() < buyCooldownUntil[gun]) return;
         String label = "枪" + (gun + 1);
         Candidate target = firstMatched(client);
         if (target == null) {
@@ -203,6 +208,10 @@ public final class RemoteShopModule implements Module {
             String result = entity == null
                     ? "目标跑掉了，没发"
                     : fire(client, entity, buyTarget);
+            if (entity != null) {
+                // 真正发出了交互包才进该枪的独立冷却（0.8s，与其他枪互不共享）
+                buyCooldownUntil[buyGun] = System.currentTimeMillis() + RemoteShopRules.BUY_COOLDOWN_MS;
+            }
             notify(client, label + "：" + result);
             // 键盘连点开着：交互包发出即进入 50ms 放行倒计时，不再等切回原槽
             // （用户定稿 2026-09-22，与技能释放"动作包完成即恢复"同一节奏）。
@@ -257,6 +266,7 @@ public final class RemoteShopModule implements Module {
         cachedScanMs = -1L;
         abortBuy(Minecraft.getInstance());
         java.util.Arrays.fill(buyChordPrev, false);
+        java.util.Arrays.fill(buyCooldownUntil, 0L);
     }
 
     /**

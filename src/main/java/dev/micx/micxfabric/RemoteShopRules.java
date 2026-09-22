@@ -25,6 +25,11 @@ public final class RemoteShopRules {
     public static final double TRIGGER_LIMIT = 4.9;
     /** 客户端射程抬高到的值（原版准星只有实体 3 格 / 方块 4.5 格）。 */
     public static final double CLIENT_RANGE = 5.5;
+    /**
+     * 每把枪发包后的独立冷却（用户定稿 2026-09-23）：只在真正发出交互包后计时——
+     * 连点没触发（超程/没目标）不进冷却，各枪互不共享。
+     */
+    public static final long BUY_COOLDOWN_MS = 800L;
     /** 扫描半径：够看到对面墙上的全息就行，不做全图扫。 */
     public static final double SCAN_RADIUS = 32.0;
     /** 默认关键词：Hypixel Zombies 的补弹台全息上写着 Refill / Ammo。 */
