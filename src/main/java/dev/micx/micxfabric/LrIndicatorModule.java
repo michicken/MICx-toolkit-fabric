@@ -75,6 +75,15 @@ public final class LrIndicatorModule implements Module {
     }
 
     /**
+     * TeamSync 纠偏入口（用户定稿 2026-09-23）：队友 lr_release 的人数多于本地雷声队列时
+     * 立刻补齐（如本地 2 绿、TeamSync 3 人放过 → 补到 3 绿）；只增不减。
+     */
+    public void correctFromTeamSync(long now, int teammateReleases) {
+        if (!enabled) return;
+        state.correctUpTo(now, teammateReleases);
+    }
+
+    /**
      * 最近 {@code windowMs} 内是否释放过 LR——无敌怪判定的门控信号（用户定稿 2026-09-16：
      * 只有 LR 会造成无敌怪，所以没有 LR 窗口时不判定）。
      *

@@ -598,6 +598,7 @@ public final class TeamSyncModule implements Module {
                         peer.lastLrHitAtMs = System.currentTimeMillis();
                     }
                     announceLr(Minecraft.getInstance(), name, struckCount, struckName);
+                    correctLrQueue(now);
                     continue;
                 }
                 if ("ping".equals(type)) {
@@ -666,6 +667,18 @@ public final class TeamSyncModule implements Module {
                 // Malformed remote messages are discarded without surfacing payload data.
             }
         }
+    }
+
+    /**
+     * LR 队列纠偏（用户定稿 2026-09-23）：数 18s 窗口内放过 LR 的队友人数，多于本地雷声
+     * 队列（雷声贴近被去重合并/漏听）就立刻把 LR queue 补齐——如本地 2 绿、队友 3 人放过 → 3 绿 1 红。
+     */
+    private void correctLrQueue(long now) {
+        int teammates = 0;
+        for (TeamSyncSnapshot peer : state.all()) {
+            if (peer.lastLrHitAtMs > 0 && now - peer.lastLrHitAtMs <= LrIndicatorState.LR_ACTIVE_MS) teammates++;
+        }
+        LrIndicatorModule.instance().correctFromTeamSync(now, teammates);
     }
 
     /** 技能通道应用（协议同 Forge）：字段缺失或非法时清空陈旧技能。 */

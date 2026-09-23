@@ -4,9 +4,11 @@ import java.util.ArrayDeque;
 
 final class LrIndicatorState {
     static final long LR_ACTIVE_MS = 18_000L;
-    static final long DEDUP_MS = 500L;
-    static final long BURST_WINDOW_MS = 1_000L;
-    static final int BURST_MAX = 4;
+    /**
+     * 雷声去重窗（用户定稿 2026-09-23）：一次 LR 服务端连发两个雷声包（SST 每包必记所以
+     * 1 LR 记 2），180ms 足够合并同一次的双包；两发真实 LR 间隔通常远大于此，不会被吞。
+     */
+    static final long DEDUP_MS = 180L;
     static final float LR_PITCH_MIN = 0.5f;
     static final float LR_PITCH_MAX = 1.3f;
     static final long GOLEM_WINDOW_MS = 2_000L;
@@ -24,7 +26,6 @@ final class LrIndicatorState {
     }
 
     private final ArrayDeque<Long> releases = new ArrayDeque<>();
-    private final ArrayDeque<Long> burstEvents = new ArrayDeque<>();
     private final ArrayDeque<float[]> golemJoins = new ArrayDeque<>();
     private int maxPlayers;
     private volatile boolean bossFirstConsumed;
@@ -37,17 +38,24 @@ final class LrIndicatorState {
     int onLrReleased(long now) { tryRelease(now); return greenCount(now); }
 
     boolean tryRelease(long now) {
-        burstEvents.addLast(now);
-        while (!burstEvents.isEmpty() && now - burstEvents.peekFirst() > BURST_WINDOW_MS) burstEvents.removeFirst();
-        if (burstEvents.size() > BURST_MAX) {
-            while (!releases.isEmpty() && now - releases.peekLast() <= BURST_WINDOW_MS) releases.removeLast();
-            burstEvents.clear();
-            return false;
-        }
         if (!releases.isEmpty() && now - releases.peekLast() <= DEDUP_MS) return false;
         releases.addLast(now);
         rotationCounter++;
         return true;
+    }
+
+    /**
+     * TeamSync 纠偏（用户定稿 2026-09-23）：本地雷声计数把贴近的 LR 合并掉/漏听了时，
+     * 用队友 lr_release 的人数把队列补齐到不小于该值——只增不减、不响蜂鸣轮换照常推进。
+     */
+    void correctUpTo(long now, int teammateReleases) {
+        prune(now);
+        int cap = maxPlayers > 0 ? maxPlayers : 4;
+        if (teammateReleases <= releases.size() || teammateReleases > cap) return;
+        while (releases.size() < teammateReleases) {
+            releases.addLast(now);
+            rotationCounter++;
+        }
     }
 
     void onRoundChanged(int round) { bossFirstConsumed = false; }
@@ -97,7 +105,7 @@ final class LrIndicatorState {
     }
 
     void reset() {
-        releases.clear(); burstEvents.clear(); golemJoins.clear();
+        releases.clear(); golemJoins.clear();
         maxPlayers = 0; bossFirstConsumed = false; rotationCounter = 0; lastGreenAtMs = -1;
     }
 
