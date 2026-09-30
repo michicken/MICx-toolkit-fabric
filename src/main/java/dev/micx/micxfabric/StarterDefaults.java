@@ -14,6 +14,7 @@ public final class StarterDefaults {
     private static final String RESOURCE_DIR = "/assets/micx-fabric/defaults/";
     private static final List<String> FILES = List.of(
             "aim-lead.properties",
+            "aimbot.properties",
             "anti-reshift.properties",
             "asr.properties",
             "auto-text.properties",

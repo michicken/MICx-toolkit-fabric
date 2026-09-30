@@ -28,6 +28,16 @@ export MICX_DEEPSEEK_API_KEY='...'
 
 Do not commit credentials, runtime logs, generated files, or Prism instance data.
 
+## Default configuration
+
+On first launch the mod writes a set of tuned default configuration files into `config/MICxToolkit/` (see `StarterDefaults`). It only copies files that do not exist yet and never overwrites an existing configuration, so your own tweaks are safe.
+
+All API keys in the shipped defaults are intentionally left blank — fill in your own key in the in-game panel or via the environment variables above.
+
+## License
+
+Released under the [MIT License](LICENSE). Use at your own risk: automation mods may violate the rules of the servers you play on.
+
 ## Deployment
 
 Copy the built JAR to the Minecraft 26.2 Fabric instance `mods/` directory after closing Minecraft and PrismLauncher. Keep only one active `micx-fabric-*.jar` for the instance.
